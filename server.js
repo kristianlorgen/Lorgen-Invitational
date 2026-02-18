@@ -239,9 +239,9 @@ app.get('/api/admin/tournaments', requireAdmin, (req, res) => {
 });
 
 app.post('/api/admin/tournament', requireAdmin, (req, res) => {
-  const { year, name, date, course, description } = req.body;
-  if (!year || !name || !date) return res.status(400).json({ error: 'Year, name, date required' });
-  const r = db.prepare('INSERT INTO tournaments (year, name, date, course, description) VALUES (?,?,?,?,?)').run(year, name, date, course || '', description || '');
+  const { year, name, date, course, description, gameday_info } = req.body;
+  if (!year || !name || !date) return res.status(400).json({ error: 'År, navn og dato er påkrevd' });
+  const r = db.prepare('INSERT INTO tournaments (year, name, date, course, description, gameday_info) VALUES (?,?,?,?,?,?)').run(year, name, date, course || '', description || '', gameday_info || '');
   const tid = r.lastInsertRowid;
   const ins = db.prepare('INSERT OR IGNORE INTO holes (tournament_id, hole_number, par) VALUES (?,?,4)');
   for (let i = 1; i <= 18; i++) ins.run(tid, i);
@@ -249,8 +249,15 @@ app.post('/api/admin/tournament', requireAdmin, (req, res) => {
 });
 
 app.put('/api/admin/tournament/:id', requireAdmin, (req, res) => {
-  const { year, name, date, course, description, status } = req.body;
-  db.prepare('UPDATE tournaments SET year=?,name=?,date=?,course=?,description=?,status=? WHERE id=?').run(year, name, date, course || '', description || '', status, req.params.id);
+  const { year, name, date, course, description, gameday_info, status } = req.body;
+  db.prepare('UPDATE tournaments SET year=?,name=?,date=?,course=?,description=?,gameday_info=?,status=? WHERE id=?').run(year, name, date, course || '', description || '', gameday_info || '', status, req.params.id);
+  res.json({ success: true });
+});
+
+// Spilledag info only
+app.put('/api/admin/tournament/:id/gameday', requireAdmin, (req, res) => {
+  const { gameday_info } = req.body;
+  db.prepare('UPDATE tournaments SET gameday_info=? WHERE id=?').run(gameday_info || '', req.params.id);
   res.json({ success: true });
 });
 

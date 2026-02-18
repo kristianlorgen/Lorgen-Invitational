@@ -12,49 +12,106 @@ Annual 2-man scramble golf tournament website.
 
 ---
 
+## Language
+
+**All UI text must be in Norwegian Bokmål.** This includes:
+- Navigation labels, buttons, headings, descriptions, error messages, toast notifications
+- Admin panel labels, form fields, table headers, status messages
+- Page titles, section headers, card content, footer links
+
+Brand tagline stays in English: **"POWER. PRECISION. PARTY."**
+Tournament name stays as-is: **Lorgen Invitational**
+Golf terminology (Par, Birdie, Eagle, Bogey, Scramble) stays in standard usage.
+
+### Key Norwegian Terms
+
+| English | Norwegian |
+|---|---|
+| Home | Hjem |
+| Gameday | Spilledag |
+| Live Scoreboard | Live Resultattavle |
+| Legacy / Hall of Fame | Historikk / Æresgalleri |
+| Enter Score | Registrer Poeng |
+| Admin Panel | Administrasjonspanel |
+| Tournament | Turnering |
+| Teams | Lag |
+| Players | Spillere |
+| Holes & Course | Hull og Bane |
+| Scores | Poeng |
+| Photos | Bilder |
+| Awards | Utmerkelser |
+| Longest Drive | Lengste Drive |
+| Closest to Pin | Nærmest Flagget |
+| Next Tournament | Neste Turnering |
+| Reigning Champions | Regjerande Mestere |
+| Date | Dato |
+| Course | Bane |
+| Year | År |
+| Save | Lagre |
+| Saved | Lagret |
+| Delete | Slett |
+| Edit | Rediger |
+| Add | Legg til |
+| Create | Opprett |
+| Cancel | Avbryt |
+| Update | Oppdater |
+| Login | Logg inn |
+| Logout | Logg ut |
+| Password | Passord |
+| Loading | Laster |
+| Photo Challenge | Fotoutfordring |
+| Upload photo | Last opp bilde |
+| Overview | Oversikt |
+| Schedule | Program |
+| History | Historikk |
+| Days | Dager |
+| Hours | Timer |
+| Minutes | Minutter |
+| Seconds | Sekunder |
+
+---
+
 ## Design System
 
 ### Brand Colors — always use CSS variables, never raw hex in HTML/JS
 
+Logo palette: **white background, gold (#C9A84C) primary, dark navy (#0D1B2A) accents**
+
+The overall site feel must be **white and gold** as the dominant palette. Dark navy is reserved for
+the navbar, footer, countdown section, and trophy/award cards — NOT for page hero backgrounds.
+
 | Variable | Hex | Use |
 |---|---|---|
 | `--gold` | `#C9A84C` | Primary accent — buttons, icons, highlights |
-| `--gold-light` | `#E8C87A` | Hover states, headings on dark bg |
+| `--gold-light` | `#E8C87A` | Hover states |
 | `--gold-dark` | `#9A7B2E` | Text on light bg, secondary buttons |
-| `--gold-pale` | `#FAF4E3` | Card backgrounds, tag backgrounds |
+| `--gold-pale` | `#FAF4E3` | Card backgrounds, page hero backgrounds |
 | `--gold-border` | `#E5D9A9` | Borders, dividers |
-| `--dark` | `#0D1B2A` | Navigation, hero sections, footer |
+| `--dark` | `#0D1B2A` | Navbar, countdown section, trophy cards, footer |
 | `--dark-mid` | `#162236` | Secondary dark backgrounds |
-| `--white` | `#FFFFFF` | Card surfaces, content areas |
+| `--white` | `#FFFFFF` | Card surfaces, content areas, hero background |
 | `--off-white` | `#FAF9F6` | Page background |
 | `--text` | `#1A1A1A` | Body text |
 | `--text-muted` | `#6B7280` | Secondary text, labels |
 
+**Page Hero sections** (inner pages): gold-pale/white gradient, dark text — NOT dark navy.
+**Homepage Hero**: white/cream background with gold shimmer — logo is designed for white bg.
+
 ### Typography
 
-- **Headings:** `font-family: var(--font-heading)` → Playfair Display (Google Fonts, already imported)
+- **Headings:** `font-family: var(--font-heading)` → Playfair Display
 - **Body:** `font-family: var(--font-body)` → Inter
-- Section titles use `clamp()` for fluid sizing, e.g. `font-size: clamp(1.8rem, 4vw, 2.8rem)`
-- `<span>` inside headings gets `color: var(--gold)` for gold accent word
+- Section titles: `font-size: clamp(1.8rem, 4vw, 2.8rem)`
+- `<span>` inside headings gets `color: var(--gold)`
 
 ### Component Patterns
 
-**Buttons** — always use `.btn` base + modifier:
+**Buttons:**
 ```html
-<button class="btn btn--gold">Primary</button>
-<button class="btn btn--outline">Secondary</button>
-<button class="btn btn--dark">Dark</button>
-<button class="btn btn--danger">Danger</button>
-<!-- Size modifiers: btn--sm  btn--lg -->
-```
-
-**Cards:**
-```html
-<div class="card">
-  <div class="card-header"><strong>Title</strong></div>
-  <div class="card-body">Content</div>
-  <div class="card-footer">Footer</div>
-</div>
+<button class="btn btn--gold">Primær</button>
+<button class="btn btn--outline">Sekundær</button>
+<button class="btn btn--dark">Mørk</button>
+<button class="btn btn--danger">Slett</button>
 ```
 
 **Section structure:**
@@ -62,50 +119,52 @@ Annual 2-man scramble golf tournament website.
 <section class="section" style="background:var(--white)">
   <div class="container">
     <div class="section-header">
-      <span class="section-tag">Tag Label</span>
-      <h2 class="section-title">Heading <span>Gold Word</span></h2>
-      <p class="section-subtitle">Subtitle text</p>
+      <span class="section-tag">Etikett</span>
+      <h2 class="section-title">Overskrift <span>Gullord</span></h2>
+      <p class="section-subtitle">Undertekst</p>
     </div>
-    <!-- content -->
   </div>
 </section>
 ```
 
-**Toasts (notifications):**
+**Toasts:**
 ```js
-showToast('Message here', 'success'); // success | error | info
+showToast('Melding her', 'success'); // success | error | info
 ```
-The `#toastContainer` div must be present on any page using toasts.
 
-**Page hero (inner pages):**
+**Page hero (inner pages — light gold/white):**
 ```html
 <div class="page-hero">
   <div class="container">
-    <div class="page-hero-tag"><i class="fas fa-icon"></i> &nbsp; Label</div>
-    <h1 class="page-hero-title">Title</h1>
-    <p class="page-hero-sub">Subtitle</p>
+    <div class="page-hero-tag"><i class="fas fa-icon"></i> &nbsp; Etikett</div>
+    <h1 class="page-hero-title">Tittel</h1>
+    <p class="page-hero-sub">Undertekst</p>
   </div>
 </div>
 ```
 
-**Badges:**
-```html
-<span class="badge badge--gold">Gold</span>
-<span class="badge badge--success">OK</span>
-<span class="badge badge--danger">Error</span>
-<span class="badge badge--active">Live</span>
-```
+---
 
-### Icons
-Font Awesome 6.5.1 via CDN — already included on all pages:
-```html
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-```
-Golf-relevant icons: `fas fa-golf-ball-tee`, `fas fa-flag`, `fas fa-trophy`, `fas fa-crown`
+## Admin Panel Structure (Norwegian)
 
-### Responsive Breakpoints
-- Mobile adjustments at `768px` — navbar collapses to hamburger, admin sidebar stacks
-- Small mobile at `480px` — PIN digits shrink, 2-col score entry grid
+Sidebar order:
+
+**Oversikt**
+- Oversikt — dashboard showing Neste Turnering + Regjerande Mestere + quick stats
+
+**Turnering**
+- Turneringer — create/edit tournaments (navn, dato, bane, beskrivelse, status)
+- Lag — add/edit teams with PIN codes
+- Bane og Hull — configure par per hole, mark fotoutfordring holes
+- Spilledag — edit gameday schedule / info text shown on the Spilledag page
+
+**Aktiv Dag**
+- Poeng — view/override all scores
+- Bilder — view all uploaded hole photos
+- Utmerkelser — assign Lengste Drive and Nærmest Flagget
+
+**Historikk**
+- Æresgalleri — manage Hall of Fame / Legacy entries
 
 ---
 
@@ -114,117 +173,76 @@ Golf-relevant icons: `fas fa-golf-ball-tee`, `fas fa-flag`, `fas fa-trophy`, `fa
 ```
 lorgen-invitational/
 ├── server.js          ← Express server + all API routes
-├── database.js        ← SQLite schema + db instance (imported by server)
+├── database.js        ← SQLite schema + db instance
 ├── package.json
-├── .env               ← NOT committed (see .env.example)
-├── .env.example       ← Template for env vars
+├── .env               ← NOT committed
+├── .env.example
 ├── .gitignore
-├── data/              ← SQLite db file — NOT committed
-├── uploads/           ← Photo uploads — NOT committed
+├── data/              ← NOT committed
+├── uploads/           ← NOT committed
 └── public/
-    ├── index.html         ← Homepage
-    ├── gameday.html       ← Gameday info
-    ├── scoreboard.html    ← Live scoreboard (SSE)
-    ├── legacy.html        ← Hall of Fame
-    ├── enter-score.html   ← PIN-protected player score entry
-    ├── admin.html         ← Password-protected admin panel
-    ├── css/
-    │   └── style.css      ← Single shared stylesheet (all design here)
-    └── images/
-        └── logo.png       ← Tournament logo
+    ├── index.html         ← Hjemmeside
+    ├── gameday.html       ← Spilledag informasjon
+    ├── scoreboard.html    ← Live resultattavle (SSE)
+    ├── legacy.html        ← Æresgalleri / Historikk
+    ├── enter-score.html   ← Poengregistrering
+    ├── admin.html         ← Administrasjonspanel
+    ├── css/style.css      ← Single shared stylesheet
+    └── images/logo.png
 ```
 
 **Rules:**
-- All styles go in `public/css/style.css` — no per-page `<style>` blocks except for truly page-specific overrides
-- All pages share the same navbar and footer HTML (duplicated — no templating engine)
+- All styles in `public/css/style.css` — no per-page `<style>` blocks except page-specific overrides
 - No JavaScript frameworks — vanilla JS only
-- No separate JS files — page JS lives in a `<script>` tag at the bottom of each HTML file
-- `database.js` is the only file that touches SQLite — never require `better-sqlite3` directly in `server.js`
+- No separate JS files — page JS lives in `<script>` at bottom of each HTML file
+- `database.js` is the only file that touches SQLite
 
 ---
 
 ## API Conventions
 
-### URL Structure
 ```
-GET/POST  /api/tournament          ← Public tournament info
-GET       /api/scoreboard          ← Public scoreboard data
-GET       /api/legacy              ← Public legacy entries
+GET/POST  /api/tournament          ← includes gameday_info field
+GET       /api/scoreboard
+GET       /api/legacy
 GET       /api/events              ← SSE stream
 
-POST      /api/auth/team-login     ← Team PIN login
-POST      /api/auth/admin-login    ← Admin password login
+POST      /api/auth/team-login
+POST      /api/auth/admin-login
 POST      /api/auth/logout
 GET       /api/auth/status
 
-GET       /api/team/scorecard      ← Requires team session
+GET       /api/team/scorecard
 POST      /api/team/submit-score
 POST      /api/team/upload-photo/:hole
 
-GET/POST  /api/admin/*             ← Requires admin session
+GET/POST/PUT/DELETE  /api/admin/*
+GET       /api/admin/tournament/:id/photos   ← all uploaded photos
 ```
 
-### Response Format
-Always return JSON. On success:
-```js
-res.json({ success: true, data... })
-```
-On error:
-```js
-res.status(4xx).json({ error: 'Human-readable message' })
-```
-
-### Auth Guards
-```js
-const requireTeam  = (req, res, next) => req.session.teamId  ? next() : res.status(401).json({ error: '...' });
-const requireAdmin = (req, res, next) => req.session.isAdmin ? next() : res.status(401).json({ error: '...' });
-```
-
-### Frontend `api()` Helper (admin.html pattern)
-```js
-async function api(url, options = {}) {
-  const r = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...options });
-  const d = await r.json();
-  if (!r.ok) throw new Error(d.error || 'Request failed');
-  return d;
-}
-```
+Error messages returned as JSON must be in Norwegian.
 
 ### SSE Broadcasts
-Call `broadcast(type, data)` in server.js after any write that should update the live scoreboard:
 ```js
 broadcast('score_updated', { tournament_id });
 broadcast('award_updated', {});
 ```
-The scoreboard page listens for `score_updated` and `award_updated` events and re-fetches.
 
 ---
 
 ## Database Schema
 
-Table relationships:
 ```
-tournaments → holes (1:many, tournament_id)
-tournaments → teams (1:many, tournament_id)
-teams → scores (1:many, team_id)   UNIQUE(team_id, hole_number)
-tournaments → awards (1:many)      UNIQUE(tournament_id, award_type, hole_number)
-legacy (standalone, no FK)
+tournaments  (id, year, name, date, course, description, gameday_info, status)
+holes        (id, tournament_id, hole_number, par, requires_photo)
+teams        (id, tournament_id, team_name, player1, player2, pin_code)
+scores       (id, team_id, hole_number, score, photo_path, submitted_at)
+awards       (id, tournament_id, award_type, team_id, hole_number, detail)
+legacy       (id, year, winner_team, player1, player2, score, score_to_par, course, notes)
 ```
 
-Key columns:
-- `tournaments.status` — `'upcoming'` | `'active'` | `'completed'`
-- `holes.requires_photo` — `0` | `1` (integer boolean in SQLite)
-- `scores.photo_path` — stored as `/uploads/filename.jpg` (web-accessible path)
-- `teams.pin_code` — plain text 4-digit string (unique within tournament)
-
-**Upsert pattern used throughout (prefer over separate INSERT + UPDATE):**
-```js
-db.prepare(`
-  INSERT INTO scores (team_id, hole_number, score)
-  VALUES (?, ?, ?)
-  ON CONFLICT(team_id, hole_number) DO UPDATE SET score = excluded.score
-`).run(teamId, holeNum, score);
-```
+`gameday_info` — free text for the Spilledag page schedule/info.
+`scores.photo_path` — stored as `/uploads/filename.jpg`
 
 ---
 
@@ -236,40 +254,16 @@ SESSION_SECRET=change-this-in-production
 ADMIN_PASSWORD=LorgenAdmin2025
 ```
 
-Default admin password is `LorgenAdmin2025` — always remind the user to change it in `.env` for production.
-
 ---
 
 ## Git & Workflow
 
 ### Branch naming
-Feature branches must follow: `claude/<description>-<sessionId>`
-Example: `claude/golf-tournament-website-nFXWG`
+`claude/<description>-<sessionId>`
 
 ### Commit messages
-- Imperative present tense: "Add award panel" not "Added award panel"
-- First line: short summary (≤72 chars)
-- Body: bullet list of what changed and why
-- Always append session URL: `https://claude.ai/code/session_...`
+- Imperative present tense: "Add award panel"
+- Append: `https://claude.ai/code/session_01PaBQbJ2b1RkRigDhKkZhfL`
 
 ### What NOT to commit
-- `.env` (real credentials)
-- `data/` (SQLite database)
-- `uploads/` (user-uploaded photos)
-- `node_modules/`
-
-### Push command
-```bash
-git push -u origin claude/<branch-name>
-```
-
----
-
-## Development Notes
-
-- Run with `npm start` (production) or `npm run dev` (nodemon watch mode)
-- Server auto-creates `data/` and `uploads/` directories on first run
-- SQLite uses WAL mode and foreign keys enabled — don't change these pragmas
-- File uploads are limited to 15 MB, images only (`file.mimetype.startsWith('image/')`)
-- SSE heartbeat runs every 25 seconds to keep connections alive through proxies
-- Scoreboard also has a 60-second fallback `setInterval` poll in case SSE drops
+`.env` · `data/` · `uploads/` · `node_modules/`
