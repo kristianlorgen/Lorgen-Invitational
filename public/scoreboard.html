@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Scoreboard — Lorgen Invitational</title>
+  <link rel="icon" type="image/png" href="/images/logo.png">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    .leaderboard-row-1 { background: linear-gradient(90deg, rgba(201,168,76,.08), transparent) !important; }
+    .leaderboard-row-1 td:first-child { border-left: 3px solid var(--gold); }
+  </style>
+</head>
+<body>
+
+<nav class="navbar" id="navbar">
+  <div class="container">
+    <a href="/" class="navbar-brand">
+      <img src="/images/logo.png" alt="Lorgen Invitational" class="navbar-logo">
+    </a>
+    <ul class="navbar-nav">
+      <li><a href="/" class="nav-link">Home</a></li>
+      <li><a href="/gameday" class="nav-link">Gameday</a></li>
+      <li><a href="/scoreboard" class="nav-link active">Live Scoreboard</a></li>
+      <li><a href="/legacy" class="nav-link">Legacy</a></li>
+      <li><a href="/enter-score" class="nav-link nav-link--cta">Enter Score</a></li>
+    </ul>
+    <button class="navbar-toggle" id="navToggle"><span></span><span></span><span></span></button>
+  </div>
+</nav>
+<div class="navbar-mobile" id="mobileMenu">
+  <a href="/" class="nav-link">Home</a>
+  <a href="/gameday" class="nav-link">Gameday</a>
+  <a href="/scoreboard" class="nav-link active">Live Scoreboard</a>
+  <a href="/legacy" class="nav-link">Legacy</a>
+  <a href="/enter-score" class="nav-link">Enter Score</a>
+</div>
+
+<!-- Page Hero -->
+<div class="page-hero">
+  <div class="container">
+    <div style="display:flex;align-items:center;justify-content:center;gap:16px;flex-wrap:wrap;margin-bottom:12px">
+      <div class="page-hero-tag" style="margin:0"><i class="fas fa-list-ol"></i> &nbsp; Live Results</div>
+      <div class="live-badge" id="liveBadge" style="display:none">
+        <div class="live-dot"></div>Live
+      </div>
+    </div>
+    <h1 class="page-hero-title">Scoreboard</h1>
+    <p class="page-hero-sub" id="sbTournamentName">Loading...</p>
+    <div style="margin-top:12px;font-size:.78rem;color:rgba(255,255,255,.3)" id="lastUpdated">Auto-updates in real time</div>
+  </div>
+</div>
+
+<!-- No Tournament State -->
+<div id="noTournamentState" class="d-none" style="text-align:center;padding:80px 24px">
+  <div style="font-size:3rem;margin-bottom:16px">⛳</div>
+  <h2 style="font-family:var(--font-heading);font-size:1.8rem;color:var(--dark);margin-bottom:8px">No Active Tournament</h2>
+  <p style="color:var(--text-muted);max-width:400px;margin:0 auto 24px">The scoreboard will light up when the tournament is underway. Check back on game day!</p>
+  <a href="/legacy" class="btn btn--gold">View Past Champions</a>
+</div>
+
+<!-- Leaderboard -->
+<section class="section" style="background:var(--white)" id="sbMain">
+  <div class="container">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;flex-wrap:wrap;gap:12px">
+      <div>
+        <h2 style="font-family:var(--font-heading);font-size:1.5rem;color:var(--dark)">Leaderboard</h2>
+        <p style="font-size:.82rem;color:var(--text-muted);margin-top:2px" id="holesInfo">—</p>
+      </div>
+      <button onclick="loadScoreboard()" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)">
+        <i class="fas fa-rotate-right"></i> Refresh
+      </button>
+    </div>
+
+    <div class="leaderboard-wrap">
+      <table class="leaderboard" id="leaderboardTable">
+        <thead>
+          <tr>
+            <th style="width:56px;text-align:center">Pos</th>
+            <th>Team</th>
+            <th style="text-align:center">Score</th>
+            <th style="text-align:center">+/−</th>
+            <th style="text-align:center">Holes</th>
+            <th style="text-align:center">Thru</th>
+          </tr>
+        </thead>
+        <tbody id="leaderboardBody">
+          <tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text-muted)"><i class="fas fa-spinner fa-spin" style="margin-right:8px"></i>Loading scores...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- Hole-by-Hole Scorecard -->
+<section class="section" style="background:var(--off-white)" id="scorecardSection">
+  <div class="container">
+    <div class="section-header" style="margin-bottom:28px">
+      <span class="section-tag">Hole by Hole</span>
+      <h2 class="section-title">Full <span>Scorecard</span></h2>
+    </div>
+    <div class="scorecard-wrap">
+      <table class="scorecard" id="scorecardTable">
+        <thead id="scorecardHead"></thead>
+        <tbody id="scorecardBody"></tbody>
+      </table>
+    </div>
+    <div style="margin-top:16px;display:flex;gap:16px;flex-wrap:wrap;font-size:.78rem;color:var(--text-muted);align-items:center">
+      <span><span class="score-chip chip-eagle" style="display:inline-flex;width:20px;height:20px;font-size:.7rem">2</span> Eagle or better</span>
+      <span><span class="score-chip chip-birdie" style="display:inline-flex;width:20px;height:20px;font-size:.7rem">1</span> Birdie</span>
+      <span><span class="score-chip chip-par" style="display:inline-flex;width:20px;height:20px;font-size:.7rem">–</span> Par</span>
+      <span><span class="score-chip chip-bogey" style="display:inline-flex;width:20px;height:20px;font-size:.7rem">1</span> Bogey</span>
+      <span><span class="score-chip chip-double" style="display:inline-flex;width:20px;height:20px;font-size:.7rem">2</span> Double+</span>
+    </div>
+  </div>
+</section>
+
+<!-- Awards -->
+<section class="section" style="background:var(--dark)" id="awardsSection">
+  <div class="container">
+    <div class="section-header" style="margin-bottom:36px">
+      <span class="section-tag" style="background:rgba(201,168,76,.12);border-color:rgba(201,168,76,.3);color:var(--gold)">Honours</span>
+      <h2 class="section-title" style="color:var(--white)">Special <span>Awards</span></h2>
+    </div>
+    <div class="awards-grid" id="awardsGrid">
+      <!-- populated by JS -->
+    </div>
+    <div id="awardsEmpty" style="text-align:center;padding:32px;color:rgba(255,255,255,.35)" class="d-none">
+      <i class="fas fa-trophy" style="font-size:2rem;color:rgba(201,168,76,.2);margin-bottom:12px;display:block"></i>
+      Awards will be announced during the tournament
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer class="footer">
+  <div class="container">
+    <div class="footer-inner">
+      <div>
+        <img src="/images/logo.png" alt="Lorgen Invitational" class="footer-logo">
+        <p class="footer-tagline">Power · Precision · Party</p>
+      </div>
+      <div>
+        <div class="footer-heading">Navigation</div>
+        <div class="footer-links">
+          <a href="/">Home</a>
+          <a href="/gameday">Gameday Info</a>
+          <a href="/scoreboard">Live Scoreboard</a>
+          <a href="/legacy">Legacy</a>
+        </div>
+      </div>
+      <div>
+        <div class="footer-heading">Participants</div>
+        <div class="footer-links">
+          <a href="/enter-score">Enter Your Score</a>
+          <a href="/admin">Admin Panel</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>&copy; <span id="footerYear"></span> Lorgen Invitational.</span>
+      <span>Power · Precision · Party</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+document.getElementById('footerYear').textContent = new Date().getFullYear();
+window.addEventListener('scroll', () => document.getElementById('navbar').classList.toggle('scrolled', window.scrollY > 40));
+document.getElementById('navToggle').addEventListener('click', () => document.getElementById('mobileMenu').classList.toggle('open'));
+
+let holes = [];
+let scoreboard = [];
+let currentTournament = null;
+
+function formatToPar(n, holesCompleted) {
+  if (holesCompleted === 0) return '<span class="score-par score-even">–</span>';
+  if (n < 0) return `<span class="score-par score-under">${n}</span>`;
+  if (n === 0) return `<span class="score-par score-even">E</span>`;
+  return `<span class="score-par score-over">+${n}</span>`;
+}
+
+function getChip(score, par) {
+  if (!score) return '<span style="color:var(--text-light)">–</span>';
+  const diff = score - par;
+  let cls = 'chip-par', lbl = score;
+  if (diff <= -2) cls = 'chip-eagle';
+  else if (diff === -1) cls = 'chip-birdie';
+  else if (diff === 0) cls = 'chip-par';
+  else if (diff === 1) cls = 'chip-bogey';
+  else cls = 'chip-double';
+  return `<span class="score-chip ${cls}">${lbl}</span>`;
+}
+
+function posBadge(i) {
+  if (i === 0) return `<span class="pos-badge pos-1">1</span>`;
+  if (i === 1) return `<span class="pos-badge pos-2">2</span>`;
+  if (i === 2) return `<span class="pos-badge pos-3">3</span>`;
+  return `<span class="pos-badge pos-other">${i+1}</span>`;
+}
+
+function renderLeaderboard() {
+  const tbody = document.getElementById('leaderboardBody');
+  if (scoreboard.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text-muted)">No scores yet — check back soon!</td></tr>';
+    return;
+  }
+  tbody.innerHTML = scoreboard.map((t, i) => `
+    <tr class="${i === 0 && t.holes_completed > 0 ? 'leaderboard-row-1' : ''}">
+      <td style="text-align:center">${posBadge(i)}</td>
+      <td class="team-name-cell">
+        <div class="team">${t.team_name}</div>
+        <div class="players">${t.player1} &amp; ${t.player2}</div>
+      </td>
+      <td style="text-align:center;font-weight:600">${t.holes_completed > 0 ? t.total_score : '–'}</td>
+      <td style="text-align:center">${formatToPar(t.to_par, t.holes_completed)}</td>
+      <td style="text-align:center;color:var(--text-muted);font-size:.85rem">${t.total_score || '–'}</td>
+      <td style="text-align:center;color:var(--text-muted);font-size:.85rem">${t.holes_completed}/18</td>
+    </tr>`).join('');
+}
+
+function renderScorecard() {
+  const head = document.getElementById('scorecardHead');
+  const body = document.getElementById('scorecardBody');
+  if (!holes.length || !scoreboard.length) { head.innerHTML=''; body.innerHTML=''; return; }
+
+  const front = holes.filter(h => h.hole_number <= 9);
+  const back  = holes.filter(h => h.hole_number > 9);
+
+  head.innerHTML = `
+    <tr>
+      <th style="text-align:left;min-width:140px">Team</th>
+      ${front.map(h => `<th ${h.requires_photo?'class="hole-special"':''}>${h.hole_number}${h.requires_photo?'📸':''}</th>`).join('')}
+      <th class="totals-col">OUT</th>
+      ${back.map(h  => `<th ${h.requires_photo?'class="hole-special"':''}>${h.hole_number}${h.requires_photo?'📸':''}</th>`).join('')}
+      <th class="totals-col">IN</th>
+      <th class="totals-col">TOT</th>
+      <th class="totals-col">+/−</th>
+    </tr>
+    <tr class="par-row">
+      <td style="text-align:left;padding-left:12px">Par</td>
+      ${front.map(h => `<td>${h.par}</td>`).join('')}
+      <td class="totals-col">${front.reduce((s,h)=>s+h.par,0)}</td>
+      ${back.map(h  => `<td>${h.par}</td>`).join('')}
+      <td class="totals-col">${back.reduce((s,h)=>s+h.par,0)}</td>
+      <td class="totals-col">${holes.reduce((s,h)=>s+h.par,0)}</td>
+      <td class="totals-col">—</td>
+    </tr>`;
+
+  body.innerHTML = scoreboard.map(t => {
+    const frontTotal = front.reduce((s,h) => s + (t.hole_scores[h.hole_number]?.score||0), 0);
+    const backTotal  = back.reduce((s,h)  => s + (t.hole_scores[h.hole_number]?.score||0), 0);
+    const frontPar   = front.reduce((s,h) => s + h.par, 0);
+    const backPar    = back.reduce((s,h)  => s + h.par, 0);
+    return `
+      <tr>
+        <td style="text-align:left;font-weight:600;white-space:nowrap">${t.team_name}</td>
+        ${front.map(h => `<td>${getChip(t.hole_scores[h.hole_number]?.score, h.par)}</td>`).join('')}
+        <td class="totals-col">${frontTotal||'–'}</td>
+        ${back.map(h  => `<td>${getChip(t.hole_scores[h.hole_number]?.score, h.par)}</td>`).join('')}
+        <td class="totals-col">${backTotal||'–'}</td>
+        <td class="totals-col">${t.total_score||'–'}</td>
+        <td class="totals-col">${t.holes_completed>0 ? (t.to_par>0?'+'+t.to_par:t.to_par===0?'E':t.to_par) : '–'}</td>
+      </tr>`;
+  }).join('');
+}
+
+function renderAwards(awards) {
+  const grid = document.getElementById('awardsGrid');
+  const empty = document.getElementById('awardsEmpty');
+  if (!awards || awards.length === 0) {
+    empty.classList.remove('d-none');
+    grid.innerHTML = '';
+    return;
+  }
+  empty.classList.add('d-none');
+  const typeLabels = {
+    'longest_drive': { label: 'Longest Drive', icon: '🏌️' },
+    'closest_to_pin': { label: 'Closest to Pin', icon: '🎯' }
+  };
+  grid.innerHTML = awards.map(a => {
+    const info = typeLabels[a.award_type] || { label: a.award_type, icon: '🏆' };
+    return `
+      <div class="award-card">
+        <span class="award-icon">${info.icon}</span>
+        <div class="award-label">${info.label}${a.hole_number ? ' — Hole ' + a.hole_number : ''}</div>
+        <div class="award-team">${a.team_name || 'TBD'}</div>
+        ${a.detail ? `<div class="award-detail">${a.detail}</div>` : ''}
+      </div>`;
+  }).join('');
+}
+
+async function loadScoreboard() {
+  try {
+    const r = await fetch('/api/scoreboard');
+    const d = await r.json();
+    if (!d.tournament) {
+      document.getElementById('noTournamentState').classList.remove('d-none');
+      document.getElementById('sbMain').classList.add('d-none');
+      document.getElementById('scorecardSection').classList.add('d-none');
+      return;
+    }
+    document.getElementById('noTournamentState').classList.add('d-none');
+    document.getElementById('sbMain').classList.remove('d-none');
+    document.getElementById('scorecardSection').classList.remove('d-none');
+
+    currentTournament = d.tournament;
+    holes = d.holes;
+    scoreboard = d.scoreboard;
+
+    document.getElementById('sbTournamentName').textContent = d.tournament.name +
+      (d.tournament.course ? ' · ' + d.tournament.course : '');
+
+    const totalHoles = d.holes.length;
+    const teamsPlaying = d.scoreboard.filter(t => t.holes_completed > 0).length;
+    document.getElementById('holesInfo').textContent = `${teamsPlaying} team${teamsPlaying !== 1 ? 's' : ''} in play · ${totalHoles} holes`;
+
+    if (d.tournament.status === 'active') {
+      document.getElementById('liveBadge').style.display = 'inline-flex';
+    }
+
+    document.getElementById('lastUpdated').textContent = 'Last updated: ' + new Date().toLocaleTimeString('en-GB');
+
+    renderLeaderboard();
+    renderScorecard();
+    renderAwards(d.awards);
+  } catch(e) {
+    console.error(e);
+  }
+}
+
+// SSE live updates
+function connectSSE() {
+  const sse = new EventSource('/api/events');
+  sse.onmessage = e => {
+    try {
+      const data = JSON.parse(e.data);
+      if (data.type === 'score_updated' || data.type === 'award_updated') {
+        loadScoreboard();
+      }
+    } catch(_) {}
+  };
+  sse.onerror = () => {
+    setTimeout(connectSSE, 5000); // reconnect on error
+  };
+}
+
+loadScoreboard();
+connectSSE();
+// Fallback refresh every 60 seconds
+setInterval(loadScoreboard, 60000);
+</script>
+</body>
+</html>

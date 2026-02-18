@@ -1,0 +1,80 @@
+const Database = require('better-sqlite3');
+const fs = require('fs');
+
+if (!fs.existsSync('./data')) {
+  fs.mkdirSync('./data', { recursive: true });
+}
+
+const db = new Database('./data/tournament.db');
+db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS tournaments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    year INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    date TEXT NOT NULL,
+    course TEXT DEFAULT '',
+    description TEXT DEFAULT '',
+    status TEXT DEFAULT 'upcoming',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS holes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tournament_id INTEGER NOT NULL,
+    hole_number INTEGER NOT NULL,
+    par INTEGER NOT NULL DEFAULT 4,
+    requires_photo INTEGER DEFAULT 0,
+    FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
+    UNIQUE(tournament_id, hole_number)
+  );
+
+  CREATE TABLE IF NOT EXISTS teams (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tournament_id INTEGER NOT NULL,
+    team_name TEXT NOT NULL,
+    player1 TEXT NOT NULL,
+    player2 TEXT NOT NULL,
+    pin_code TEXT NOT NULL,
+    FOREIGN KEY (tournament_id) REFERENCES tournaments(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS scores (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    team_id INTEGER NOT NULL,
+    hole_number INTEGER NOT NULL,
+    score INTEGER NOT NULL DEFAULT 0,
+    photo_path TEXT,
+    submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (team_id) REFERENCES teams(id),
+    UNIQUE(team_id, hole_number)
+  );
+
+  CREATE TABLE IF NOT EXISTS awards (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tournament_id INTEGER NOT NULL,
+    award_type TEXT NOT NULL,
+    team_id INTEGER,
+    hole_number INTEGER,
+    detail TEXT DEFAULT '',
+    FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
+    FOREIGN KEY (team_id) REFERENCES teams(id),
+    UNIQUE(tournament_id, award_type, hole_number)
+  );
+
+  CREATE TABLE IF NOT EXISTS legacy (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    year INTEGER NOT NULL,
+    winner_team TEXT NOT NULL,
+    player1 TEXT NOT NULL,
+    player2 TEXT NOT NULL,
+    score TEXT DEFAULT '',
+    score_to_par TEXT DEFAULT '',
+    course TEXT DEFAULT '',
+    notes TEXT DEFAULT ''
+  );
+`);
+
+module.exports = db;

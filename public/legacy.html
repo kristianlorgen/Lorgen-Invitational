@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Legacy — Lorgen Invitational</title>
+  <link rel="icon" type="image/png" href="/images/logo.png">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body>
+
+<nav class="navbar" id="navbar">
+  <div class="container">
+    <a href="/" class="navbar-brand">
+      <img src="/images/logo.png" alt="Lorgen Invitational" class="navbar-logo">
+    </a>
+    <ul class="navbar-nav">
+      <li><a href="/" class="nav-link">Home</a></li>
+      <li><a href="/gameday" class="nav-link">Gameday</a></li>
+      <li><a href="/scoreboard" class="nav-link">Live Scoreboard</a></li>
+      <li><a href="/legacy" class="nav-link active">Legacy</a></li>
+      <li><a href="/enter-score" class="nav-link nav-link--cta">Enter Score</a></li>
+    </ul>
+    <button class="navbar-toggle" id="navToggle"><span></span><span></span><span></span></button>
+  </div>
+</nav>
+<div class="navbar-mobile" id="mobileMenu">
+  <a href="/" class="nav-link">Home</a>
+  <a href="/gameday" class="nav-link">Gameday</a>
+  <a href="/scoreboard" class="nav-link">Live Scoreboard</a>
+  <a href="/legacy" class="nav-link active">Legacy</a>
+  <a href="/enter-score" class="nav-link">Enter Score</a>
+</div>
+
+<!-- Page Hero -->
+<div class="page-hero" style="padding-bottom:80px">
+  <div class="container">
+    <div class="page-hero-tag"><i class="fas fa-trophy"></i> &nbsp; Hall of Fame</div>
+    <h1 class="page-hero-title">The Legacy</h1>
+    <p class="page-hero-sub">Champions etched in gold — a permanent record of those who conquered the Lorgen Invitational</p>
+  </div>
+</div>
+
+<!-- Champions Gallery -->
+<section class="section" style="background:var(--off-white);margin-top:-40px">
+  <div class="container">
+    <div class="section-header">
+      <span class="section-tag">Champions</span>
+      <h2 class="section-title">Hall of <span>Fame</span></h2>
+    </div>
+    <div class="legacy-trophy-row" id="trophyRow">
+      <!-- JS populated -->
+    </div>
+    <div id="noLegacy" class="d-none" style="text-align:center;padding:60px 24px">
+      <div style="font-size:3rem;margin-bottom:16px">🏆</div>
+      <h3 style="font-family:var(--font-heading);font-size:1.5rem;color:var(--dark);margin-bottom:8px">The Legacy Begins Here</h3>
+      <p style="color:var(--text-muted);max-width:400px;margin:0 auto">The first champion will be immortalised after this year's tournament. Will it be you?</p>
+    </div>
+  </div>
+</section>
+
+<!-- Full History Table -->
+<section class="section" style="background:var(--white)" id="historySection">
+  <div class="container">
+    <div class="section-header">
+      <span class="section-tag">Full Record</span>
+      <h2 class="section-title">Tournament <span>History</span></h2>
+    </div>
+    <div class="leaderboard-wrap">
+      <table class="leaderboard">
+        <thead>
+          <tr>
+            <th>Year</th>
+            <th>Champions</th>
+            <th>Players</th>
+            <th>Score</th>
+            <th>+/−</th>
+            <th>Course</th>
+          </tr>
+        </thead>
+        <tbody id="historyBody">
+          <tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted)"><i class="fas fa-spinner fa-spin"></i> Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- Quote / CTA -->
+<section class="section--sm" style="background:var(--dark);text-align:center">
+  <div class="container">
+    <div style="max-width:600px;margin:0 auto">
+      <div style="font-size:2.5rem;margin-bottom:20px;opacity:.8">⛳</div>
+      <blockquote style="font-family:var(--font-heading);font-size:1.4rem;color:var(--white);font-style:italic;line-height:1.5;margin-bottom:20px">
+        "Golf is deceptively simple and endlessly complicated."
+      </blockquote>
+      <p style="color:rgba(255,255,255,.35);font-size:.82rem;margin-bottom:32px">— Arnold Palmer</p>
+      <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap">
+        <a href="/scoreboard" class="btn btn--gold"><i class="fas fa-list-ol"></i> Live Scoreboard</a>
+        <a href="/" class="btn btn--outline">Back to Home</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer class="footer">
+  <div class="container">
+    <div class="footer-inner">
+      <div>
+        <img src="/images/logo.png" alt="Lorgen Invitational" class="footer-logo">
+        <p class="footer-tagline">Power · Precision · Party</p>
+      </div>
+      <div>
+        <div class="footer-heading">Navigation</div>
+        <div class="footer-links">
+          <a href="/">Home</a>
+          <a href="/gameday">Gameday Info</a>
+          <a href="/scoreboard">Live Scoreboard</a>
+          <a href="/legacy">Legacy</a>
+        </div>
+      </div>
+      <div>
+        <div class="footer-heading">Participants</div>
+        <div class="footer-links">
+          <a href="/enter-score">Enter Your Score</a>
+          <a href="/admin">Admin Panel</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>&copy; <span id="footerYear"></span> Lorgen Invitational.</span>
+      <span>Power · Precision · Party</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+document.getElementById('footerYear').textContent = new Date().getFullYear();
+window.addEventListener('scroll', () => document.getElementById('navbar').classList.toggle('scrolled', window.scrollY > 40));
+document.getElementById('navToggle').addEventListener('click', () => document.getElementById('mobileMenu').classList.toggle('open'));
+
+async function loadLegacy() {
+  try {
+    const r = await fetch('/api/legacy');
+    const d = await r.json();
+    const legacy = d.legacy || [];
+
+    const trophyRow = document.getElementById('trophyRow');
+    const historyBody = document.getElementById('historyBody');
+    const noLegacy = document.getElementById('noLegacy');
+
+    if (legacy.length === 0) {
+      trophyRow.innerHTML = '';
+      noLegacy.classList.remove('d-none');
+      historyBody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted)">No results yet</td></tr>';
+      document.getElementById('historySection').classList.add('d-none');
+      return;
+    }
+
+    // Trophy cards (recent champions)
+    const recent = legacy.slice(0, 6);
+    trophyRow.innerHTML = recent.map((c, i) => `
+      <div class="trophy-card">
+        <div class="trophy-year">${c.year}</div>
+        <div class="trophy-icon">${i === 0 ? '🥇' : i === 1 ? '🥈' : '🏆'}</div>
+        <div class="trophy-team">${c.winner_team}</div>
+        <div class="trophy-players">${c.player1} &amp; ${c.player2}</div>
+        ${c.score || c.score_to_par ? `<div class="trophy-score">${[c.score, c.score_to_par ? '('+c.score_to_par+')' : ''].filter(Boolean).join(' ')}</div>` : ''}
+        ${c.course ? `<div style="font-size:.72rem;color:rgba(255,255,255,.35);margin-top:6px;position:relative;z-index:1"><i class="fas fa-location-dot"></i> ${c.course}</div>` : ''}
+      </div>`).join('');
+
+    // History table
+    historyBody.innerHTML = legacy.map((c, i) => `
+      <tr>
+        <td>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:1rem">${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : ''}</span>
+            <strong>${c.year}</strong>
+          </div>
+        </td>
+        <td class="team-name-cell"><div class="team">${c.winner_team}</div></td>
+        <td class="team-name-cell"><div class="players">${c.player1} &amp; ${c.player2}</div></td>
+        <td style="font-weight:600">${c.score || '—'}</td>
+        <td>${c.score_to_par ? `<span class="score-par ${c.score_to_par.startsWith('-') ? 'score-under' : c.score_to_par === 'E' ? 'score-even' : 'score-over'}">${c.score_to_par}</span>` : '—'}</td>
+        <td style="color:var(--text-muted);font-size:.875rem">${c.course || '—'}</td>
+      </tr>`).join('');
+  } catch(e) {
+    console.error(e);
+    document.getElementById('historyBody').innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--danger)">Failed to load legacy data</td></tr>';
+  }
+}
+
+loadLegacy();
+</script>
+</body>
+</html>
