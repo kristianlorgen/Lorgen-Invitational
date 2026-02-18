@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gameday Info — Lorgen Invitational</title>
+  <link rel="icon" type="image/png" href="/images/logo.png">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body>
+
+<!-- ── Navigation ──────────────────────────────────────────────────────────── -->
+<nav class="navbar" id="navbar">
+  <div class="container">
+    <a href="/" class="navbar-brand">
+      <img src="/images/logo.png" alt="Lorgen Invitational" class="navbar-logo">
+    </a>
+    <ul class="navbar-nav">
+      <li><a href="/" class="nav-link">Home</a></li>
+      <li><a href="/gameday" class="nav-link active">Gameday</a></li>
+      <li><a href="/scoreboard" class="nav-link">Live Scoreboard</a></li>
+      <li><a href="/legacy" class="nav-link">Legacy</a></li>
+      <li><a href="/enter-score" class="nav-link nav-link--cta">Enter Score</a></li>
+    </ul>
+    <button class="navbar-toggle" id="navToggle"><span></span><span></span><span></span></button>
+  </div>
+</nav>
+<div class="navbar-mobile" id="mobileMenu">
+  <a href="/" class="nav-link">Home</a>
+  <a href="/gameday" class="nav-link active">Gameday</a>
+  <a href="/scoreboard" class="nav-link">Live Scoreboard</a>
+  <a href="/legacy" class="nav-link">Legacy</a>
+  <a href="/enter-score" class="nav-link">Enter Score</a>
+</div>
+
+<!-- ── Page Hero ─────────────────────────────────────────────────────────────── -->
+<div class="page-hero">
+  <div class="container">
+    <div class="page-hero-tag"><i class="fas fa-flag"></i> &nbsp; Tournament Day</div>
+    <h1 class="page-hero-title">Gameday Information</h1>
+    <p class="page-hero-sub" id="heroDateLine">Everything you need for tournament day</p>
+  </div>
+</div>
+
+<!-- ── Tournament Details ─────────────────────────────────────────────────────── -->
+<section class="section" style="background:var(--white)">
+  <div class="container">
+    <div class="section-header">
+      <span class="section-tag">The Details</span>
+      <h2 class="section-title">Tournament <span>Information</span></h2>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px;margin-bottom:60px" id="tournamentDetails">
+      <div class="card">
+        <div class="card-body" style="text-align:center">
+          <div class="feature-icon" style="margin-bottom:12px"><i class="fas fa-calendar-day"></i></div>
+          <div style="font-size:.72rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px">Date</div>
+          <div style="font-family:var(--font-heading);font-size:1.1rem;color:var(--dark)" id="detDate">TBA</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-body" style="text-align:center">
+          <div class="feature-icon" style="margin-bottom:12px"><i class="fas fa-location-dot"></i></div>
+          <div style="font-size:.72rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px">Course</div>
+          <div style="font-family:var(--font-heading);font-size:1.1rem;color:var(--dark)" id="detCourse">TBA</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-body" style="text-align:center">
+          <div class="feature-icon" style="margin-bottom:12px"><i class="fas fa-users"></i></div>
+          <div style="font-size:.72rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px">Format</div>
+          <div style="font-family:var(--font-heading);font-size:1.1rem;color:var(--dark)">2-Man Scramble</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-body" style="text-align:center">
+          <div class="feature-icon" style="margin-bottom:12px"><i class="fas fa-golf-ball-tee"></i></div>
+          <div style="font-size:.72rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px">Holes</div>
+          <div style="font-family:var(--font-heading);font-size:1.1rem;color:var(--dark)">18 Holes</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Description -->
+    <div id="tournamentDesc" style="max-width:700px;margin:0 auto 60px;text-align:center" class="d-none">
+      <div class="gold-divider"><i class="fas fa-star"></i></div>
+      <p style="font-size:1.05rem;color:var(--text-muted);line-height:1.8;font-style:italic" id="descText"></p>
+    </div>
+  </div>
+</section>
+
+<!-- ── Format Explanation ─────────────────────────────────────────────────────── -->
+<section class="section" style="background:var(--off-white)">
+  <div class="container">
+    <div class="section-header">
+      <span class="section-tag">How to Play</span>
+      <h2 class="section-title">2-Man Scramble <span>Format</span></h2>
+      <p class="section-subtitle">A team format designed for maximum fun and competition</p>
+    </div>
+
+    <div style="max-width:840px;margin:0 auto">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:40px">
+
+        <div style="background:var(--white);border:1px solid var(--gold-border);border-radius:var(--radius-lg);padding:28px 24px">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+            <div style="width:36px;height:36px;background:var(--gold);border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--dark);flex-shrink:0">1</div>
+            <h3 style="font-family:var(--font-heading);font-size:1.1rem;color:var(--dark)">Both Players Tee Off</h3>
+          </div>
+          <p style="color:var(--text-muted);font-size:.9rem;line-height:1.7">Both team members hit their tee shots. Select the best drive — that's where play continues from.</p>
+        </div>
+
+        <div style="background:var(--white);border:1px solid var(--gold-border);border-radius:var(--radius-lg);padding:28px 24px">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+            <div style="width:36px;height:36px;background:var(--gold);border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--dark);flex-shrink:0">2</div>
+            <h3 style="font-family:var(--font-heading);font-size:1.1rem;color:var(--dark)">Play from Best Ball</h3>
+          </div>
+          <p style="color:var(--text-muted);font-size:.9rem;line-height:1.7">Both players pick up and play from the chosen spot. Repeat this process for every shot until holed out.</p>
+        </div>
+
+        <div style="background:var(--white);border:1px solid var(--gold-border);border-radius:var(--radius-lg);padding:28px 24px">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+            <div style="width:36px;height:36px;background:var(--gold);border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--dark);flex-shrink:0">3</div>
+            <h3 style="font-family:var(--font-heading);font-size:1.1rem;color:var(--dark)">Record the Score</h3>
+          </div>
+          <p style="color:var(--text-muted);font-size:.9rem;line-height:1.7">Once the ball is holed, record the total number of strokes taken. Enter it via the app after completing the hole.</p>
+        </div>
+
+        <div style="background:var(--white);border:1px solid var(--gold-border);border-radius:var(--radius-lg);padding:28px 24px">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+            <div style="width:36px;height:36px;background:var(--gold);border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--dark);flex-shrink:0">4</div>
+            <h3 style="font-family:var(--font-heading);font-size:1.1rem;color:var(--dark)">Photo Challenges</h3>
+          </div>
+          <p style="color:var(--text-muted);font-size:.9rem;line-height:1.7">On designated holes, you must upload a photo before your score is accepted. Follow the app's prompt — it's part of the fun!</p>
+        </div>
+      </div>
+
+      <!-- Special Awards -->
+      <div style="background:linear-gradient(135deg,var(--dark),var(--dark-mid));border:1px solid rgba(201,168,76,.25);border-radius:var(--radius-xl);padding:40px;text-align:center">
+        <div style="font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin-bottom:16px">Special Awards</div>
+        <h3 style="font-family:var(--font-heading);font-size:1.6rem;color:var(--white);margin-bottom:24px">Bonus Competitions</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:500px;margin:0 auto">
+          <div style="background:rgba(255,255,255,.05);border:1px solid rgba(201,168,76,.2);border-radius:var(--radius-lg);padding:20px">
+            <div style="font-size:1.8rem;margin-bottom:8px">🏌️</div>
+            <div style="font-weight:700;color:var(--gold-light);margin-bottom:4px">Longest Drive</div>
+            <div style="font-size:.82rem;color:rgba(255,255,255,.5)">Par 4 & Par 5 holes — send it as far as possible</div>
+          </div>
+          <div style="background:rgba(255,255,255,.05);border:1px solid rgba(201,168,76,.2);border-radius:var(--radius-lg);padding:20px">
+            <div style="font-size:1.8rem;margin-bottom:8px">🎯</div>
+            <div style="font-weight:700;color:var(--gold-light);margin-bottom:4px">Closest to Pin</div>
+            <div style="font-size:.82rem;color:rgba(255,255,255,.5)">Par 3 holes — stick it tight to the flag</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Participating Teams ─────────────────────────────────────────────────────── -->
+<section class="section" style="background:var(--white)">
+  <div class="container">
+    <div class="section-header">
+      <span class="section-tag">The Field</span>
+      <h2 class="section-title">Participating <span>Teams</span></h2>
+    </div>
+    <div id="teamsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:20px">
+      <div style="text-align:center;padding:40px;color:var(--text-muted);grid-column:1/-1" id="teamsPlaceholder">
+        <i class="fas fa-users" style="font-size:2rem;color:var(--gold-border);margin-bottom:12px;display:block"></i>
+        Teams will be listed here once the tournament is set up.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Special Holes ─────────────────────────────────────────────────────────── -->
+<section class="section" style="background:var(--off-white)" id="specialHolesSection">
+  <div class="container">
+    <div class="section-header">
+      <span class="section-tag">Photo Challenges</span>
+      <h2 class="section-title">Special <span>Holes</span></h2>
+      <p class="section-subtitle">These holes require a photo upload before your score will be accepted</p>
+    </div>
+    <div id="specialHolesGrid" style="display:flex;gap:16px;flex-wrap:wrap;justify-content:center">
+      <div style="text-align:center;padding:32px;color:var(--text-muted);width:100%" id="specialPlaceholder">
+        <i class="fas fa-camera" style="font-size:2rem;color:var(--gold-border);margin-bottom:12px;display:block"></i>
+        Photo challenge holes will be announced before tournament day.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── CTA ─────────────────────────────────────────────────────────────────── -->
+<section class="section--sm" style="background:var(--dark);text-align:center">
+  <div class="container">
+    <h2 style="font-family:var(--font-heading);font-size:1.8rem;color:var(--white);margin-bottom:8px">Ready to <span style="color:var(--gold)">Compete?</span></h2>
+    <p style="color:rgba(255,255,255,.5);margin-bottom:28px">Enter your team PIN to access the score entry system on the day</p>
+    <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap">
+      <a href="/enter-score" class="btn btn--gold"><i class="fas fa-pencil"></i> Enter Score</a>
+      <a href="/scoreboard" class="btn btn--outline"><i class="fas fa-list-ol"></i> Live Scoreboard</a>
+    </div>
+  </div>
+</section>
+
+<!-- ── Footer ─────────────────────────────────────────────────────────────────── -->
+<footer class="footer">
+  <div class="container">
+    <div class="footer-inner">
+      <div>
+        <img src="/images/logo.png" alt="Lorgen Invitational" class="footer-logo">
+        <p class="footer-tagline">Power · Precision · Party</p>
+      </div>
+      <div>
+        <div class="footer-heading">Navigation</div>
+        <div class="footer-links">
+          <a href="/">Home</a>
+          <a href="/gameday">Gameday Info</a>
+          <a href="/scoreboard">Live Scoreboard</a>
+          <a href="/legacy">Legacy</a>
+        </div>
+      </div>
+      <div>
+        <div class="footer-heading">Participants</div>
+        <div class="footer-links">
+          <a href="/enter-score">Enter Your Score</a>
+          <a href="/admin">Admin Panel</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>&copy; <span id="footerYear"></span> Lorgen Invitational.</span>
+      <span>Power · Precision · Party</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+document.getElementById('footerYear').textContent = new Date().getFullYear();
+window.addEventListener('scroll', () => document.getElementById('navbar').classList.toggle('scrolled', window.scrollY > 40));
+document.getElementById('navToggle').addEventListener('click', () => document.getElementById('mobileMenu').classList.toggle('open'));
+
+async function loadGameday() {
+  try {
+    const r = await fetch('/api/tournament');
+    const d = await r.json();
+    if (d.tournament) {
+      const t = d.tournament;
+      const dt = new Date(t.date);
+      const fmt = dt.toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+      document.getElementById('heroDateLine').textContent = fmt + (t.course ? ' · ' + t.course : '');
+      document.getElementById('detDate').textContent = fmt;
+      document.getElementById('detCourse').textContent = t.course || 'TBA';
+      if (t.description) {
+        document.getElementById('descText').textContent = t.description;
+        document.getElementById('tournamentDesc').classList.remove('d-none');
+      }
+
+      // Special holes
+      const photoHoles = d.holes.filter(h => h.requires_photo);
+      if (photoHoles.length > 0) {
+        document.getElementById('specialPlaceholder').remove();
+        const grid = document.getElementById('specialHolesGrid');
+        photoHoles.forEach(h => {
+          grid.innerHTML += `
+            <div style="background:var(--white);border:1.5px solid var(--gold);border-radius:var(--radius-lg);padding:24px 20px;text-align:center;min-width:140px">
+              <div style="font-size:1.8rem;margin-bottom:8px">📸</div>
+              <div style="font-weight:700;color:var(--dark);font-size:1.1rem">Hole ${h.hole_number}</div>
+              <div style="font-size:.8rem;color:var(--text-muted);margin-top:4px">Par ${h.par} · Photo Required</div>
+            </div>`;
+        });
+      }
+    }
+
+    // Load teams
+    // Teams are loaded via scoreboard data (public scoreboard has team info)
+    const sr = await fetch('/api/scoreboard');
+    const sd = await sr.json();
+    if (sd.scoreboard && sd.scoreboard.length > 0) {
+      document.getElementById('teamsPlaceholder').remove();
+      const grid = document.getElementById('teamsGrid');
+      sd.scoreboard.forEach((team, i) => {
+        grid.innerHTML += `
+          <div class="card" style="transition:all .25s">
+            <div class="card-body" style="display:flex;align-items:center;gap:16px">
+              <div style="width:44px;height:44px;background:var(--gold-pale);border:1px solid var(--gold-border);border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--gold-dark);flex-shrink:0">${i+1}</div>
+              <div>
+                <div style="font-weight:600;color:var(--dark)">${team.team_name}</div>
+                <div style="font-size:.82rem;color:var(--text-muted)">${team.player1} & ${team.player2}</div>
+              </div>
+            </div>
+          </div>`;
+      });
+    }
+  } catch(e) {}
+}
+loadGameday();
+</script>
+</body>
+</html>

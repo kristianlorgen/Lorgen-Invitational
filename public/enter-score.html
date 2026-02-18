@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Enter Score — Lorgen Invitational</title>
+  <link rel="icon" type="image/png" href="/images/logo.png">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    .hole-card { cursor: default; }
+    .hole-card:hover { transform: none; box-shadow: var(--shadow-sm); }
+    .score-stepper { display: flex; align-items: center; gap: 8px; justify-content: center; margin: 8px 0 12px; }
+    .stepper-btn {
+      width: 32px; height: 32px;
+      background: var(--gold-pale); border: 1px solid var(--gold-border);
+      border-radius: 50%; font-size: 1.1rem; font-weight: 700;
+      color: var(--gold-dark); display: flex; align-items: center; justify-content: center;
+      transition: all .2s; cursor: pointer;
+    }
+    .stepper-btn:hover { background: var(--gold); color: var(--dark); }
+    .stepper-val {
+      width: 56px; height: 56px; border: 2px solid var(--gold-border);
+      border-radius: var(--radius); text-align: center;
+      font-size: 1.8rem; font-weight: 700; color: var(--dark);
+      background: var(--white); outline: none;
+      transition: all .2s; -moz-appearance: textfield;
+    }
+    .stepper-val::-webkit-outer-spin-button,
+    .stepper-val::-webkit-inner-spin-button { -webkit-appearance: none; }
+    .stepper-val:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(201,168,76,.15); }
+    .hole-card.done { border-color: var(--success); }
+    .hole-card.done .stepper-val { border-color: var(--success); color: var(--success); }
+    .photo-preview { width: 100%; height: 80px; object-fit: cover; border-radius: var(--radius-sm); margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+
+<nav class="navbar" id="navbar">
+  <div class="container">
+    <a href="/" class="navbar-brand">
+      <img src="/images/logo.png" alt="Lorgen Invitational" class="navbar-logo">
+    </a>
+    <ul class="navbar-nav">
+      <li><a href="/" class="nav-link">Home</a></li>
+      <li><a href="/gameday" class="nav-link">Gameday</a></li>
+      <li><a href="/scoreboard" class="nav-link">Live Scoreboard</a></li>
+      <li><a href="/legacy" class="nav-link">Legacy</a></li>
+      <li><a href="/enter-score" class="nav-link nav-link--cta active" style="background:var(--gold-dark)">Enter Score</a></li>
+    </ul>
+    <button class="navbar-toggle" id="navToggle"><span></span><span></span><span></span></button>
+  </div>
+</nav>
+<div class="navbar-mobile" id="mobileMenu">
+  <a href="/" class="nav-link">Home</a>
+  <a href="/gameday" class="nav-link">Gameday</a>
+  <a href="/scoreboard" class="nav-link">Live Scoreboard</a>
+  <a href="/legacy" class="nav-link">Legacy</a>
+  <a href="/enter-score" class="nav-link">Enter Score</a>
+</div>
+
+<!-- Toast -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- ── LOGIN SCREEN ────────────────────────────────────────────────────────── -->
+<div id="loginScreen" style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;padding-top:calc(var(--nav-height)+40px);background:linear-gradient(160deg,var(--dark),var(--dark-mid))">
+  <div style="max-width:440px;width:100%;text-align:center">
+    <img src="/images/logo.png" alt="Lorgen Invitational" style="height:80px;margin:0 auto 24px;filter:drop-shadow(0 0 16px rgba(201,168,76,.5))">
+    <h1 style="font-family:var(--font-heading);font-size:1.8rem;color:var(--white);margin-bottom:6px">Score Entry</h1>
+    <p style="color:rgba(255,255,255,.5);font-size:.9rem;margin-bottom:36px">Enter your team PIN to access the scorecard</p>
+
+    <div style="background:rgba(255,255,255,.05);border:1px solid rgba(201,168,76,.2);border-radius:var(--radius-xl);padding:36px">
+      <div style="font-size:.7rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin-bottom:16px">Team PIN</div>
+      <div class="pin-input-wrap" id="pinWrap">
+        <input class="pin-digit" type="tel" maxlength="1" data-index="0" inputmode="numeric" autocomplete="one-time-code">
+        <input class="pin-digit" type="tel" maxlength="1" data-index="1" inputmode="numeric">
+        <input class="pin-digit" type="tel" maxlength="1" data-index="2" inputmode="numeric">
+        <input class="pin-digit" type="tel" maxlength="1" data-index="3" inputmode="numeric">
+      </div>
+      <div id="loginError" style="color:#f87171;font-size:.82rem;margin-bottom:16px;min-height:20px"></div>
+      <button onclick="doLogin()" class="btn btn--gold" style="width:100%;justify-content:center" id="loginBtn">
+        <i class="fas fa-arrow-right-to-bracket"></i> Enter
+      </button>
+      <p style="font-size:.75rem;color:rgba(255,255,255,.25);margin-top:16px">Your PIN was provided by the tournament admin</p>
+    </div>
+  </div>
+</div>
+
+<!-- ── SCORECARD SCREEN ──────────────────────────────────────────────────────── -->
+<div id="scorecardScreen" class="d-none">
+  <!-- Header -->
+  <div class="page-hero" style="padding-bottom:40px">
+    <div class="container">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+        <div>
+          <div class="page-hero-tag" style="margin-bottom:8px;text-align:left"><i class="fas fa-pencil"></i> &nbsp; Score Entry</div>
+          <h1 class="page-hero-title" style="text-align:left;font-size:1.6rem" id="scTeamName">—</h1>
+          <p class="page-hero-sub" style="text-align:left" id="scPlayers">—</p>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <div style="text-align:right">
+            <div style="font-size:.7rem;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.1em">Holes done</div>
+            <div style="font-family:var(--font-heading);font-size:1.4rem;color:var(--gold-light)" id="scProgress">0 / 18</div>
+          </div>
+          <button onclick="doLogout()" class="btn btn--outline btn--sm">Logout</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scorecard grid -->
+  <section class="section" style="background:var(--off-white)">
+    <div class="container">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px">
+        <div>
+          <h2 style="font-family:var(--font-heading);font-size:1.3rem;color:var(--dark)">Your Scorecard</h2>
+          <p style="font-size:.82rem;color:var(--text-muted);margin-top:2px">Enter your score after completing each hole</p>
+        </div>
+        <div style="font-size:.82rem;color:var(--text-muted)">
+          <span style="color:var(--success)"><i class="fas fa-circle-check"></i></span> = Saved &nbsp;
+          <span style="color:var(--warning)"><i class="fas fa-camera"></i></span> = Photo required
+        </div>
+      </div>
+
+      <div class="score-entry-grid" id="holeGrid">
+        <!-- JS populated -->
+      </div>
+    </div>
+  </section>
+
+  <!-- Summary bar -->
+  <section class="section--sm" style="background:var(--dark);position:sticky;bottom:0;z-index:100;border-top:1px solid rgba(201,168,76,.2)">
+    <div class="container">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
+        <div style="display:flex;gap:32px">
+          <div style="text-align:center">
+            <div style="font-size:.65rem;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.12em">Total Score</div>
+            <div style="font-family:var(--font-heading);font-size:1.6rem;color:var(--gold-light)" id="summaryTotal">—</div>
+          </div>
+          <div style="text-align:center">
+            <div style="font-size:.65rem;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.12em">vs Par</div>
+            <div style="font-family:var(--font-heading);font-size:1.6rem;color:var(--gold-light)" id="summaryToPar">—</div>
+          </div>
+          <div style="text-align:center">
+            <div style="font-size:.65rem;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.12em">Holes</div>
+            <div style="font-family:var(--font-heading);font-size:1.6rem;color:var(--gold-light)" id="summaryHoles">0/18</div>
+          </div>
+        </div>
+        <a href="/scoreboard" class="btn btn--outline btn--sm"><i class="fas fa-list-ol"></i> Live Scoreboard</a>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- Hidden file input for photos -->
+<input type="file" id="photoInput" accept="image/*" capture="environment" style="display:none">
+
+<script>
+window.addEventListener('scroll', () => document.getElementById('navbar').classList.toggle('scrolled', window.scrollY > 40));
+document.getElementById('navToggle').addEventListener('click', () => document.getElementById('mobileMenu').classList.toggle('open'));
+
+// PIN input UX
+const digits = document.querySelectorAll('.pin-digit');
+digits.forEach((d, i) => {
+  d.addEventListener('input', e => {
+    const val = e.target.value.replace(/\D/g,'');
+    e.target.value = val;
+    if (val && i < digits.length - 1) digits[i+1].focus();
+    if (getPin().length === 4) doLogin();
+  });
+  d.addEventListener('keydown', e => {
+    if (e.key === 'Backspace' && !d.value && i > 0) digits[i-1].focus();
+  });
+});
+
+function getPin() {
+  return Array.from(digits).map(d => d.value).join('');
+}
+
+function showToast(msg, type='success') {
+  const t = document.createElement('div');
+  t.className = `toast toast--${type}`;
+  t.innerHTML = `<i class="fas fa-${type==='success'?'circle-check':type==='error'?'circle-xmark':'circle-info'}"></i> ${msg}`;
+  document.getElementById('toastContainer').appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
+
+// State
+let teamData = null;
+let holesData = [];
+let scoresData = {};
+let pendingPhotoHole = null;
+
+async function doLogin() {
+  const pin = getPin();
+  if (pin.length < 4) { document.getElementById('loginError').textContent = 'Please enter your 4-digit PIN'; return; }
+  const btn = document.getElementById('loginBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verifying...';
+  document.getElementById('loginError').textContent = '';
+  try {
+    const r = await fetch('/api/auth/team-login', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ pin })
+    });
+    const d = await r.json();
+    if (d.success) {
+      teamData = d.team;
+      await loadScorecard();
+      document.getElementById('loginScreen').classList.add('d-none');
+      document.getElementById('scorecardScreen').classList.remove('d-none');
+    } else {
+      document.getElementById('loginError').textContent = d.error || 'Invalid PIN';
+      digits.forEach(d => d.value = '');
+      digits[0].focus();
+    }
+  } catch(e) {
+    document.getElementById('loginError').textContent = 'Connection error. Please try again.';
+  }
+  btn.disabled = false;
+  btn.innerHTML = '<i class="fas fa-arrow-right-to-bracket"></i> Enter';
+}
+
+async function doLogout() {
+  await fetch('/api/auth/logout', { method: 'POST' });
+  location.reload();
+}
+
+async function loadScorecard() {
+  const r = await fetch('/api/team/scorecard');
+  const d = await r.json();
+  teamData = d.team;
+  holesData = d.holes;
+  d.scores.forEach(s => { scoresData[s.hole_number] = s; });
+  renderScorecard();
+}
+
+function renderScorecard() {
+  const grid = document.getElementById('holeGrid');
+  document.getElementById('scTeamName').textContent = teamData.team_name;
+  document.getElementById('scPlayers').textContent = teamData.player1 + ' & ' + teamData.player2;
+
+  let totalScore = 0, totalPar = 0, holesCompleted = 0;
+  Object.values(scoresData).forEach(s => {
+    if (s.score > 0) {
+      const h = holesData.find(h => h.hole_number === s.hole_number);
+      if (h) { totalScore += s.score; totalPar += h.par; holesCompleted++; }
+    }
+  });
+
+  document.getElementById('scProgress').textContent = holesCompleted + ' / 18';
+  document.getElementById('summaryHoles').textContent = holesCompleted + '/18';
+  document.getElementById('summaryTotal').textContent = holesCompleted > 0 ? totalScore : '—';
+  const toPar = totalScore - totalPar;
+  document.getElementById('summaryToPar').textContent = holesCompleted > 0 ? (toPar > 0 ? '+'+toPar : toPar === 0 ? 'E' : toPar) : '—';
+
+  grid.innerHTML = holesData.map(h => {
+    const saved = scoresData[h.hole_number];
+    const hasPhoto = saved && saved.photo_path;
+    const hasScore = saved && saved.score > 0;
+    const needsPhoto = h.requires_photo;
+
+    return `
+      <div class="hole-card ${hasScore ? 'done' : ''} ${needsPhoto && !hasPhoto ? 'photo-required' : ''}" id="hole-card-${h.hole_number}">
+        <div class="hole-number-badge">Hole ${h.hole_number}</div>
+        <div class="hole-par">Par ${h.par}</div>
+
+        ${needsPhoto ? `
+          <div class="hole-photo-btn ${hasPhoto ? 'uploaded' : ''}" onclick="triggerPhoto(${h.hole_number})" id="photobtn-${h.hole_number}">
+            ${hasPhoto
+              ? '<i class="fas fa-circle-check"></i> Photo saved'
+              : '<i class="fas fa-camera"></i> Upload photo first'}
+          </div>
+          ${hasPhoto ? `<img class="photo-preview" src="${saved.photo_path}" alt="Hole ${h.hole_number} photo" id="photopreview-${h.hole_number}">` : ''}
+        ` : ''}
+
+        <div class="score-stepper">
+          <button class="stepper-btn" onclick="changeScore(${h.hole_number},-1)" ${needsPhoto && !hasPhoto ? 'disabled' : ''}>−</button>
+          <input class="stepper-val" type="number" min="1" max="20" id="score-${h.hole_number}"
+            value="${hasScore ? saved.score : ''}"
+            placeholder="${needsPhoto && !hasPhoto ? '—' : h.par}"
+            ${needsPhoto && !hasPhoto ? 'disabled' : ''}
+            onchange="submitScore(${h.hole_number})">
+          <button class="stepper-btn" onclick="changeScore(${h.hole_number},1)" ${needsPhoto && !hasPhoto ? 'disabled' : ''}>+</button>
+        </div>
+
+        <button onclick="submitScore(${h.hole_number})" class="btn btn--gold btn--sm" style="width:100%;justify-content:center;font-size:.75rem"
+          id="savebtn-${h.hole_number}"
+          ${needsPhoto && !hasPhoto ? 'disabled' : ''}>
+          ${hasScore ? '<i class="fas fa-circle-check"></i> Saved' : '<i class="fas fa-floppy-disk"></i> Save'}
+        </button>
+      </div>`;
+  }).join('');
+}
+
+function changeScore(holeNum, delta) {
+  const input = document.getElementById('score-' + holeNum);
+  const current = parseInt(input.value) || 0;
+  const newVal = Math.max(1, Math.min(20, current + delta));
+  input.value = newVal;
+  submitScore(holeNum);
+}
+
+async function submitScore(holeNum) {
+  const input = document.getElementById('score-' + holeNum);
+  const score = parseInt(input.value);
+  if (!score || score < 1) return;
+
+  const btn = document.getElementById('savebtn-' + holeNum);
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+  btn.disabled = true;
+
+  try {
+    const r = await fetch('/api/team/submit-score', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ hole_number: holeNum, score })
+    });
+    const d = await r.json();
+    if (d.success) {
+      if (!scoresData[holeNum]) scoresData[holeNum] = {};
+      scoresData[holeNum].score = score;
+      scoresData[holeNum].hole_number = holeNum;
+      renderScorecard();
+    } else {
+      showToast(d.error || 'Failed to save score', 'error');
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-floppy-disk"></i> Save';
+    }
+  } catch(e) {
+    showToast('Connection error', 'error');
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-floppy-disk"></i> Save';
+  }
+}
+
+// Photo upload
+function triggerPhoto(holeNum) {
+  pendingPhotoHole = holeNum;
+  document.getElementById('photoInput').click();
+}
+
+document.getElementById('photoInput').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file || !pendingPhotoHole) return;
+
+  const holeNum = pendingPhotoHole;
+  const btn = document.getElementById('photobtn-' + holeNum);
+  if (btn) { btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...'; }
+
+  const fd = new FormData();
+  fd.append('photo', file);
+
+  try {
+    const r = await fetch('/api/team/upload-photo/' + holeNum, { method: 'POST', body: fd });
+    const d = await r.json();
+    if (d.success) {
+      if (!scoresData[holeNum]) scoresData[holeNum] = {};
+      scoresData[holeNum].photo_path = d.photo_path;
+      showToast('Photo uploaded for hole ' + holeNum + '!', 'success');
+      renderScorecard();
+    } else {
+      showToast(d.error || 'Upload failed', 'error');
+    }
+  } catch(e) {
+    showToast('Upload failed — check connection', 'error');
+  }
+  e.target.value = '';
+  pendingPhotoHole = null;
+});
+
+// Auto-detect if already logged in
+async function checkSession() {
+  try {
+    const r = await fetch('/api/auth/status');
+    const d = await r.json();
+    if (d.type === 'team') {
+      teamData = d.team;
+      await loadScorecard();
+      document.getElementById('loginScreen').classList.add('d-none');
+      document.getElementById('scorecardScreen').classList.remove('d-none');
+    }
+  } catch(_) {}
+}
+
+checkSession();
+</script>
+</body>
+</html>

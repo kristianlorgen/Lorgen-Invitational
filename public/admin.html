@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Panel — Lorgen Invitational</title>
+  <link rel="icon" type="image/png" href="/images/logo.png">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    body { background: var(--off-white); }
+    .data-table { width:100%;border-collapse:collapse;font-size:.875rem; }
+    .data-table th { background:var(--dark);color:var(--gold-light);padding:10px 14px;text-align:left;font-size:.72rem;letter-spacing:.1em;text-transform:uppercase; }
+    .data-table td { padding:10px 14px;border-bottom:1px solid var(--gold-border);vertical-align:middle; }
+    .data-table tr:hover td { background:var(--gold-pale); }
+    .data-table tr:last-child td { border-bottom:none; }
+    .inline-form { display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap; }
+    .inline-form .form-group { margin:0;flex:1;min-width:120px; }
+  </style>
+</head>
+<body>
+
+<!-- Toast -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- ── LOGIN ─────────────────────────────────────────────────────────────────── -->
+<div id="adminLogin" style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:linear-gradient(160deg,var(--dark),var(--dark-mid))">
+  <div style="max-width:400px;width:100%;text-align:center">
+    <img src="/images/logo.png" style="height:72px;margin:0 auto 24px;filter:drop-shadow(0 0 12px rgba(201,168,76,.5))">
+    <h1 style="font-family:var(--font-heading);font-size:1.6rem;color:var(--white);margin-bottom:4px">Admin Panel</h1>
+    <p style="color:rgba(255,255,255,.45);font-size:.85rem;margin-bottom:32px">Tournament administration access</p>
+    <div style="background:rgba(255,255,255,.06);border:1px solid rgba(201,168,76,.2);border-radius:var(--radius-xl);padding:32px">
+      <div class="form-group" style="text-align:left">
+        <label class="form-label" style="color:rgba(255,255,255,.7)">Admin Password</label>
+        <input type="password" class="form-input" id="adminPass" placeholder="Enter password" style="background:rgba(255,255,255,.08);border-color:rgba(201,168,76,.3);color:var(--white);" onkeydown="if(event.key==='Enter')doAdminLogin()">
+      </div>
+      <div id="adminLoginErr" style="color:#f87171;font-size:.82rem;margin-bottom:12px;min-height:18px"></div>
+      <button onclick="doAdminLogin()" class="btn btn--gold" style="width:100%;justify-content:center" id="adminLoginBtn">
+        <i class="fas fa-lock-open"></i> Login
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── ADMIN PANEL ──────────────────────────────────────────────────────────── -->
+<div id="adminPanel" class="d-none">
+
+  <!-- Top bar -->
+  <div style="position:fixed;top:0;left:0;right:0;height:var(--nav-height);background:var(--dark);border-bottom:1px solid rgba(201,168,76,.2);z-index:1000;display:flex;align-items:center;padding:0 24px;gap:16px">
+    <img src="/images/logo.png" style="height:40px">
+    <span style="font-family:var(--font-heading);font-size:1rem;color:var(--gold-light);flex:1">Admin Panel</span>
+    <a href="/" class="btn btn--outline btn--sm">← Site</a>
+    <button onclick="doAdminLogout()" class="btn btn--sm" style="background:rgba(255,255,255,.08);color:rgba(255,255,255,.6);border:1px solid rgba(255,255,255,.12)">Logout</button>
+  </div>
+
+  <div class="admin-layout" style="margin-top:var(--nav-height)">
+
+    <!-- Sidebar -->
+    <div class="admin-sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-label">Overview</div>
+        <div class="sidebar-link active" onclick="showPanel('dashboard')"><i class="fas fa-gauge"></i> Dashboard</div>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Tournament</div>
+        <div class="sidebar-link" onclick="showPanel('tournament')"><i class="fas fa-calendar-star"></i> Tournaments</div>
+        <div class="sidebar-link" onclick="showPanel('teams')"><i class="fas fa-users"></i> Teams</div>
+        <div class="sidebar-link" onclick="showPanel('holes')"><i class="fas fa-golf-ball-tee"></i> Holes &amp; Course</div>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Live Day</div>
+        <div class="sidebar-link" onclick="showPanel('scores')"><i class="fas fa-list-ol"></i> Scores</div>
+        <div class="sidebar-link" onclick="showPanel('awards')"><i class="fas fa-trophy"></i> Awards</div>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">History</div>
+        <div class="sidebar-link" onclick="showPanel('legacy')"><i class="fas fa-crown"></i> Legacy</div>
+      </div>
+    </div>
+
+    <!-- Content -->
+    <div class="admin-content">
+
+      <!-- ── DASHBOARD ─────────────────────────────────────────────────────── -->
+      <div class="admin-panel active" id="panel-dashboard">
+        <div class="admin-panel-title">Dashboard</div>
+        <div class="admin-panel-sub">Overview of the current tournament</div>
+        <div class="stats-row" id="dashStats">
+          <div class="stat-card"><div class="stat-num" id="statTournaments">—</div><div class="stat-label">Tournaments</div></div>
+          <div class="stat-card"><div class="stat-num" id="statTeams">—</div><div class="stat-label">Teams</div></div>
+          <div class="stat-card"><div class="stat-num" id="statScores">—</div><div class="stat-label">Scores Entered</div></div>
+          <div class="stat-card"><div class="stat-num" id="statLegacy">—</div><div class="stat-label">Champions</div></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><strong>Active Tournament</strong></div>
+          <div class="card-body" id="dashActiveTournament">
+            <p style="color:var(--text-muted)">No active tournament. Create one in the Tournaments tab.</p>
+          </div>
+        </div>
+        <div style="margin-top:20px;display:flex;gap:12px;flex-wrap:wrap">
+          <a href="/scoreboard" target="_blank" class="btn btn--gold btn--sm"><i class="fas fa-list-ol"></i> Live Scoreboard</a>
+          <button onclick="showPanel('teams')" class="btn btn--dark btn--sm"><i class="fas fa-users"></i> Manage Teams</button>
+          <button onclick="showPanel('holes')" class="btn btn--dark btn--sm"><i class="fas fa-golf-ball-tee"></i> Configure Holes</button>
+        </div>
+      </div>
+
+      <!-- ── TOURNAMENTS ──────────────────────────────────────────────────── -->
+      <div class="admin-panel" id="panel-tournament">
+        <div class="admin-panel-title">Tournaments</div>
+        <div class="admin-panel-sub">Create and manage tournament editions</div>
+
+        <!-- Create form -->
+        <div class="card" style="margin-bottom:24px">
+          <div class="card-header"><strong>Create New Tournament</strong></div>
+          <div class="card-body">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px">
+              <div class="form-group"><label class="form-label">Year</label><input class="form-input" id="tYear" type="number" min="2020" max="2050" placeholder="2025"></div>
+              <div class="form-group"><label class="form-label">Tournament Name</label><input class="form-input" id="tName" type="text" placeholder="Lorgen Invitational 2025"></div>
+              <div class="form-group"><label class="form-label">Date</label><input class="form-input" id="tDate" type="date"></div>
+              <div class="form-group"><label class="form-label">Course</label><input class="form-input" id="tCourse" type="text" placeholder="e.g. Bogstad Golf Club"></div>
+              <div class="form-group" style="grid-column:1/-1"><label class="form-label">Description</label><textarea class="form-input form-textarea" id="tDesc" placeholder="Short description for the homepage..." style="min-height:70px"></textarea></div>
+            </div>
+            <div style="margin-top:16px">
+              <button onclick="createTournament()" class="btn btn--gold btn--sm"><i class="fas fa-plus"></i> Create Tournament</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- List -->
+        <div class="card">
+          <div class="card-header"><strong>All Tournaments</strong></div>
+          <div style="overflow-x:auto">
+            <table class="data-table">
+              <thead><tr><th>Year</th><th>Name</th><th>Date</th><th>Course</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody id="tournamentsTable"><tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── TEAMS ─────────────────────────────────────────────────────────── -->
+      <div class="admin-panel" id="panel-teams">
+        <div class="admin-panel-title">Teams</div>
+        <div class="admin-panel-sub">Add and manage participating teams and their PINs</div>
+
+        <div class="card" style="margin-bottom:24px">
+          <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
+            <strong>Tournament</strong>
+          </div>
+          <div class="card-body">
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Select Tournament</label>
+              <select class="form-select" id="teamsTournamentSelect" onchange="loadTeams()">
+                <option value="">— Select tournament —</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:24px" id="addTeamCard" class="d-none">
+          <div class="card-header"><strong>Add Team</strong></div>
+          <div class="card-body">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px">
+              <div class="form-group"><label class="form-label">Team Name</label><input class="form-input" id="newTeamName" placeholder="Team Eagles"></div>
+              <div class="form-group"><label class="form-label">Player 1</label><input class="form-input" id="newPlayer1" placeholder="First name"></div>
+              <div class="form-group"><label class="form-label">Player 2</label><input class="form-input" id="newPlayer2" placeholder="First name"></div>
+              <div class="form-group">
+                <label class="form-label">PIN (4 digits)</label>
+                <input class="form-input" id="newPin" type="text" maxlength="4" pattern="[0-9]{4}" placeholder="1234" inputmode="numeric">
+                <div class="form-hint">Unique within this tournament</div>
+              </div>
+            </div>
+            <div style="margin-top:16px;display:flex;gap:10px">
+              <button onclick="addTeam()" class="btn btn--gold btn--sm"><i class="fas fa-plus"></i> Add Team</button>
+              <button onclick="generatePin()" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-dice"></i> Random PIN</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" id="teamsListCard">
+          <div class="card-header"><strong>Teams</strong> <span id="teamCount" style="color:var(--text-muted);font-size:.82rem"></span></div>
+          <div style="overflow-x:auto">
+            <table class="data-table">
+              <thead><tr><th>#</th><th>Team Name</th><th>Player 1</th><th>Player 2</th><th>PIN</th><th>Actions</th></tr></thead>
+              <tbody id="teamsTable"><tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Select a tournament above</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── HOLES ──────────────────────────────────────────────────────────── -->
+      <div class="admin-panel" id="panel-holes">
+        <div class="admin-panel-title">Holes &amp; Course</div>
+        <div class="admin-panel-sub">Set par values and mark which holes require a photo upload</div>
+
+        <div class="card" style="margin-bottom:24px">
+          <div class="card-body">
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Select Tournament</label>
+              <select class="form-select" id="holesTournamentSelect" onchange="loadHoles()">
+                <option value="">— Select tournament —</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" id="holesConfig" class="d-none">
+          <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
+            <strong>Hole Configuration</strong>
+            <button onclick="saveHoles()" class="btn btn--gold btn--sm"><i class="fas fa-floppy-disk"></i> Save All</button>
+          </div>
+          <div class="card-body">
+            <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:20px">
+              <i class="fas fa-info-circle" style="color:var(--gold)"></i>
+              Set the par for each hole and tick "📸 Photo" to make photo upload mandatory before score entry on that hole.
+            </p>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:12px" id="holesGrid">
+              <!-- Populated by JS -->
+            </div>
+            <div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--gold-border);display:flex;gap:12px;flex-wrap:wrap">
+              <button onclick="setAllPar(3)" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)">All Par 3</button>
+              <button onclick="setAllPar(4)" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)">All Par 4</button>
+              <button onclick="setAllPar(5)" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)">All Par 5</button>
+              <button onclick="clearAllPhotos()" class="btn btn--outline btn--sm" style="color:var(--danger);border-color:#fecaca">Clear All Photos</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── SCORES ──────────────────────────────────────────────────────────── -->
+      <div class="admin-panel" id="panel-scores">
+        <div class="admin-panel-title">Scores</div>
+        <div class="admin-panel-sub">View and override submitted scores, view photo challenges</div>
+
+        <div class="card" style="margin-bottom:24px">
+          <div class="card-body">
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Select Tournament</label>
+              <select class="form-select" id="scoresTournamentSelect" onchange="loadScores()">
+                <option value="">— Select tournament —</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
+            <strong>Submitted Scores</strong>
+            <button onclick="loadScores()" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-rotate-right"></i> Refresh</button>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="data-table">
+              <thead><tr><th>Team</th><th>Players</th><th>Hole</th><th>Par</th><th>Score</th><th>+/−</th><th>Photo</th><th>Actions</th></tr></thead>
+              <tbody id="scoresTable"><tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted)">Select a tournament above</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── AWARDS ──────────────────────────────────────────────────────────── -->
+      <div class="admin-panel" id="panel-awards">
+        <div class="admin-panel-title">Awards</div>
+        <div class="admin-panel-sub">Assign Longest Drive and Closest to Pin winners</div>
+
+        <div class="card" style="margin-bottom:24px">
+          <div class="card-body">
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Select Tournament</label>
+              <select class="form-select" id="awardsTournamentSelect" onchange="loadAwards()">
+                <option value="">— Select tournament —</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:24px">
+          <div class="card-header"><strong>Assign Award</strong></div>
+          <div class="card-body">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px">
+              <div class="form-group">
+                <label class="form-label">Award Type</label>
+                <select class="form-select" id="awardType">
+                  <option value="longest_drive">🏌️ Longest Drive</option>
+                  <option value="closest_to_pin">🎯 Closest to Pin</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Hole Number</label>
+                <input class="form-input" id="awardHole" type="number" min="1" max="18" placeholder="e.g. 7">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Winning Team</label>
+                <select class="form-select" id="awardTeam">
+                  <option value="">— Select team —</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Detail (optional)</label>
+                <input class="form-input" id="awardDetail" placeholder="e.g. 285m / 1.2m">
+              </div>
+            </div>
+            <div style="margin-top:16px">
+              <button onclick="saveAward()" class="btn btn--gold btn--sm"><i class="fas fa-trophy"></i> Assign Award</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><strong>Current Awards</strong></div>
+          <div style="overflow-x:auto">
+            <table class="data-table">
+              <thead><tr><th>Type</th><th>Hole</th><th>Winner</th><th>Detail</th><th>Actions</th></tr></thead>
+              <tbody id="awardsTable"><tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-muted)">Select a tournament above</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── LEGACY ──────────────────────────────────────────────────────────── -->
+      <div class="admin-panel" id="panel-legacy">
+        <div class="admin-panel-title">Legacy</div>
+        <div class="admin-panel-sub">Manage the Hall of Fame — past tournament champions</div>
+
+        <div class="card" style="margin-bottom:24px">
+          <div class="card-header"><strong>Add Legacy Entry</strong></div>
+          <div class="card-body">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px">
+              <div class="form-group"><label class="form-label">Year</label><input class="form-input" id="lYear" type="number" placeholder="2024"></div>
+              <div class="form-group"><label class="form-label">Winner Team Name</label><input class="form-input" id="lTeam" placeholder="Team Eagles"></div>
+              <div class="form-group"><label class="form-label">Player 1</label><input class="form-input" id="lP1" placeholder="Name"></div>
+              <div class="form-group"><label class="form-label">Player 2</label><input class="form-input" id="lP2" placeholder="Name"></div>
+              <div class="form-group"><label class="form-label">Total Score</label><input class="form-input" id="lScore" placeholder="e.g. 62"></div>
+              <div class="form-group"><label class="form-label">Score to Par</label><input class="form-input" id="lToPar" placeholder="e.g. -10 or E or +2"></div>
+              <div class="form-group"><label class="form-label">Course</label><input class="form-input" id="lCourse" placeholder="Course name"></div>
+              <div class="form-group"><label class="form-label">Notes</label><input class="form-input" id="lNotes" placeholder="Optional notes"></div>
+            </div>
+            <div style="margin-top:16px">
+              <button onclick="addLegacy()" class="btn btn--gold btn--sm"><i class="fas fa-plus"></i> Add to Legacy</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><strong>Hall of Fame</strong></div>
+          <div style="overflow-x:auto">
+            <table class="data-table">
+              <thead><tr><th>Year</th><th>Champions</th><th>Players</th><th>Score</th><th>+/−</th><th>Course</th><th>Actions</th></tr></thead>
+              <tbody id="legacyTable"><tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted)">Loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /admin-content -->
+  </div><!-- /admin-layout -->
+</div><!-- /adminPanel -->
+
+<script>
+// ── Utilities ──────────────────────────────────────────────────────────────────
+function showToast(msg, type='success') {
+  const t = document.createElement('div');
+  t.className = `toast toast--${type}`;
+  t.innerHTML = `<i class="fas fa-${type==='success'?'circle-check':type==='error'?'circle-xmark':'circle-info'}"></i> ${msg}`;
+  document.getElementById('toastContainer').appendChild(t);
+  setTimeout(() => t.remove(), 4500);
+}
+
+async function api(url, options={}) {
+  const r = await fetch(url, {
+    headers: {'Content-Type':'application/json'},
+    ...options
+  });
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error || 'Request failed');
+  return d;
+}
+
+// ── Auth ───────────────────────────────────────────────────────────────────────
+async function doAdminLogin() {
+  const pw = document.getElementById('adminPass').value;
+  const btn = document.getElementById('adminLoginBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+  document.getElementById('adminLoginErr').textContent = '';
+  try {
+    const d = await api('/api/auth/admin-login', { method:'POST', body: JSON.stringify({password:pw}) });
+    if (d.success) {
+      document.getElementById('adminLogin').classList.add('d-none');
+      document.getElementById('adminPanel').classList.remove('d-none');
+      await initAdmin();
+    }
+  } catch(e) {
+    document.getElementById('adminLoginErr').textContent = e.message || 'Invalid password';
+  }
+  btn.disabled = false;
+  btn.innerHTML = '<i class="fas fa-lock-open"></i> Login';
+}
+document.getElementById('adminPass').addEventListener('keydown', e => { if(e.key==='Enter') doAdminLogin(); });
+
+async function doAdminLogout() {
+  await fetch('/api/auth/logout', {method:'POST'});
+  location.reload();
+}
+
+// Check existing session
+(async () => {
+  try {
+    const d = await api('/api/auth/status');
+    if (d.type === 'admin') {
+      document.getElementById('adminLogin').classList.add('d-none');
+      document.getElementById('adminPanel').classList.remove('d-none');
+      await initAdmin();
+    }
+  } catch(_) {}
+})();
+
+// ── Panel navigation ───────────────────────────────────────────────────────────
+function showPanel(id) {
+  document.querySelectorAll('.admin-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.sidebar-link').forEach(l => l.classList.remove('active'));
+  document.getElementById('panel-' + id).classList.add('active');
+  const links = document.querySelectorAll('.sidebar-link');
+  links.forEach(l => { if(l.getAttribute('onclick') && l.getAttribute('onclick').includes("'"+id+"'")) l.classList.add('active'); });
+}
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let allTournaments = [];
+
+async function initAdmin() {
+  await loadTournaments();
+  await loadDashboard();
+  await loadLegacy();
+}
+
+// ── Tournaments ───────────────────────────────────────────────────────────────
+async function loadTournaments() {
+  const d = await api('/api/admin/tournaments');
+  allTournaments = d.tournaments;
+  renderTournamentsTable();
+  populateTournamentSelects();
+}
+
+function populateTournamentSelects() {
+  const selects = ['teamsTournamentSelect','holesTournamentSelect','scoresTournamentSelect','awardsTournamentSelect'];
+  selects.forEach(id => {
+    const sel = document.getElementById(id);
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">— Select tournament —</option>' +
+      allTournaments.map(t => `<option value="${t.id}">${t.name} (${t.year}) - ${t.status}</option>`).join('');
+    if (cur) sel.value = cur;
+  });
+}
+
+function renderTournamentsTable() {
+  const tbody = document.getElementById('tournamentsTable');
+  if (!allTournaments.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">No tournaments yet</td></tr>';
+    return;
+  }
+  tbody.innerHTML = allTournaments.map(t => `
+    <tr>
+      <td><strong>${t.year}</strong></td>
+      <td>${t.name}</td>
+      <td>${new Date(t.date).toLocaleDateString('en-GB')}</td>
+      <td>${t.course || '—'}</td>
+      <td>
+        <select onchange="changeTournamentStatus(${t.id},this.value)" style="padding:4px 8px;border:1px solid var(--gold-border);border-radius:4px;font-size:.8rem">
+          <option ${t.status==='upcoming'?'selected':''}>upcoming</option>
+          <option ${t.status==='active'?'selected':''}>active</option>
+          <option ${t.status==='completed'?'selected':''}>completed</option>
+        </select>
+      </td>
+      <td>
+        <button onclick="deleteTournament(${t.id},'${t.name}')" class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
+      </td>
+    </tr>`).join('');
+}
+
+async function createTournament() {
+  const year=document.getElementById('tYear').value,
+        name=document.getElementById('tName').value,
+        date=document.getElementById('tDate').value,
+        course=document.getElementById('tCourse').value,
+        description=document.getElementById('tDesc').value;
+  if (!year||!name||!date) { showToast('Year, name and date are required','error'); return; }
+  try {
+    await api('/api/admin/tournament',{method:'POST',body:JSON.stringify({year,name,date,course,description})});
+    showToast('Tournament created!');
+    ['tYear','tName','tDate','tCourse','tDesc'].forEach(id => document.getElementById(id).value='');
+    await loadTournaments();
+    await loadDashboard();
+  } catch(e) { showToast(e.message,'error'); }
+}
+
+async function changeTournamentStatus(id, status) {
+  const t = allTournaments.find(x=>x.id===id);
+  if (!t) return;
+  try {
+    await api('/api/admin/tournament/'+id,{method:'PUT',body:JSON.stringify({...t,status})});
+    showToast('Status updated to "'+status+'"');
+    await loadTournaments();
+    await loadDashboard();
+  } catch(e) { showToast(e.message,'error'); }
+}
+
+async function deleteTournament(id, name) {
+  if (!confirm(`Delete "${name}" and ALL its data? This cannot be undone.`)) return;
+  try {
+    await api('/api/admin/tournament/'+id,{method:'DELETE'});
+    showToast('Tournament deleted');
+    await loadTournaments();
+    await loadDashboard();
+  } catch(e) { showToast(e.message,'error'); }
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+async function loadDashboard() {
+  document.getElementById('statTournaments').textContent = allTournaments.length;
+  const active = allTournaments.find(t => t.status === 'active');
+  const legacy = await api('/api/admin/legacy');
+  document.getElementById('statLegacy').textContent = legacy.legacy.length;
+
+  if (active) {
+    const teams = await api('/api/admin/tournament/'+active.id+'/teams');
+    const scores = await api('/api/admin/tournament/'+active.id+'/scores');
+    document.getElementById('statTeams').textContent = teams.teams.length;
+    document.getElementById('statScores').textContent = scores.scores.length;
+    document.getElementById('dashActiveTournament').innerHTML = `
+      <div style="display:flex;gap:16px;flex-wrap:wrap">
+        <div><div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em">Name</div><strong>${active.name}</strong></div>
+        <div><div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em">Date</div><strong>${new Date(active.date).toLocaleDateString('en-GB')}</strong></div>
+        <div><div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em">Course</div><strong>${active.course||'—'}</strong></div>
+        <div><div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em">Status</div><span class="badge badge--active">Active</span></div>
+      </div>`;
+  } else {
+    const upcoming = allTournaments.find(t => t.status === 'upcoming');
+    if (upcoming) {
+      document.getElementById('dashActiveTournament').innerHTML = `<p>Next up: <strong>${upcoming.name}</strong> on ${new Date(upcoming.date).toLocaleDateString('en-GB')} — status is "upcoming"</p>`;
+    } else {
+      document.getElementById('dashActiveTournament').innerHTML = '<p style="color:var(--text-muted)">No active tournament. Create one in the Tournaments tab, then set its status to "active".</p>';
+    }
+    document.getElementById('statTeams').textContent = '—';
+    document.getElementById('statScores').textContent = '—';
+  }
+}
+
+// ── Teams ─────────────────────────────────────────────────────────────────────
+async function loadTeams() {
+  const tid = document.getElementById('teamsTournamentSelect').value;
+  if (!tid) return;
+  document.getElementById('addTeamCard').classList.remove('d-none');
+  const d = await api('/api/admin/tournament/'+tid+'/teams');
+  const teams = d.teams;
+  document.getElementById('teamCount').textContent = `(${teams.length} teams)`;
+  document.getElementById('teamsTable').innerHTML = teams.length === 0
+    ? '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">No teams yet. Add one above.</td></tr>'
+    : teams.map((t,i) => `
+        <tr>
+          <td>${i+1}</td>
+          <td><strong>${t.team_name}</strong></td>
+          <td>${t.player1}</td>
+          <td>${t.player2}</td>
+          <td><code style="background:var(--light);padding:2px 8px;border-radius:4px;font-weight:700">${t.pin_code}</code></td>
+          <td><button onclick="deleteTeam(${t.id},'${t.team_name}')" class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button></td>
+        </tr>`).join('');
+}
+
+async function addTeam() {
+  const tid = document.getElementById('teamsTournamentSelect').value;
+  if (!tid) { showToast('Select a tournament first','error'); return; }
+  const team_name=document.getElementById('newTeamName').value,
+        player1=document.getElementById('newPlayer1').value,
+        player2=document.getElementById('newPlayer2').value,
+        pin_code=document.getElementById('newPin').value;
+  if (!team_name||!player1||!player2||!pin_code) { showToast('All fields required','error'); return; }
+  if (!/^\d{4}$/.test(pin_code)) { showToast('PIN must be exactly 4 digits','error'); return; }
+  try {
+    await api('/api/admin/team',{method:'POST',body:JSON.stringify({tournament_id:tid,team_name,player1,player2,pin_code})});
+    showToast('Team added!');
+    ['newTeamName','newPlayer1','newPlayer2','newPin'].forEach(id=>document.getElementById(id).value='');
+    await loadTeams();
+    await loadDashboard();
+    // Also refresh award team select if visible
+    loadAwardTeams();
+  } catch(e) { showToast(e.message,'error'); }
+}
+
+async function deleteTeam(id, name) {
+  if (!confirm(`Delete team "${name}"? Their scores will also be deleted.`)) return;
+  try {
+    await api('/api/admin/team/'+id,{method:'DELETE'});
+    showToast('Team deleted');
+    await loadTeams();
+  } catch(e) { showToast(e.message,'error'); }
+}
+
+function generatePin() {
+  document.getElementById('newPin').value = String(Math.floor(1000+Math.random()*9000));
+}
+
+// ── Holes ─────────────────────────────────────────────────────────────────────
+let holesConfig = [];
+
+async function loadHoles() {
+  const tid = document.getElementById('holesTournamentSelect').value;
+  if (!tid) return;
+  const d = await api('/api/admin/tournament/'+tid+'/holes');
+  holesConfig = d.holes;
+  document.getElementById('holesConfig').classList.remove('d-none');
+  renderHolesGrid();
+}
+
+function renderHolesGrid() {
+  document.getElementById('holesGrid').innerHTML = holesConfig.map(h => `
+    <div style="background:var(--white);border:1px solid var(--gold-border);border-radius:var(--radius);padding:14px 10px;text-align:center">
+      <div style="font-size:.72rem;font-weight:700;color:var(--text-muted);margin-bottom:8px;letter-spacing:.08em">HOLE ${h.hole_number}</div>
+      <div style="font-size:.72rem;color:var(--text-muted);margin-bottom:4px">Par</div>
+      <select id="h-par-${h.hole_number}" style="width:100%;padding:4px;border:1px solid var(--gold-border);border-radius:4px;text-align:center">
+        <option ${h.par===3?'selected':''}>3</option>
+        <option ${h.par===4?'selected':''}>4</option>
+        <option ${h.par===5?'selected':''}>5</option>
+      </select>
+      <label style="display:flex;align-items:center;justify-content:center;gap:4px;margin-top:10px;font-size:.72rem;color:var(--text-muted);cursor:pointer">
+        <input type="checkbox" id="h-photo-${h.hole_number}" ${h.requires_photo?'checked':''} style="accent-color:var(--gold)">
+        📸 Photo
+      </label>
+    </div>`).join('');
+}
+
+async function saveHoles() {
+  const tid = document.getElementById('holesTournamentSelect').value;
+  if (!tid) return;
+  const holes = holesConfig.map(h => ({
+    hole_number: h.hole_number,
+    par: parseInt(document.getElementById('h-par-'+h.hole_number).value),
+    requires_photo: document.getElementById('h-photo-'+h.hole_number).checked
+  }));
+  try {
+    await api('/api/admin/tournament/'+tid+'/holes',{method:'POST',body:JSON.stringify({holes})});
+    showToast('Hole configuration saved!');
+    await loadHoles();
+  } catch(e) { showToast(e.message,'error'); }
+}
+
+function setAllPar(par) {
+  holesConfig.forEach(h => { const el=document.getElementById('h-par-'+h.hole_number); if(el) el.value=par; });
+}
+function clearAllPhotos() {
+  holesConfig.forEach(h => { const el=document.getElementById('h-photo-'+h.hole_number); if(el) el.checked=false; });
+}
+
+// ── Scores ────────────────────────────────────────────────────────────────────
+async function loadScores() {
+  const tid = document.getElementById('scoresTournamentSelect').value;
+  if (!tid) return;
+  const d = await api('/api/admin/tournament/'+tid+'/scores');
+  const tbody = document.getElementById('scoresTable');
+  if (!d.scores.length) {
+    tbody.innerHTML='<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted)">No scores submitted yet</td></tr>';
+    return;
+  }
+  tbody.innerHTML = d.scores.map(s => {
+    const diff = s.score - s.par;
+    const parStr = diff>0?`+${diff}`:diff===0?'E':diff;
+    return `
+      <tr>
+        <td><strong>${s.team_name}</strong></td>
+        <td style="font-size:.82rem;color:var(--text-muted)">${s.player1} &amp; ${s.player2}</td>
+        <td style="text-align:center">${s.hole_number}</td>
+        <td style="text-align:center">${s.par}</td>
+        <td style="text-align:center">
+          <input type="number" min="1" max="20" value="${s.score}" id="sc-${s.id}"
+            style="width:60px;padding:4px;border:1px solid var(--gold-border);border-radius:4px;text-align:center">
+        </td>
+        <td style="text-align:center;font-weight:600;color:${diff<0?'var(--success)':diff>0?'var(--danger)':'var(--text)'}">${parStr}</td>
+        <td style="text-align:center">
+          ${s.photo_path ? `<a href="${s.photo_path}" target="_blank" class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)"><i class="fas fa-image"></i></a>` : '—'}
+        </td>
+        <td style="display:flex;gap:6px">
+          <button onclick="updateScore(${s.id})" class="btn btn--sm" style="background:var(--success);color:white;border:none"><i class="fas fa-check"></i></button>
+          <button onclick="deleteScore(${s.id})" class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+async function updateScore(id) {
+  const score = parseInt(document.getElementById('sc-'+id).value);
+  try {
+    await api('/api/admin/score/'+id,{method:'PUT',body:JSON.stringify({score})});
+    showToast('Score updated');
+    await loadScores();
+  } catch(e) { showToast(e.message,'error'); }
+}
+
+async function deleteScore(id) {
+  if (!confirm('Delete this score entry?')) return;
+  try {
+    await api('/api/admin/score/'+id,{method:'DELETE'});
+    showToast('Score deleted');
+    await loadScores();
+  } catch(e) { showToast(e.message,'error'); }
+}
+
+// ── Awards ────────────────────────────────────────────────────────────────────
+async function loadAwards() {
+  const tid = document.getElementById('awardsTournamentSelect').value;
+  if (!tid) return;
+  await loadAwardTeams();
+  const d = await api('/api/admin/tournament/'+tid+'/awards');
+  const tbody = document.getElementById('awardsTable');
+  const typeLabels = { 'longest_drive':'🏌️ Longest Drive', 'closest_to_pin':'🎯 Closest to Pin' };
+  tbody.innerHTML = !d.awards.length
+    ? '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-muted)">No awards assigned yet</td></tr>'
+    : d.awards.map(a => `
+        <tr>
+          <td>${typeLabels[a.award_type]||a.award_type}</td>
+          <td style="text-align:center">${a.hole_number||'—'}</td>
+          <td><strong>${a.team_name||'—'}</strong></td>
+          <td style="font-style:italic;color:var(--text-muted)">${a.detail||'—'}</td>
+          <td><button onclick="deleteAward(${a.id})" class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button></td>
+        </tr>`).join('');
+}
+
+async function loadAwardTeams() {
+  const tid = document.getElementById('awardsTournamentSelect').value;
+  if (!tid) return;
+  try {
+    const d = await api('/api/admin/tournament/'+tid+'/teams');
+    document.getElementById('awardTeam').innerHTML =
+      '<option value="">— Select team —</option>' +
+      d.teams.map(t => `<option value="${t.id}">${t.team_name} (${t.player1} & ${t.player2})</option>`).join('');
+  } catch(_) {}
+}
+
+async function saveAward() {
+  const tid = document.getElementById('awardsTournamentSelect').value;
+  if (!tid) { showToast('Select a tournament first','error'); return; }
+  const award_type=document.getElementById('awardType').value,
+        hole_number=document.getElementById('awardHole').value,
+        team_id=document.getElementById('awardTeam').value,
+        detail=document.getElementById('awardDetail').value;
+  if (!team_id) { showToast('Please select a team','error'); return; }
+  try {
+    await api('/api/admin/award',{method:'POST',body:JSON.stringify({tournament_id:tid,award_type,team_id,hole_number,detail})});
+    showToast('Award assigned!');
+    ['awardHole','awardDetail'].forEach(id=>document.getElementById(id).value='');
+    await loadAwards();
+  } catch(e) { showToast(e.message,'error'); }
+}
+
+async function deleteAward(id) {
+  if (!confirm('Remove this award?')) return;
+  try {
+    await api('/api/admin/award/'+id,{method:'DELETE'});
+    showToast('Award removed');
+    await loadAwards();
+  } catch(e) { showToast(e.message,'error'); }
+}
+
+// ── Legacy ────────────────────────────────────────────────────────────────────
+async function loadLegacy() {
+  const d = await api('/api/admin/legacy');
+  const tbody = document.getElementById('legacyTable');
+  tbody.innerHTML = !d.legacy.length
+    ? '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted)">No legacy entries yet</td></tr>'
+    : d.legacy.map(c => `
+        <tr>
+          <td><strong>${c.year}</strong></td>
+          <td>${c.winner_team}</td>
+          <td style="font-size:.82rem;color:var(--text-muted)">${c.player1} &amp; ${c.player2}</td>
+          <td>${c.score||'—'}</td>
+          <td style="font-weight:600">${c.score_to_par||'—'}</td>
+          <td style="font-size:.82rem;color:var(--text-muted)">${c.course||'—'}</td>
+          <td><button onclick="deleteLegacy(${c.id},${c.year})" class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button></td>
+        </tr>`).join('');
+}
+
+async function addLegacy() {
+  const year=document.getElementById('lYear').value,
+        winner_team=document.getElementById('lTeam').value,
+        player1=document.getElementById('lP1').value,
+        player2=document.getElementById('lP2').value,
+        score=document.getElementById('lScore').value,
+        score_to_par=document.getElementById('lToPar').value,
+        course=document.getElementById('lCourse').value,
+        notes=document.getElementById('lNotes').value;
+  if (!year||!winner_team||!player1||!player2) { showToast('Year, team and players required','error'); return; }
+  try {
+    await api('/api/admin/legacy',{method:'POST',body:JSON.stringify({year,winner_team,player1,player2,score,score_to_par,course,notes})});
+    showToast('Legacy entry added!');
+    ['lYear','lTeam','lP1','lP2','lScore','lToPar','lCourse','lNotes'].forEach(id=>document.getElementById(id).value='');
+    await loadLegacy();
+  } catch(e) { showToast(e.message,'error'); }
+}
+
+async function deleteLegacy(id, year) {
+  if (!confirm(`Remove the ${year} legacy entry?`)) return;
+  try {
+    await api('/api/admin/legacy/'+id,{method:'DELETE'});
+    showToast('Legacy entry removed');
+    await loadLegacy();
+  } catch(e) { showToast(e.message,'error'); }
+}
+</script>
+</body>
+</html>
