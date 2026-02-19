@@ -691,6 +691,55 @@ app.delete('/api/admin/legacy/:id', requireAdmin, (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Delete photo from score ───────────────────────────────────────────────────
+app.delete('/api/admin/photo/:id', requireAdmin, (req, res) => {
+  try {
+    const score = db.prepare('SELECT photo_path FROM scores WHERE id=?').get(req.params.id);
+    if (score && score.photo_path) {
+      const filePath = path.join(__dirname, score.photo_path.replace(/^\//, ''));
+      if (fs.existsSync(filePath)) { try { fs.unlinkSync(filePath); } catch(_) {} }
+    }
+    db.prepare('UPDATE scores SET photo_path=NULL WHERE id=?').run(req.params.id);
+    broadcast('score_updated', {});
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Coin back image ───────────────────────────────────────────────────────────
+app.get('/api/coin-back', (req, res) => {
+  const configPath = path.join(__dirname, 'uploads', 'coin-back.json');
+  if (fs.existsSync(configPath)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      return res.json({ photo_path: data.photo_path || null });
+    } catch(_) {}
+  }
+  res.json({ photo_path: null });
+});
+
+app.post('/api/admin/coin-back', requireAdmin, (req, res) => {
+  const dir = './uploads/coin';
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const coinUpload = multer({
+    storage: multer.diskStorage({
+      destination: dir,
+      filename: (req, file, cb) => cb(null, `back${path.extname(file.originalname)}`)
+    }),
+    limits: { fileSize: 10 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+      if (file.mimetype.startsWith('image/')) return cb(null, true);
+      cb(new Error('Kun bilder er tillatt'));
+    }
+  }).single('photo');
+  coinUpload(req, res, err => {
+    if (err) return res.status(400).json({ error: err.message });
+    if (!req.file) return res.status(400).json({ error: 'Ingen fil lastet opp' });
+    const photoPath = `/uploads/coin/${req.file.filename}`;
+    fs.writeFileSync(path.join(__dirname, 'uploads', 'coin-back.json'), JSON.stringify({ photo_path: photoPath }));
+    res.json({ success: true, photo_path: photoPath });
+  });
+});
+
 // ── Clean URL routing ────────────────────────────────────────────────────────
 ['gameday', 'scoreboard', 'legacy', 'enter-score', 'admin'].forEach(p => {
   app.get(`/${p}`, (req, res) => res.sendFile(path.join(__dirname, `public/${p}.html`)));

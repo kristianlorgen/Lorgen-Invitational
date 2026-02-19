@@ -40,7 +40,45 @@
 <!-- Hero -->
 <section class="hero" id="hero">
   <div class="hero-content">
-    <img src="/images/logo.png" alt="Lorgen Invitational" class="hero-logo">
+
+    <!-- Myntlogo -->
+    <div style="perspective:500px;width:160px;height:160px;margin:0 auto 12px">
+      <div id="heroCoin" style="
+        width:100%;height:100%;
+        transform-style:preserve-3d;
+        animation:coinSpin 7s linear infinite;
+        position:relative;
+      ">
+        <!-- Framside: logo -->
+        <div style="
+          position:absolute;inset:0;border-radius:50%;
+          backface-visibility:hidden;-webkit-backface-visibility:hidden;
+          background:var(--white);border:3px solid var(--gold);
+          box-shadow:0 0 24px rgba(201,168,76,.35);
+          display:flex;align-items:center;justify-content:center;overflow:hidden;
+        ">
+          <img src="/images/logo.png" alt="Lorgen Invitational" style="width:82%;height:82%;object-fit:contain">
+        </div>
+        <!-- Bakside: valgt bilde -->
+        <div id="coinBackFace" style="
+          position:absolute;inset:0;border-radius:50%;
+          backface-visibility:hidden;-webkit-backface-visibility:hidden;
+          transform:rotateY(180deg);
+          background:var(--dark);border:3px solid var(--gold);
+          box-shadow:0 0 24px rgba(201,168,76,.35);
+          display:flex;align-items:center;justify-content:center;overflow:hidden;
+        ">
+          <img src="/images/logo.png" id="coinBackImg" alt="Lorgen Invitational bakside"
+            style="width:100%;height:100%;object-fit:cover">
+        </div>
+      </div>
+    </div>
+    <style>
+      @keyframes coinSpin {
+        0%   { transform: rotateY(0deg); }
+        100% { transform: rotateY(360deg); }
+      }
+    </style>
     <p class="hero-tagline">Power &nbsp;·&nbsp; Precision &nbsp;·&nbsp; Party</p>
 
     <div class="hero-meta" id="heroMeta">
@@ -337,9 +375,19 @@ async function loadGallery() {
   }
 }
 
+async function loadCoinBack() {
+  try {
+    const d = await fetch('/api/coin-back').then(r => r.json());
+    if (d.photo_path) {
+      document.getElementById('coinBackImg').src = d.photo_path;
+    }
+  } catch(_) {}
+}
+
 loadTournament();
 loadChampion();
 loadGallery();
+loadCoinBack();
 </script>
 </body>
 </html>
