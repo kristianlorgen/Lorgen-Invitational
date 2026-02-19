@@ -1,6 +1,6 @@
 {
   "name": "lorgen-invitational",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Lorgen Invitational Golf Tournament Website",
   "main": "server.js",
   "scripts": {
@@ -8,8 +8,7 @@
     "dev": "nodemon server.js"
   },
   "dependencies": {
-    "better-sqlite3": "^9.4.3",
-    "bcryptjs": "^2.4.3",
+    "@supabase/supabase-js": "^2.97.0",
     "dotenv": "^16.4.1",
     "express": "^4.18.2",
     "express-session": "^1.17.3",
