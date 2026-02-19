@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
-const SqliteStore = require('better-sqlite3-session-store')(session);
+const FileStore = require('session-file-store')(session);
 const multer  = require('multer');
 const path    = require('path');
 const fs      = require('fs');
@@ -50,7 +50,7 @@ app.use(express.static('public', {
   }
 }));
 app.use(session({
-  store: new SqliteStore({ client: db, expired: { clear: true, intervalMs: 900000 } }),
+  store: new FileStore({ path: './data/sessions', ttl: 86400, retries: 1, logFn: () => {} }),
   secret: process.env.SESSION_SECRET || 'lorgen-inv-secret',
   resave: false,
   saveUninitialized: false,
