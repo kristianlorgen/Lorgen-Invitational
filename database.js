@@ -1,40 +1,13 @@
-const fs = require("fs");
+const Database = require('better-sqlite3');
+const fs = require('fs');
 
-function createSqliteDb() {
-  const Database = require("better-sqlite3");
-
-  if (!fs.existsSync("./data")) {
-    fs.mkdirSync("./data", { recursive: true });
-  }
-
-  const db = new Database("./data/tournament.db");
-  db.pragma("journal_mode = WAL");
-  db.pragma("foreign_keys = ON");
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS tournaments (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      year INTEGER NOT NULL,
-      name TEXT NOT NULL,
-      date TEXT NOT NULL,
-      course TEXT DEFAULT '',
-      description TEXT DEFAULT '',
-      gameday_info TEXT DEFAULT ''
-    )
-  `);
-
-  return db;
+if (!fs.existsSync('./data')) {
+  fs.mkdirSync('./data', { recursive: true });
 }
 
-let db = null;
-
-if (process.env.NODE_ENV !== "production") {
-  db = createSqliteDb();
-} else {
-  console.log("Production mode: SQLite disabled");
-}
-
-module.exports = db;
+const db = new Database('./data/tournament.db');
+db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS tournaments (
