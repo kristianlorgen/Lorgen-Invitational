@@ -58,11 +58,26 @@ db.exec(`
     tournament_id INTEGER NOT NULL,
     award_type TEXT NOT NULL,
     team_id INTEGER,
+    player_name TEXT DEFAULT '',
     hole_number INTEGER,
     detail TEXT DEFAULT '',
     FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
     FOREIGN KEY (team_id) REFERENCES teams(id),
     UNIQUE(tournament_id, award_type, hole_number)
+  );
+
+  CREATE TABLE IF NOT EXISTS award_claims (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tournament_id INTEGER NOT NULL,
+    team_id INTEGER NOT NULL,
+    hole_number INTEGER NOT NULL,
+    award_type TEXT NOT NULL,
+    player_name TEXT DEFAULT '',
+    detail TEXT DEFAULT '',
+    claimed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
+    FOREIGN KEY (team_id) REFERENCES teams(id),
+    UNIQUE(tournament_id, team_id, hole_number, award_type)
   );
 
   CREATE TABLE IF NOT EXISTS legacy (
@@ -78,7 +93,11 @@ db.exec(`
   );
 `);
 
-// Migrate existing databases — add gameday_info if missing
+// Migrate existing databases
 try { db.exec(`ALTER TABLE tournaments ADD COLUMN gameday_info TEXT DEFAULT ''`); } catch(_) {}
+try { db.exec(`ALTER TABLE holes ADD COLUMN is_longest_drive INTEGER DEFAULT 0`); } catch(_) {}
+try { db.exec(`ALTER TABLE holes ADD COLUMN is_closest_to_pin INTEGER DEFAULT 0`); } catch(_) {}
+try { db.exec(`ALTER TABLE awards ADD COLUMN player_name TEXT DEFAULT ''`); } catch(_) {}
+try { db.exec(`ALTER TABLE legacy ADD COLUMN winner_photo TEXT DEFAULT ''`); } catch(_) {}
 
 module.exports = db;

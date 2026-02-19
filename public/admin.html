@@ -117,7 +117,7 @@
         <div class="admin-panel-title">Oversikt</div>
         <div class="admin-panel-sub">Status og sammendrag for turneringen</div>
 
-        <!-- Neste Turnering + Regjerande Mestere -->
+        <!-- Neste Turnering + Regjerende Mestere -->
         <div class="dash-hero">
           <div class="dash-card">
             <div class="dash-card-label"><i class="fas fa-calendar-star" style="color:var(--gold)"></i> &nbsp;Neste Turnering</div>
@@ -125,7 +125,7 @@
             <div class="dash-card-sub" id="dashNextDetails">Ingen kommende turnering</div>
           </div>
           <div class="dash-card" style="background:var(--dark);border-color:rgba(201,168,76,.25)">
-            <div class="dash-card-label" style="color:var(--gold)"><i class="fas fa-crown" style="color:var(--gold)"></i> &nbsp;Regjerande Mestere</div>
+            <div class="dash-card-label" style="color:var(--gold)"><i class="fas fa-crown" style="color:var(--gold)"></i> &nbsp;Regjerende Mestere</div>
             <div class="dash-card-main" style="color:var(--gold-light)" id="dashChampName">—</div>
             <div class="dash-card-sub" style="color:rgba(255,255,255,.5)" id="dashChampDetails">Ingen historikkoppføringer ennå</div>
           </div>
@@ -257,7 +257,8 @@
           <div class="card-body">
             <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:20px">
               <i class="fas fa-info-circle" style="color:var(--gold)"></i>
-              Sett par for hvert hull, og huk av «📸 Foto» for å kreve bildeopplasting på det hullet.
+              Sett par og huk av: <strong>📸 Foto</strong> krever bildeopplasting (oppretter automatisk mappe),
+              <strong>🏌️ LD</strong> = Lengste Drive-hull, <strong>🎯 NF</strong> = Nærmest Flagget-hull.
             </p>
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:12px" id="holesGrid"></div>
             <div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--gold-border);display:flex;gap:12px;flex-wrap:wrap">
@@ -265,6 +266,8 @@
               <button onclick="setAllPar(4)" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)">Alle Par 4</button>
               <button onclick="setAllPar(5)" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)">Alle Par 5</button>
               <button onclick="clearAllPhotos()" class="btn btn--outline btn--sm" style="color:var(--danger);border-color:#fecaca">Fjern alle fotokrav</button>
+              <button onclick="clearAllLd()" class="btn btn--outline btn--sm" style="color:var(--danger);border-color:#fecaca">Fjern alle LD</button>
+              <button onclick="clearAllCtp()" class="btn btn--outline btn--sm" style="color:var(--danger);border-color:#fecaca">Fjern alle NF</button>
             </div>
           </div>
         </div>
@@ -397,9 +400,15 @@
                 <input class="form-input" id="awardHole" type="number" min="1" max="18" placeholder="f.eks. 7">
               </div>
               <div class="form-group">
-                <label class="form-label">Vinnende lag</label>
-                <select class="form-select" id="awardTeam">
+                <label class="form-label">Lag</label>
+                <select class="form-select" id="awardTeam" onchange="updateAwardPlayerSelect()">
                   <option value="">— Velg lag —</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Vinnende spiller</label>
+                <select class="form-select" id="awardPlayer">
+                  <option value="">— Velg lag først —</option>
                 </select>
               </div>
               <div class="form-group">
@@ -413,12 +422,25 @@
           </div>
         </div>
 
-        <div class="card">
-          <div class="card-header"><strong>Gjeldende utmerkelser</strong></div>
+        <div class="card" style="margin-bottom:24px">
+          <div class="card-header"><strong>Offisielle utmerkelser</strong></div>
           <div style="overflow-x:auto">
             <table class="data-table">
-              <thead><tr><th>Type</th><th>Hull</th><th>Vinner</th><th>Detalj</th><th>Handlinger</th></tr></thead>
-              <tbody id="awardsTable"><tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-muted)">Velg en turnering ovenfor</td></tr></tbody>
+              <thead><tr><th>Type</th><th>Hull</th><th>Spiller</th><th>Lag</th><th>Detalj</th><th>Handlinger</th></tr></thead>
+              <tbody id="awardsTable"><tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Velg en turnering ovenfor</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
+            <strong>Kandidater fra lag</strong>
+            <span style="font-size:.75rem;color:var(--text-muted)">Selvrapporterte — verifiser og tildel offisielt ovenfor</span>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="data-table">
+              <thead><tr><th>Type</th><th>Hull</th><th>Spiller</th><th>Lag</th><th>Detalj</th><th>Tidspunkt</th></tr></thead>
+              <tbody id="claimsTable"><tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Velg en turnering ovenfor</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -427,7 +449,7 @@
       <!-- ── ÆRESGALLERI ────────────────────────────────────────────────────── -->
       <div class="admin-panel" id="panel-legacy">
         <div class="admin-panel-title">Æresgalleri</div>
-        <div class="admin-panel-sub">Administrer historikk og tidligere mesterlag — kilden til «Regjerande Mestere»</div>
+        <div class="admin-panel-sub">Administrer historikk og tidligere mesterlag — kilden til «Regjerende Mestere»</div>
 
         <div class="card" style="margin-bottom:24px">
           <div class="card-header"><strong>Legg til historikkoppføring</strong></div>
@@ -452,12 +474,13 @@
           <div class="card-header"><strong>Æresgalleri</strong></div>
           <div style="overflow-x:auto">
             <table class="data-table">
-              <thead><tr><th>År</th><th>Mestere</th><th>Spillere</th><th>Poeng</th><th>+/−</th><th>Bane</th><th>Handlinger</th></tr></thead>
-              <tbody id="legacyTable"><tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted)">Laster...</td></tr></tbody>
+              <thead><tr><th>År</th><th>Mestere</th><th>Spillere</th><th>Poeng</th><th>+/−</th><th>Bane</th><th>Bilde</th><th>Handlinger</th></tr></thead>
+              <tbody id="legacyTable"><tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted)">Laster...</td></tr></tbody>
             </table>
           </div>
         </div>
       </div>
+      <input type="file" id="legacyPhotoInput" accept="image/*" style="display:none">
 
     </div><!-- /admin-content -->
   </div><!-- /admin-layout -->
@@ -776,6 +799,14 @@ function renderHolesGrid() {
         <input type="checkbox" id="h-photo-${h.hole_number}" ${h.requires_photo?'checked':''} style="accent-color:var(--gold)">
         📸 Foto
       </label>
+      <label style="display:flex;align-items:center;justify-content:center;gap:4px;margin-top:6px;font-size:.72rem;color:var(--text-muted);cursor:pointer">
+        <input type="checkbox" id="h-ld-${h.hole_number}" ${h.is_longest_drive?'checked':''} style="accent-color:var(--gold)">
+        🏌️ LD
+      </label>
+      <label style="display:flex;align-items:center;justify-content:center;gap:4px;margin-top:4px;font-size:.72rem;color:var(--text-muted);cursor:pointer">
+        <input type="checkbox" id="h-ctp-${h.hole_number}" ${h.is_closest_to_pin?'checked':''} style="accent-color:var(--gold)">
+        🎯 NF
+      </label>
     </div>`).join('');
 }
 
@@ -785,7 +816,9 @@ async function saveHoles() {
   const holes = holesData.map(h => ({
     hole_number: h.hole_number,
     par: parseInt(document.getElementById('h-par-'+h.hole_number).value),
-    requires_photo: document.getElementById('h-photo-'+h.hole_number).checked
+    requires_photo: document.getElementById('h-photo-'+h.hole_number).checked,
+    is_longest_drive: document.getElementById('h-ld-'+h.hole_number).checked,
+    is_closest_to_pin: document.getElementById('h-ctp-'+h.hole_number).checked
   }));
   try {
     await api('/api/admin/tournament/'+tid+'/holes',{method:'POST',body:JSON.stringify({holes})});
@@ -799,6 +832,12 @@ function setAllPar(par) {
 }
 function clearAllPhotos() {
   holesData.forEach(h => { const el=document.getElementById('h-photo-'+h.hole_number); if(el) el.checked=false; });
+}
+function clearAllLd() {
+  holesData.forEach(h => { const el=document.getElementById('h-ld-'+h.hole_number); if(el) el.checked=false; });
+}
+function clearAllCtp() {
+  holesData.forEach(h => { const el=document.getElementById('h-ctp-'+h.hole_number); if(el) el.checked=false; });
 }
 
 // ── Spilledag ─────────────────────────────────────────────────────────────────
@@ -905,21 +944,38 @@ async function loadPhotos() {
 }
 
 // ── Utmerkelser ───────────────────────────────────────────────────────────────
+let awardTeamsCache = [];
+
 async function loadAwards() {
   const tid = document.getElementById('awardsTournamentSelect').value;
   if (!tid) return;
   await loadAwardTeams();
-  const d = await api('/api/admin/tournament/'+tid+'/awards');
+  const [awardsData, claimsData] = await Promise.all([
+    api('/api/admin/tournament/'+tid+'/awards'),
+    api('/api/admin/tournament/'+tid+'/award-claims')
+  ]);
   const typeLabels = {'longest_drive':'🏌️ Lengste Drive','closest_to_pin':'🎯 Nærmest Flagget'};
-  document.getElementById('awardsTable').innerHTML = !d.awards.length
-    ? '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen utmerkelser tildelt ennå</td></tr>'
-    : d.awards.map(a => `
+  document.getElementById('awardsTable').innerHTML = !awardsData.awards.length
+    ? '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen utmerkelser tildelt ennå</td></tr>'
+    : awardsData.awards.map(a => `
         <tr>
           <td>${typeLabels[a.award_type]||a.award_type}</td>
           <td style="text-align:center">${a.hole_number||'—'}</td>
-          <td><strong>${a.team_name||'—'}</strong></td>
+          <td><strong>${a.player_name||'—'}</strong></td>
+          <td style="font-size:.82rem;color:var(--text-muted)">${a.team_name||'—'}</td>
           <td style="font-style:italic;color:var(--text-muted)">${a.detail||'—'}</td>
           <td><button onclick="deleteAward(${a.id})" class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button></td>
+        </tr>`).join('');
+  document.getElementById('claimsTable').innerHTML = !claimsData.claims.length
+    ? '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen kandidater meldt inn ennå</td></tr>'
+    : claimsData.claims.map(c => `
+        <tr>
+          <td>${typeLabels[c.award_type]||c.award_type}</td>
+          <td style="text-align:center">${c.hole_number||'—'}</td>
+          <td><strong>${c.player_name||'—'}</strong></td>
+          <td style="font-size:.82rem;color:var(--text-muted)">${c.team_name||'—'}</td>
+          <td style="font-style:italic;color:var(--text-muted)">${c.detail||'—'}</td>
+          <td style="font-size:.75rem;color:var(--text-muted)">${new Date(c.claimed_at).toLocaleString('nb-NO')}</td>
         </tr>`).join('');
 }
 
@@ -928,10 +984,24 @@ async function loadAwardTeams() {
   if (!tid) return;
   try {
     const d = await api('/api/admin/tournament/'+tid+'/teams');
+    awardTeamsCache = d.teams;
     document.getElementById('awardTeam').innerHTML =
       '<option value="">— Velg lag —</option>' +
-      d.teams.map(t=>`<option value="${t.id}">${t.team_name} (${t.player1} &amp; ${t.player2})</option>`).join('');
+      d.teams.map(t=>`<option value="${t.id}" data-p1="${t.player1}" data-p2="${t.player2}">${t.team_name} (${t.player1} &amp; ${t.player2})</option>`).join('');
+    updateAwardPlayerSelect();
   } catch(_) {}
+}
+
+function updateAwardPlayerSelect() {
+  const teamSel = document.getElementById('awardTeam');
+  const playerSel = document.getElementById('awardPlayer');
+  const opt = teamSel.options[teamSel.selectedIndex];
+  if (!opt || !opt.value) {
+    playerSel.innerHTML = '<option value="">— Velg lag først —</option>';
+    return;
+  }
+  const p1 = opt.dataset.p1, p2 = opt.dataset.p2;
+  playerSel.innerHTML = `<option value="${p1}">${p1}</option><option value="${p2}">${p2}</option>`;
 }
 
 async function saveAward() {
@@ -940,10 +1010,12 @@ async function saveAward() {
   const award_type=document.getElementById('awardType').value,
         hole_number=document.getElementById('awardHole').value,
         team_id=document.getElementById('awardTeam').value,
+        player_name=document.getElementById('awardPlayer').value,
         detail=document.getElementById('awardDetail').value;
   if (!team_id) { showToast('Velg et lag','error'); return; }
+  if (!player_name) { showToast('Velg en spiller','error'); return; }
   try {
-    await api('/api/admin/award',{method:'POST',body:JSON.stringify({tournament_id:tid,award_type,team_id,hole_number,detail})});
+    await api('/api/admin/award',{method:'POST',body:JSON.stringify({tournament_id:tid,award_type,team_id,player_name,hole_number,detail})});
     showToast('Utmerkelse tildelt!');
     ['awardHole','awardDetail'].forEach(id=>document.getElementById(id).value='');
     await loadAwards();
@@ -960,10 +1032,12 @@ async function deleteAward(id) {
 }
 
 // ── Æresgalleri ───────────────────────────────────────────────────────────────
+let pendingLegacyPhotoId = null;
+
 async function loadLegacy() {
   const d = await api('/api/admin/legacy');
   document.getElementById('legacyTable').innerHTML = !d.legacy.length
-    ? '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen historikkoppføringer ennå</td></tr>'
+    ? '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen historikkoppføringer ennå</td></tr>'
     : d.legacy.map(c => `
         <tr>
           <td><strong>${c.year}</strong></td>
@@ -972,9 +1046,50 @@ async function loadLegacy() {
           <td>${c.score||'—'}</td>
           <td style="font-weight:600">${c.score_to_par||'—'}</td>
           <td style="font-size:.82rem;color:var(--text-muted)">${c.course||'—'}</td>
-          <td><button onclick="deleteLegacy(${c.id},${c.year})" class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button></td>
+          <td style="text-align:center">
+            ${c.winner_photo
+              ? `<a href="${c.winner_photo}" target="_blank">
+                   <img src="${c.winner_photo}" alt="Vinnerbilde ${c.year}"
+                     style="height:40px;width:56px;object-fit:cover;border-radius:4px;border:1px solid var(--gold-border);display:block">
+                 </a>`
+              : '<span style="color:var(--text-muted);font-size:.75rem">—</span>'}
+          </td>
+          <td style="display:flex;gap:6px">
+            <button onclick="triggerLegacyPhoto(${c.id})" class="btn btn--sm"
+              style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)"
+              title="Last opp vinnerbilde">
+              <i class="fas fa-camera"></i>
+            </button>
+            <button onclick="deleteLegacy(${c.id},${c.year})" class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
+          </td>
         </tr>`).join('');
 }
+
+function triggerLegacyPhoto(id) {
+  pendingLegacyPhotoId = id;
+  document.getElementById('legacyPhotoInput').click();
+}
+
+document.getElementById('legacyPhotoInput').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file || !pendingLegacyPhotoId) return;
+  const fd = new FormData();
+  fd.append('photo', file);
+  try {
+    const r = await fetch('/api/admin/legacy/' + pendingLegacyPhotoId + '/photo', { method: 'POST', body: fd });
+    const d = await r.json();
+    if (d.success) {
+      showToast('Vinnerbilde lastet opp!');
+      await loadLegacy();
+    } else {
+      showToast(d.error || 'Opplasting mislyktes', 'error');
+    }
+  } catch(e) {
+    showToast('Opplasting mislyktes', 'error');
+  }
+  e.target.value = '';
+  pendingLegacyPhotoId = null;
+});
 
 async function addLegacy() {
   const year=document.getElementById('lYear').value, winner_team=document.getElementById('lTeam').value,

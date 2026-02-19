@@ -148,17 +148,21 @@
   </div>
 </section>
 
-<!-- Regjerande Mestere -->
+<!-- Regjerende Mestere -->
 <section class="section" style="background:var(--off-white)" id="champSection">
   <div class="container">
     <div class="section-header">
       <span class="section-tag">Æresgalleri</span>
-      <h2 class="section-title">Regjerande <span>Mestere</span></h2>
+      <h2 class="section-title">Regjerende <span>Mestere</span></h2>
     </div>
     <div id="latestChamp" style="max-width:480px;margin:0 auto;text-align:center">
-      <div style="background:linear-gradient(145deg,var(--dark),var(--dark-mid));border:1px solid rgba(201,168,76,.3);border-radius:20px;padding:48px 32px;position:relative;overflow:hidden">
-        <div style="position:absolute;inset:0;background:radial-gradient(circle at 50% 0%,rgba(201,168,76,.18),transparent 60%)"></div>
-        <div style="position:relative">
+      <div style="background:linear-gradient(145deg,var(--dark),var(--dark-mid));border:1px solid rgba(201,168,76,.3);border-radius:20px;overflow:hidden;position:relative">
+        <div id="champPhotoWrap" style="display:none;position:relative">
+          <img id="champPhoto" src="" alt="Vinnere" style="width:100%;max-height:260px;object-fit:cover;display:block;opacity:.85">
+          <div style="position:absolute;inset:0;background:linear-gradient(to bottom,transparent 30%,rgba(13,27,42,.92))"></div>
+        </div>
+        <div style="position:absolute;inset:0;background:radial-gradient(circle at 50% 0%,rgba(201,168,76,.18),transparent 60%);pointer-events:none"></div>
+        <div style="position:relative;padding:40px 32px 40px">
           <div style="font-size:3.5rem;margin-bottom:16px;filter:drop-shadow(0 0 12px rgba(201,168,76,.7))">🏆</div>
           <div style="font-size:.7rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin-bottom:10px" id="champYear">—</div>
           <h3 style="font-family:var(--font-heading);font-size:1.8rem;color:var(--white);margin-bottom:8px" id="champTeam">Lorgen Invitational</h3>
@@ -169,6 +173,22 @@
       <div style="margin-top:24px">
         <a href="/legacy" class="btn btn--outline" style="color:var(--gold-dark);border-color:var(--gold)">Se alle mestere <i class="fas fa-arrow-right" style="margin-left:4px"></i></a>
       </div>
+    </div>
+  </div>
+</section>
+
+<!-- Fotogalleri -->
+<section class="section" style="background:var(--white)" id="gallerySection">
+  <div class="container">
+    <div class="section-header">
+      <span class="section-tag">Turneringsbilder</span>
+      <h2 class="section-title">Bilder fra <span>Banen</span></h2>
+      <p class="section-subtitle">Fotoutfordringer fra turneringen</p>
+    </div>
+    <div id="galleryGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;margin-top:8px"></div>
+    <div id="galleryEmpty" class="d-none" style="text-align:center;padding:32px;color:var(--text-muted)">
+      <i class="fas fa-camera" style="font-size:2rem;color:var(--gold-border);margin-bottom:12px;display:block"></i>
+      Ingen bilder er lastet opp ennå
     </div>
   </div>
 </section>
@@ -280,12 +300,46 @@ async function loadChampion() {
         document.getElementById('champScore').textContent =
           [c.score, c.score_to_par ? '(' + c.score_to_par + ')' : ''].filter(Boolean).join(' ');
       }
+      if (c.winner_photo) {
+        document.getElementById('champPhoto').src = c.winner_photo;
+        document.getElementById('champPhotoWrap').style.display = 'block';
+      }
     }
   } catch(_) {}
 }
 
+async function loadGallery() {
+  try {
+    const r = await fetch('/api/gallery');
+    const d = await r.json();
+    const grid = document.getElementById('galleryGrid');
+    const empty = document.getElementById('galleryEmpty');
+    const section = document.getElementById('gallerySection');
+    if (!d.photos || d.photos.length === 0) {
+      section.style.display = 'none';
+      return;
+    }
+    empty.classList.add('d-none');
+    grid.innerHTML = d.photos.map(p => `
+      <div style="border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow-sm);border:1px solid var(--gold-border)">
+        <a href="${p.photo_path}" target="_blank">
+          <img src="${p.photo_path}" alt="Hull ${p.hole_number}" loading="lazy"
+            style="width:100%;aspect-ratio:4/3;object-fit:cover;display:block;transition:transform .3s"
+            onmouseover="this.style.transform='scale(1.04)'" onmouseout="this.style.transform=''">
+        </a>
+        <div style="padding:10px 12px;background:var(--white)">
+          <div style="font-size:.78rem;font-weight:600;color:var(--dark)">Hull ${p.hole_number}</div>
+          <div style="font-size:.72rem;color:var(--text-muted)">${p.team_name}</div>
+        </div>
+      </div>`).join('');
+  } catch(_) {
+    document.getElementById('gallerySection').style.display = 'none';
+  }
+}
+
 loadTournament();
 loadChampion();
+loadGallery();
 </script>
 </body>
 </html>
