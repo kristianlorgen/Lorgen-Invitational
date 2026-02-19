@@ -152,6 +152,27 @@
           <button onclick="showPanel('teams')" class="btn btn--dark btn--sm"><i class="fas fa-users"></i> Administrer Lag</button>
           <button onclick="showPanel('holes')" class="btn btn--dark btn--sm"><i class="fas fa-golf-ball-tee"></i> Konfigurer Hull</button>
         </div>
+
+        <!-- Myntrullator bakside -->
+        <div class="card" style="margin-top:24px">
+          <div class="card-header"><strong><i class="fas fa-circle" style="color:var(--gold)"></i> &nbsp;Myntlogo — bakside</strong></div>
+          <div class="card-body">
+            <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:16px">
+              Last opp et bilde som vises på baksiden av den roterende myntlogoen på forsiden.
+            </p>
+            <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+              <div id="coinBackPreviewWrap" style="display:none">
+                <img id="coinBackPreview" src="" alt="Bakside" style="height:80px;width:80px;border-radius:50%;object-fit:cover;border:2px solid var(--gold)">
+              </div>
+              <div>
+                <input type="file" id="coinBackInput" accept="image/*" style="display:none" onchange="uploadCoinBack()">
+                <button onclick="document.getElementById('coinBackInput').click()" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)">
+                  <i class="fas fa-upload"></i> Last opp bakside-bilde
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- ── TURNERINGER ────────────────────────────────────────────────────── -->
@@ -182,6 +203,25 @@
               <thead><tr><th>År</th><th>Navn</th><th>Dato</th><th>Bane</th><th>Status</th><th>Handlinger</th></tr></thead>
               <tbody id="tournamentsTable"><tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Laster...</td></tr></tbody>
             </table>
+          </div>
+        </div>
+        <!-- Inline edit form (hidden) -->
+        <div class="card d-none" id="editTournamentCard" style="margin-top:16px;border:2px solid var(--gold-border)">
+          <div class="card-header"><strong>Rediger turnering</strong></div>
+          <div class="card-body">
+            <input type="hidden" id="editTId">
+            <input type="hidden" id="editTStatus">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px">
+              <div class="form-group"><label class="form-label">År</label><input class="form-input" id="editTYear" type="number"></div>
+              <div class="form-group"><label class="form-label">Navn</label><input class="form-input" id="editTName"></div>
+              <div class="form-group"><label class="form-label">Dato</label><input class="form-input" id="editTDate" type="date"></div>
+              <div class="form-group"><label class="form-label">Bane</label><input class="form-input" id="editTCourse"></div>
+              <div class="form-group" style="grid-column:1/-1"><label class="form-label">Beskrivelse</label><textarea class="form-input form-textarea" id="editTDesc" style="min-height:60px"></textarea></div>
+            </div>
+            <div style="margin-top:16px;display:flex;gap:10px">
+              <button onclick="saveTournamentEdit()" class="btn btn--gold btn--sm"><i class="fas fa-floppy-disk"></i> Lagre</button>
+              <button onclick="cancelTournamentEdit()" class="btn btn--outline btn--sm" style="color:var(--text-muted)"><i class="fas fa-times"></i> Avbryt</button>
+            </div>
           </div>
         </div>
       </div>
@@ -229,6 +269,23 @@
               <thead><tr><th>#</th><th>Lagnavn</th><th>Spiller 1</th><th>Spiller 2</th><th>PIN</th><th>Handlinger</th></tr></thead>
               <tbody id="teamsTable"><tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Velg en turnering ovenfor</td></tr></tbody>
             </table>
+          </div>
+        </div>
+        <!-- Inline team edit form (hidden) -->
+        <div class="card d-none" id="editTeamCard" style="margin-top:16px;border:2px solid var(--gold-border)">
+          <div class="card-header"><strong>Rediger lag</strong></div>
+          <div class="card-body">
+            <input type="hidden" id="editTeamId">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px">
+              <div class="form-group"><label class="form-label">Lagnavn</label><input class="form-input" id="editTeamName"></div>
+              <div class="form-group"><label class="form-label">Spiller 1</label><input class="form-input" id="editTeamP1"></div>
+              <div class="form-group"><label class="form-label">Spiller 2</label><input class="form-input" id="editTeamP2"></div>
+              <div class="form-group"><label class="form-label">PIN (4 siffer)</label><input class="form-input" id="editTeamPin" type="text" maxlength="4" inputmode="numeric"></div>
+            </div>
+            <div style="margin-top:16px;display:flex;gap:10px">
+              <button onclick="saveTeamEdit()" class="btn btn--gold btn--sm"><i class="fas fa-floppy-disk"></i> Lagre</button>
+              <button onclick="cancelTeamEdit()" class="btn btn--outline btn--sm" style="color:var(--text-muted)"><i class="fas fa-times"></i> Avbryt</button>
+            </div>
           </div>
         </div>
       </div>
@@ -591,6 +648,7 @@ async function initAdmin() {
   await loadTournaments();
   await loadDashboard();
   await loadLegacy();
+  loadCoinBack();
 }
 
 // ── Turneringer ───────────────────────────────────────────────────────────────
@@ -608,12 +666,16 @@ function statusLabel(s) {
 function populateTournamentSelects() {
   const ids = ['teamsTournamentSelect','holesTournamentSelect','scoresTournamentSelect',
                'awardsTournamentSelect','gamedayTournamentSelect','photosTournamentSelect'];
+  // Find the default (active > upcoming) tournament
+  const defaultT = allTournaments.find(t => t.status === 'active') ||
+                   allTournaments.find(t => t.status === 'upcoming');
   ids.forEach(id => {
     const sel = document.getElementById(id);
     const cur = sel.value;
     sel.innerHTML = '<option value="">— Velg turnering —</option>' +
       allTournaments.map(t => `<option value="${t.id}">${t.name} (${t.year}) — ${statusLabel(t.status)}</option>`).join('');
     if (cur) sel.value = cur;
+    else if (defaultT && !cur) sel.value = String(defaultT.id);
   });
 }
 
@@ -636,7 +698,8 @@ function renderTournamentsTable() {
           <option value="completed"${t.status==='completed'?'selected':''}>Fullført</option>
         </select>
       </td>
-      <td>
+      <td style="display:flex;gap:6px">
+        <button onclick="editTournament(${t.id})" class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)" title="Rediger"><i class="fas fa-pen"></i></button>
         <button onclick="deleteTournament(${t.id},${JSON.stringify(t.name)})" class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
       </td>
     </tr>`).join('');
@@ -663,6 +726,41 @@ async function changeTournamentStatus(id, status) {
     showToast('Status oppdatert til «'+statusLabel(status)+'»');
     await loadTournaments(); await loadDashboard();
   } catch(e) { showToast(e.message,'error'); }
+}
+
+function editTournament(id) {
+  const t = allTournaments.find(x => x.id === id);
+  if (!t) return;
+  document.getElementById('editTId').value = t.id;
+  document.getElementById('editTStatus').value = t.status;
+  document.getElementById('editTYear').value = t.year;
+  document.getElementById('editTName').value = t.name;
+  document.getElementById('editTDate').value = t.date;
+  document.getElementById('editTCourse').value = t.course || '';
+  document.getElementById('editTDesc').value = t.description || '';
+  document.getElementById('editTournamentCard').classList.remove('d-none');
+  document.getElementById('editTournamentCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+async function saveTournamentEdit() {
+  const id = document.getElementById('editTId').value;
+  const year = document.getElementById('editTYear').value;
+  const name = document.getElementById('editTName').value;
+  const date = document.getElementById('editTDate').value;
+  const course = document.getElementById('editTCourse').value;
+  const description = document.getElementById('editTDesc').value;
+  const status = document.getElementById('editTStatus').value;
+  if (!year || !name || !date) { showToast('År, navn og dato er påkrevd', 'error'); return; }
+  try {
+    await api('/api/admin/tournament/' + id, { method: 'PUT', body: JSON.stringify({ year, name, date, course, description, status }) });
+    showToast('Turnering oppdatert!');
+    document.getElementById('editTournamentCard').classList.add('d-none');
+    await loadTournaments(); await loadDashboard();
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+function cancelTournamentEdit() {
+  document.getElementById('editTournamentCard').classList.add('d-none');
 }
 
 async function deleteTournament(id, name) {
@@ -740,7 +838,10 @@ async function loadTeams() {
           <td>${t.player1}</td>
           <td>${t.player2}</td>
           <td><code style="background:var(--gold-pale);padding:2px 8px;border-radius:4px;font-weight:700;color:var(--gold-dark)">${t.pin_code}</code></td>
-          <td><button onclick="deleteTeam(${t.id},${JSON.stringify(t.team_name)})" class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button></td>
+          <td style="display:flex;gap:6px">
+            <button onclick="editTeam(${t.id},${JSON.stringify(t.team_name)},${JSON.stringify(t.player1)},${JSON.stringify(t.player2)},${JSON.stringify(t.pin_code)})" class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)" title="Rediger"><i class="fas fa-pen"></i></button>
+            <button onclick="deleteTeam(${t.id},${JSON.stringify(t.team_name)})" class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
+          </td>
         </tr>`).join('');
 }
 
@@ -759,6 +860,36 @@ async function addTeam() {
     ['newTeamName','newPlayer1','newPlayer2','newPin'].forEach(id=>document.getElementById(id).value='');
     await loadTeams(); await loadDashboard(); loadAwardTeams();
   } catch(e) { showToast(e.message,'error'); }
+}
+
+function editTeam(id, team_name, player1, player2, pin_code) {
+  document.getElementById('editTeamId').value = id;
+  document.getElementById('editTeamName').value = team_name;
+  document.getElementById('editTeamP1').value = player1;
+  document.getElementById('editTeamP2').value = player2;
+  document.getElementById('editTeamPin').value = pin_code;
+  document.getElementById('editTeamCard').classList.remove('d-none');
+  document.getElementById('editTeamCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+async function saveTeamEdit() {
+  const id = document.getElementById('editTeamId').value;
+  const team_name = document.getElementById('editTeamName').value;
+  const player1 = document.getElementById('editTeamP1').value;
+  const player2 = document.getElementById('editTeamP2').value;
+  const pin_code = document.getElementById('editTeamPin').value;
+  if (!team_name || !player1 || !player2 || !pin_code) { showToast('Alle felt er påkrevd', 'error'); return; }
+  if (!/^\d{4}$/.test(pin_code)) { showToast('PIN må være nøyaktig 4 siffer', 'error'); return; }
+  try {
+    await api('/api/admin/team/' + id, { method: 'PUT', body: JSON.stringify({ team_name, player1, player2, pin_code }) });
+    showToast('Lag oppdatert!');
+    document.getElementById('editTeamCard').classList.add('d-none');
+    await loadTeams();
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+function cancelTeamEdit() {
+  document.getElementById('editTeamCard').classList.add('d-none');
 }
 
 async function deleteTeam(id, name) {
@@ -938,9 +1069,51 @@ async function loadPhotos() {
           <strong>${p.team_name} — Hull ${p.hole_number}</strong>
           <span>${p.player1} &amp; ${p.player2}</span>
           <span style="display:block;margin-top:4px">${new Date(p.submitted_at).toLocaleString('nb-NO')}</span>
+          <button onclick="deletePhoto(${p.id})" class="btn btn--danger btn--sm" style="margin-top:8px;width:100%;justify-content:center">
+            <i class="fas fa-trash"></i> Slett bilde
+          </button>
         </div>
       </div>`).join('');
   } catch(e) { showToast('Kunne ikke laste bilder: '+e.message,'error'); }
+}
+
+async function deletePhoto(id) {
+  if (!confirm('Slett dette bildet? Handlingen kan ikke angres.')) return;
+  try {
+    await api('/api/admin/photo/' + id, { method: 'DELETE' });
+    showToast('Bilde slettet');
+    await loadPhotos();
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+// ── Myntlogo bakside ───────────────────────────────────────────────────────────
+async function loadCoinBack() {
+  try {
+    const d = await fetch('/api/coin-back').then(r => r.json());
+    if (d.photo_path) {
+      document.getElementById('coinBackPreview').src = d.photo_path;
+      document.getElementById('coinBackPreviewWrap').style.display = 'block';
+    }
+  } catch(_) {}
+}
+
+async function uploadCoinBack() {
+  const file = document.getElementById('coinBackInput').files[0];
+  if (!file) return;
+  const fd = new FormData();
+  fd.append('photo', file);
+  try {
+    const r = await fetch('/api/admin/coin-back', { method: 'POST', body: fd });
+    const d = await r.json();
+    if (d.success) {
+      showToast('Bakside-bilde oppdatert!');
+      document.getElementById('coinBackPreview').src = d.photo_path + '?t=' + Date.now();
+      document.getElementById('coinBackPreviewWrap').style.display = 'block';
+    } else {
+      showToast(d.error || 'Opplasting mislyktes', 'error');
+    }
+  } catch(e) { showToast('Opplasting mislyktes', 'error'); }
+  document.getElementById('coinBackInput').value = '';
 }
 
 // ── Utmerkelser ───────────────────────────────────────────────────────────────
