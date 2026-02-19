@@ -1,44 +1,43 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="nb">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Lorgen Invitational — Golf Tournament</title>
-  <meta name="description" content="The Lorgen Invitational — an annual 2-man scramble golf tournament. Power. Precision. Party.">
+  <title>Lorgen Invitational — Golfturnering</title>
+  <meta name="description" content="Lorgen Invitational — en årlig 2-mann scramble golfturnering. Power. Precision. Party.">
   <link rel="icon" type="image/png" href="/images/logo.png">
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </head>
 <body>
 
-<!-- ── Navigation ──────────────────────────────────────────────────────────── -->
 <nav class="navbar" id="navbar">
   <div class="container">
     <a href="/" class="navbar-brand">
       <img src="/images/logo.png" alt="Lorgen Invitational" class="navbar-logo">
     </a>
     <ul class="navbar-nav">
-      <li><a href="/" class="nav-link active">Home</a></li>
-      <li><a href="/gameday" class="nav-link">Gameday</a></li>
-      <li><a href="/scoreboard" class="nav-link">Live Scoreboard</a></li>
-      <li><a href="/legacy" class="nav-link">Legacy</a></li>
-      <li><a href="/enter-score" class="nav-link nav-link--cta">Enter Score</a></li>
+      <li><a href="/" class="nav-link active">Hjem</a></li>
+      <li><a href="/gameday" class="nav-link">Spilledag</a></li>
+      <li><a href="/scoreboard" class="nav-link">Live Resultater</a></li>
+      <li><a href="/legacy" class="nav-link">Historikk</a></li>
+      <li><a href="/enter-score" class="nav-link nav-link--cta">Registrer Poeng</a></li>
     </ul>
-    <button class="navbar-toggle" id="navToggle" aria-label="Menu">
+    <button class="navbar-toggle" id="navToggle" aria-label="Meny">
       <span></span><span></span><span></span>
     </button>
   </div>
 </nav>
 <div class="navbar-mobile" id="mobileMenu">
-  <a href="/" class="nav-link active">Home</a>
-  <a href="/gameday" class="nav-link">Gameday</a>
-  <a href="/scoreboard" class="nav-link">Live Scoreboard</a>
-  <a href="/legacy" class="nav-link">Legacy</a>
-  <a href="/enter-score" class="nav-link">Enter Score</a>
+  <a href="/" class="nav-link active">Hjem</a>
+  <a href="/gameday" class="nav-link">Spilledag</a>
+  <a href="/scoreboard" class="nav-link">Live Resultater</a>
+  <a href="/legacy" class="nav-link">Historikk</a>
+  <a href="/enter-score" class="nav-link">Registrer Poeng</a>
   <a href="/admin" class="nav-link" style="color:rgba(255,255,255,.35);font-size:.78rem">Admin</a>
 </div>
 
-<!-- ── Hero ────────────────────────────────────────────────────────────────── -->
+<!-- Hero -->
 <section class="hero" id="hero">
   <div class="hero-content">
     <img src="/images/logo.png" alt="Lorgen Invitational" class="hero-logo">
@@ -46,115 +45,115 @@
 
     <div class="hero-meta" id="heroMeta">
       <div class="hero-meta-item">
-        <div class="label">Tournament</div>
+        <div class="label">Turnering</div>
         <div class="value" id="heroTournamentName">Lorgen Invitational</div>
       </div>
       <div class="hero-divider"></div>
       <div class="hero-meta-item">
-        <div class="label">Date</div>
+        <div class="label">Dato</div>
         <div class="value" id="heroDate">TBA</div>
       </div>
       <div class="hero-divider"></div>
       <div class="hero-meta-item">
-        <div class="label">Course</div>
+        <div class="label">Bane</div>
         <div class="value" id="heroCourse">TBA</div>
       </div>
       <div class="hero-divider"></div>
       <div class="hero-meta-item">
         <div class="label">Format</div>
-        <div class="value">2-Man Scramble</div>
+        <div class="value">2-Mann Scramble</div>
       </div>
     </div>
 
     <div class="hero-actions">
-      <a href="/scoreboard" class="btn btn--gold btn--lg"><i class="fas fa-golf-ball-tee"></i> Live Scoreboard</a>
-      <a href="/gameday" class="btn btn--outline btn--lg"><i class="fas fa-calendar-day"></i> Gameday Info</a>
+      <a href="/scoreboard" class="btn btn--gold btn--lg"><i class="fas fa-golf-ball-tee"></i> Live Resultattavle</a>
+      <a href="/gameday" class="btn btn--outline btn--lg" style="color:var(--gold-dark);border-color:var(--gold)"><i class="fas fa-calendar-day"></i> Spilledag Info</a>
     </div>
   </div>
 </section>
 
-<!-- ── Format Features ─────────────────────────────────────────────────────── -->
+<!-- Turneringsinfo -->
 <section class="section" style="background:var(--white)">
   <div class="container">
     <div class="section-header">
-      <span class="section-tag">The Tournament</span>
-      <h2 class="section-title">Everything You Need to <span>Know</span></h2>
-      <p class="section-subtitle">An annual gathering of competitors, friends, and golf enthusiasts for a day of elite competition.</p>
+      <span class="section-tag">Turneringen</span>
+      <h2 class="section-title">Alt du trenger å <span>vite</span></h2>
+      <p class="section-subtitle">Et årlig sammenkomst for konkurrenter, venner og golfelskere — en dag med elite-konkurranse og godt humør.</p>
     </div>
     <div class="feature-grid">
       <div class="feature-card">
         <div class="feature-icon"><i class="fas fa-users"></i></div>
-        <h3>2-Man Scramble</h3>
-        <p>Both players tee off, select the best shot, and play from that spot. Pure team strategy and execution from the first tee to the 18th hole.</p>
+        <h3>2-Mann Scramble</h3>
+        <p>Begge spiller slår ut, velger det beste skuddet og spiller videre derfra. Ren lagstrategi og gjennomføring fra første tee til 18. hull.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon"><i class="fas fa-trophy"></i></div>
-        <h3>Multiple Awards</h3>
-        <p>Compete for the overall championship title, plus special honours for Longest Drive and Closest to the Pin on select holes.</p>
+        <h3>Flere Utmerkelser</h3>
+        <p>Konkurrer om den totale mesterskaptittelen, pluss spesielle æresbevisninger for Lengste Drive og Nærmest Flagget på utvalgte hull.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon"><i class="fas fa-camera"></i></div>
-        <h3>Photo Challenges</h3>
-        <p>Selected holes feature mandatory photo challenges. Capture the moment before entering your score — creating memories that last.</p>
+        <h3>Fotoutfordringer</h3>
+        <p>Utvalgte hull har obligatoriske fotoutfordringer. Ta bildet før du registrerer poengsummen — og skap minner som varer.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon"><i class="fas fa-chart-line"></i></div>
-        <h3>Live Scoreboard</h3>
-        <p>Spectators and supporters can follow along in real time as scores update throughout the day on our live leaderboard.</p>
+        <h3>Live Resultattavle</h3>
+        <p>Tilskuere og supportere kan følge med i sanntid mens poengsummene oppdateres gjennom hele spilledagen.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon"><i class="fas fa-calendar-alt"></i></div>
-        <h3>Annual Tradition</h3>
-        <p>Held once a year, the Lorgen Invitational brings together the best teams for an unforgettable day of golf and camaraderie.</p>
+        <h3>Årlig Tradisjon</h3>
+        <p>Holdt én gang i året samler Lorgen Invitational de beste lagene til en uforglemmelig dag med golf og godt samvær.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon"><i class="fas fa-crown"></i></div>
-        <h3>Hall of Fame</h3>
-        <p>Past champions are immortalised in our Legacy section — a permanent record of those who have risen to claim the Lorgen title.</p>
+        <h3>Æresgalleri</h3>
+        <p>Tidligere mestere er udødeliggjort i vår Historikk-seksjon — en permanent oversikt over de som har hevet Lorgen-tittelen.</p>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ── Countdown ─────────────────────────────────────────────────────────────── -->
+<!-- Nedtelling -->
 <section class="section" style="background:var(--dark)" id="countdownSection">
   <div class="container" style="text-align:center">
-    <span class="section-tag" style="background:rgba(201,168,76,.12);border-color:rgba(201,168,76,.3);color:var(--gold)">Next Tournament</span>
-    <h2 class="section-title" style="color:var(--white);margin-top:8px">The Next Chapter <span>Awaits</span></h2>
+    <span class="section-tag" style="background:rgba(201,168,76,.12);border-color:rgba(201,168,76,.3);color:var(--gold)">Neste Turnering</span>
+    <h2 class="section-title" style="color:var(--white);margin-top:8px">Neste kapittel <span>venter</span></h2>
     <div id="countdownWrap" style="margin-top:40px">
       <div style="display:flex;align-items:center;justify-content:center;gap:24px;flex-wrap:wrap" id="countdown">
         <div style="text-align:center">
           <div style="font-family:var(--font-heading);font-size:clamp(2.4rem,6vw,4rem);color:var(--gold-light);line-height:1" id="cntDays">--</div>
-          <div style="font-size:.7rem;letter-spacing:.2em;text-transform:uppercase;color:rgba(255,255,255,.4);margin-top:6px">Days</div>
+          <div style="font-size:.7rem;letter-spacing:.2em;text-transform:uppercase;color:rgba(255,255,255,.4);margin-top:6px">Dager</div>
         </div>
         <div style="font-size:2rem;color:rgba(201,168,76,.3);padding-top:4px">:</div>
         <div style="text-align:center">
           <div style="font-family:var(--font-heading);font-size:clamp(2.4rem,6vw,4rem);color:var(--gold-light);line-height:1" id="cntHrs">--</div>
-          <div style="font-size:.7rem;letter-spacing:.2em;text-transform:uppercase;color:rgba(255,255,255,.4);margin-top:6px">Hours</div>
+          <div style="font-size:.7rem;letter-spacing:.2em;text-transform:uppercase;color:rgba(255,255,255,.4);margin-top:6px">Timer</div>
         </div>
         <div style="font-size:2rem;color:rgba(201,168,76,.3);padding-top:4px">:</div>
         <div style="text-align:center">
           <div style="font-family:var(--font-heading);font-size:clamp(2.4rem,6vw,4rem);color:var(--gold-light);line-height:1" id="cntMins">--</div>
-          <div style="font-size:.7rem;letter-spacing:.2em;text-transform:uppercase;color:rgba(255,255,255,.4);margin-top:6px">Minutes</div>
+          <div style="font-size:.7rem;letter-spacing:.2em;text-transform:uppercase;color:rgba(255,255,255,.4);margin-top:6px">Minutter</div>
         </div>
         <div style="font-size:2rem;color:rgba(201,168,76,.3);padding-top:4px">:</div>
         <div style="text-align:center">
           <div style="font-family:var(--font-heading);font-size:clamp(2.4rem,6vw,4rem);color:var(--gold-light);line-height:1" id="cntSecs">--</div>
-          <div style="font-size:.7rem;letter-spacing:.2em;text-transform:uppercase;color:rgba(255,255,255,.4);margin-top:6px">Seconds</div>
+          <div style="font-size:.7rem;letter-spacing:.2em;text-transform:uppercase;color:rgba(255,255,255,.4);margin-top:6px">Sekunder</div>
         </div>
       </div>
       <div id="countdownDate" style="margin-top:24px;font-size:.85rem;color:rgba(255,255,255,.35);letter-spacing:.1em;text-transform:uppercase"></div>
-      <div id="noTournament" class="d-none" style="color:rgba(255,255,255,.5);font-size:1rem">No upcoming tournament scheduled yet. Check back soon.</div>
+      <div id="noTournament" class="d-none" style="color:rgba(255,255,255,.5);font-size:1rem">Ingen kommende turnering er planlagt ennå. Sjekk tilbake snart.</div>
     </div>
   </div>
 </section>
 
-<!-- ── Latest Champion ────────────────────────────────────────────────────────── -->
+<!-- Regjerande Mestere -->
 <section class="section" style="background:var(--off-white)" id="champSection">
   <div class="container">
     <div class="section-header">
-      <span class="section-tag">Hall of Fame</span>
-      <h2 class="section-title">Reigning <span>Champions</span></h2>
+      <span class="section-tag">Æresgalleri</span>
+      <h2 class="section-title">Regjerande <span>Mestere</span></h2>
     </div>
     <div id="latestChamp" style="max-width:480px;margin:0 auto;text-align:center">
       <div style="background:linear-gradient(145deg,var(--dark),var(--dark-mid));border:1px solid rgba(201,168,76,.3);border-radius:20px;padding:48px 32px;position:relative;overflow:hidden">
@@ -163,30 +162,29 @@
           <div style="font-size:3.5rem;margin-bottom:16px;filter:drop-shadow(0 0 12px rgba(201,168,76,.7))">🏆</div>
           <div style="font-size:.7rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin-bottom:10px" id="champYear">—</div>
           <h3 style="font-family:var(--font-heading);font-size:1.8rem;color:var(--white);margin-bottom:8px" id="champTeam">Lorgen Invitational</h3>
-          <p style="color:rgba(255,255,255,.6);margin-bottom:16px;font-size:.9rem" id="champPlayers">The champion team will be revealed here</p>
+          <p style="color:rgba(255,255,255,.6);margin-bottom:16px;font-size:.9rem" id="champPlayers">Mesterlaget vil bli avslørt her</p>
           <div style="display:inline-block;background:rgba(201,168,76,.15);border:1px solid rgba(201,168,76,.3);border-radius:999px;padding:6px 20px;font-size:.82rem;color:var(--gold-light)" id="champScore"></div>
         </div>
       </div>
       <div style="margin-top:24px">
-        <a href="/legacy" class="btn btn--outline">View All Champions <i class="fas fa-arrow-right" style="margin-left:4px"></i></a>
+        <a href="/legacy" class="btn btn--outline" style="color:var(--gold-dark);border-color:var(--gold)">Se alle mestere <i class="fas fa-arrow-right" style="margin-left:4px"></i></a>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ── Quick Links ────────────────────────────────────────────────────────────── -->
+<!-- Hurtiglenker -->
 <section class="section--sm" style="background:var(--light);border-top:1px solid var(--gold-border)">
   <div class="container">
     <div style="display:flex;align-items:center;justify-content:center;gap:16px;flex-wrap:wrap">
-      <a href="/scoreboard" class="btn btn--gold"><i class="fas fa-list-ol"></i> Live Scoreboard</a>
-      <a href="/gameday" class="btn btn--dark"><i class="fas fa-flag"></i> Gameday Info</a>
-      <a href="/legacy" class="btn btn--outline" style="color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-trophy"></i> Legacy</a>
-      <a href="/enter-score" class="btn btn--dark"><i class="fas fa-pencil"></i> Enter Score</a>
+      <a href="/scoreboard" class="btn btn--gold"><i class="fas fa-list-ol"></i> Live Resultattavle</a>
+      <a href="/gameday" class="btn btn--dark"><i class="fas fa-flag"></i> Spilledag Info</a>
+      <a href="/legacy" class="btn btn--outline" style="color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-trophy"></i> Historikk</a>
+      <a href="/enter-score" class="btn btn--dark"><i class="fas fa-pencil"></i> Registrer Poeng</a>
     </div>
   </div>
 </section>
 
-<!-- ── Footer ─────────────────────────────────────────────────────────────────── -->
 <footer class="footer">
   <div class="container">
     <div class="footer-inner">
@@ -195,24 +193,24 @@
         <p class="footer-tagline">Power · Precision · Party</p>
       </div>
       <div>
-        <div class="footer-heading">Navigation</div>
+        <div class="footer-heading">Navigasjon</div>
         <div class="footer-links">
-          <a href="/">Home</a>
-          <a href="/gameday">Gameday Info</a>
-          <a href="/scoreboard">Live Scoreboard</a>
-          <a href="/legacy">Legacy</a>
+          <a href="/">Hjem</a>
+          <a href="/gameday">Spilledag</a>
+          <a href="/scoreboard">Live Resultattavle</a>
+          <a href="/legacy">Historikk</a>
         </div>
       </div>
       <div>
-        <div class="footer-heading">Participants</div>
+        <div class="footer-heading">Deltakere</div>
         <div class="footer-links">
-          <a href="/enter-score">Enter Your Score</a>
-          <a href="/admin">Admin Panel</a>
+          <a href="/enter-score">Registrer Poeng</a>
+          <a href="/admin">Admin</a>
         </div>
       </div>
     </div>
     <div class="footer-bottom">
-      <span>&copy; <span id="footerYear"></span> Lorgen Invitational. All rights reserved.</span>
+      <span>&copy; <span id="footerYear"></span> Lorgen Invitational. Alle rettigheter reservert.</span>
       <span>Power · Precision · Party</span>
     </div>
   </div>
@@ -220,18 +218,13 @@
 
 <script>
 document.getElementById('footerYear').textContent = new Date().getFullYear();
-
-// Navbar scroll effect
 window.addEventListener('scroll', () => {
   document.getElementById('navbar').classList.toggle('scrolled', window.scrollY > 40);
 });
-
-// Mobile menu
 document.getElementById('navToggle').addEventListener('click', () => {
   document.getElementById('mobileMenu').classList.toggle('open');
 });
 
-// Load tournament info
 async function loadTournament() {
   try {
     const r = await fetch('/api/tournament');
@@ -239,10 +232,10 @@ async function loadTournament() {
     if (d.tournament) {
       document.getElementById('heroTournamentName').textContent = d.tournament.name;
       const dt = new Date(d.tournament.date);
-      document.getElementById('heroDate').textContent = dt.toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' });
+      document.getElementById('heroDate').textContent = dt.toLocaleDateString('nb-NO', { day:'numeric', month:'long', year:'numeric' });
       document.getElementById('heroCourse').textContent = d.tournament.course || 'TBA';
       startCountdown(d.tournament.date);
-      document.getElementById('countdownDate').textContent = dt.toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+      document.getElementById('countdownDate').textContent = dt.toLocaleDateString('nb-NO', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
     } else {
       document.getElementById('noTournament').classList.remove('d-none');
       document.getElementById('countdown').classList.add('d-none');
@@ -258,7 +251,7 @@ function startCountdown(dateStr) {
   function tick() {
     const diff = target - Date.now();
     if (diff <= 0) {
-      document.getElementById('countdown').innerHTML = '<div style="font-family:var(--font-heading);font-size:2rem;color:var(--gold-light)">🏌️ Tournament Day!</div>';
+      document.getElementById('countdown').innerHTML = '<div style="font-family:var(--font-heading);font-size:2rem;color:var(--gold-light)">🏌️ Det er spilledag!</div>';
       return;
     }
     const d = Math.floor(diff/86400000);
@@ -274,14 +267,13 @@ function startCountdown(dateStr) {
   tick();
 }
 
-// Load latest champion
 async function loadChampion() {
   try {
     const r = await fetch('/api/legacy');
     const d = await r.json();
     if (d.legacy && d.legacy.length > 0) {
       const c = d.legacy[0];
-      document.getElementById('champYear').textContent = c.year + ' Champions';
+      document.getElementById('champYear').textContent = c.year + ' Mestere';
       document.getElementById('champTeam').textContent = c.winner_team;
       document.getElementById('champPlayers').textContent = c.player1 + ' & ' + c.player2;
       if (c.score || c.score_to_par) {

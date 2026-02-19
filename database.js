@@ -17,6 +17,7 @@ db.exec(`
     date TEXT NOT NULL,
     course TEXT DEFAULT '',
     description TEXT DEFAULT '',
+    gameday_info TEXT DEFAULT '',
     status TEXT DEFAULT 'upcoming',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
@@ -76,5 +77,8 @@ db.exec(`
     notes TEXT DEFAULT ''
   );
 `);
+
+// Migrate existing databases — add gameday_info if missing
+try { db.exec(`ALTER TABLE tournaments ADD COLUMN gameday_info TEXT DEFAULT ''`); } catch(_) {}
 
 module.exports = db;

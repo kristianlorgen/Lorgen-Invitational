@@ -1,68 +1,72 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="nb">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gameday Info — Lorgen Invitational</title>
+  <title>Spilledag — Lorgen Invitational</title>
+  <meta name="description" content="Spilledag informasjon for Lorgen Invitational — alt du trenger å vite om turneringsdagen.">
   <link rel="icon" type="image/png" href="/images/logo.png">
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </head>
 <body>
 
-<!-- ── Navigation ──────────────────────────────────────────────────────────── -->
+<!-- ── Navigasjon ──────────────────────────────────────────────────────────── -->
 <nav class="navbar" id="navbar">
   <div class="container">
     <a href="/" class="navbar-brand">
       <img src="/images/logo.png" alt="Lorgen Invitational" class="navbar-logo">
     </a>
     <ul class="navbar-nav">
-      <li><a href="/" class="nav-link">Home</a></li>
-      <li><a href="/gameday" class="nav-link active">Gameday</a></li>
-      <li><a href="/scoreboard" class="nav-link">Live Scoreboard</a></li>
-      <li><a href="/legacy" class="nav-link">Legacy</a></li>
-      <li><a href="/enter-score" class="nav-link nav-link--cta">Enter Score</a></li>
+      <li><a href="/" class="nav-link">Hjem</a></li>
+      <li><a href="/gameday" class="nav-link active">Spilledag</a></li>
+      <li><a href="/scoreboard" class="nav-link">Live Resultater</a></li>
+      <li><a href="/legacy" class="nav-link">Historikk</a></li>
+      <li><a href="/enter-score" class="nav-link nav-link--cta">Registrer Poeng</a></li>
     </ul>
-    <button class="navbar-toggle" id="navToggle"><span></span><span></span><span></span></button>
+    <button class="navbar-toggle" id="navToggle" aria-label="Meny">
+      <span></span><span></span><span></span>
+    </button>
   </div>
 </nav>
 <div class="navbar-mobile" id="mobileMenu">
-  <a href="/" class="nav-link">Home</a>
-  <a href="/gameday" class="nav-link active">Gameday</a>
-  <a href="/scoreboard" class="nav-link">Live Scoreboard</a>
-  <a href="/legacy" class="nav-link">Legacy</a>
-  <a href="/enter-score" class="nav-link">Enter Score</a>
+  <a href="/" class="nav-link">Hjem</a>
+  <a href="/gameday" class="nav-link active">Spilledag</a>
+  <a href="/scoreboard" class="nav-link">Live Resultater</a>
+  <a href="/legacy" class="nav-link">Historikk</a>
+  <a href="/enter-score" class="nav-link">Registrer Poeng</a>
+  <a href="/admin" class="nav-link" style="color:rgba(255,255,255,.35);font-size:.78rem">Admin</a>
 </div>
 
-<!-- ── Page Hero ─────────────────────────────────────────────────────────────── -->
+<!-- ── Side-hero ──────────────────────────────────────────────────────────── -->
 <div class="page-hero">
   <div class="container">
-    <div class="page-hero-tag"><i class="fas fa-flag"></i> &nbsp; Tournament Day</div>
-    <h1 class="page-hero-title">Gameday Information</h1>
-    <p class="page-hero-sub" id="heroDateLine">Everything you need for tournament day</p>
+    <div class="page-hero-tag"><i class="fas fa-flag"></i> &nbsp; Spilledag</div>
+    <h1 class="page-hero-title">Spilledag Informasjon</h1>
+    <p class="page-hero-sub" id="heroDateLine">Alt du trenger for turneringsdagen</p>
   </div>
 </div>
 
-<!-- ── Tournament Details ─────────────────────────────────────────────────────── -->
+<!-- ── Turneringsdetaljer ─────────────────────────────────────────────────── -->
 <section class="section" style="background:var(--white)">
   <div class="container">
     <div class="section-header">
-      <span class="section-tag">The Details</span>
-      <h2 class="section-title">Tournament <span>Information</span></h2>
+      <span class="section-tag">Detaljer</span>
+      <h2 class="section-title">Turneringsdetaljer <span>informasjon</span></h2>
     </div>
 
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px;margin-bottom:60px" id="tournamentDetails">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px;margin-bottom:48px">
       <div class="card">
         <div class="card-body" style="text-align:center">
           <div class="feature-icon" style="margin-bottom:12px"><i class="fas fa-calendar-day"></i></div>
-          <div style="font-size:.72rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px">Date</div>
+          <div style="font-size:.72rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px">Dato</div>
           <div style="font-family:var(--font-heading);font-size:1.1rem;color:var(--dark)" id="detDate">TBA</div>
         </div>
       </div>
       <div class="card">
         <div class="card-body" style="text-align:center">
           <div class="feature-icon" style="margin-bottom:12px"><i class="fas fa-location-dot"></i></div>
-          <div style="font-size:.72rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px">Course</div>
+          <div style="font-size:.72rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px">Bane</div>
           <div style="font-family:var(--font-heading);font-size:1.1rem;color:var(--dark)" id="detCourse">TBA</div>
         </div>
       </div>
@@ -70,33 +74,42 @@
         <div class="card-body" style="text-align:center">
           <div class="feature-icon" style="margin-bottom:12px"><i class="fas fa-users"></i></div>
           <div style="font-size:.72rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px">Format</div>
-          <div style="font-family:var(--font-heading);font-size:1.1rem;color:var(--dark)">2-Man Scramble</div>
+          <div style="font-family:var(--font-heading);font-size:1.1rem;color:var(--dark)">2-Mann Scramble</div>
         </div>
       </div>
       <div class="card">
         <div class="card-body" style="text-align:center">
           <div class="feature-icon" style="margin-bottom:12px"><i class="fas fa-golf-ball-tee"></i></div>
-          <div style="font-size:.72rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px">Holes</div>
-          <div style="font-family:var(--font-heading);font-size:1.1rem;color:var(--dark)">18 Holes</div>
+          <div style="font-size:.72rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px">Hull</div>
+          <div style="font-family:var(--font-heading);font-size:1.1rem;color:var(--dark)">18 Hull</div>
         </div>
       </div>
     </div>
 
-    <!-- Description -->
-    <div id="tournamentDesc" style="max-width:700px;margin:0 auto 60px;text-align:center" class="d-none">
+    <!-- Turneringsbeskrivelse -->
+    <div id="tournamentDesc" style="max-width:700px;margin:0 auto 48px;text-align:center" class="d-none">
       <div class="gold-divider"><i class="fas fa-star"></i></div>
       <p style="font-size:1.05rem;color:var(--text-muted);line-height:1.8;font-style:italic" id="descText"></p>
+    </div>
+
+    <!-- Spilledag-program -->
+    <div id="gamedayInfoWrap" class="d-none" style="max-width:700px;margin:0 auto">
+      <div class="gold-divider"><i class="fas fa-calendar-alt"></i></div>
+      <div style="margin-top:8px">
+        <div style="font-size:.72rem;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--gold-dark);margin-bottom:16px;text-align:center">Program</div>
+        <div id="gamedayInfo" style="background:var(--gold-pale);border:1px solid var(--gold-border);border-radius:var(--radius-lg);padding:28px 32px;font-size:.95rem;color:var(--text);line-height:1.9;white-space:pre-line"></div>
+      </div>
     </div>
   </div>
 </section>
 
-<!-- ── Format Explanation ─────────────────────────────────────────────────────── -->
+<!-- ── Slik Spilles Det ───────────────────────────────────────────────────── -->
 <section class="section" style="background:var(--off-white)">
   <div class="container">
     <div class="section-header">
-      <span class="section-tag">How to Play</span>
-      <h2 class="section-title">2-Man Scramble <span>Format</span></h2>
-      <p class="section-subtitle">A team format designed for maximum fun and competition</p>
+      <span class="section-tag">Slik Spilles Det</span>
+      <h2 class="section-title">2-Mann Scramble <span>Format</span></h2>
+      <p class="section-subtitle">Et lagformat designet for maksimal moro og konkurranse</p>
     </div>
 
     <div style="max-width:840px;margin:0 auto">
@@ -105,50 +118,50 @@
         <div style="background:var(--white);border:1px solid var(--gold-border);border-radius:var(--radius-lg);padding:28px 24px">
           <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
             <div style="width:36px;height:36px;background:var(--gold);border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--dark);flex-shrink:0">1</div>
-            <h3 style="font-family:var(--font-heading);font-size:1.1rem;color:var(--dark)">Both Players Tee Off</h3>
+            <h3 style="font-family:var(--font-heading);font-size:1.1rem;color:var(--dark)">Begge Slår Ut</h3>
           </div>
-          <p style="color:var(--text-muted);font-size:.9rem;line-height:1.7">Both team members hit their tee shots. Select the best drive — that's where play continues from.</p>
+          <p style="color:var(--text-muted);font-size:.9rem;line-height:1.7">Begge lagspillere slår sine utslagsslag. Velg det beste drivskuddet — det er derfra spillet fortsetter.</p>
         </div>
 
         <div style="background:var(--white);border:1px solid var(--gold-border);border-radius:var(--radius-lg);padding:28px 24px">
           <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
             <div style="width:36px;height:36px;background:var(--gold);border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--dark);flex-shrink:0">2</div>
-            <h3 style="font-family:var(--font-heading);font-size:1.1rem;color:var(--dark)">Play from Best Ball</h3>
+            <h3 style="font-family:var(--font-heading);font-size:1.1rem;color:var(--dark)">Spill fra Beste Ballen</h3>
           </div>
-          <p style="color:var(--text-muted);font-size:.9rem;line-height:1.7">Both players pick up and play from the chosen spot. Repeat this process for every shot until holed out.</p>
+          <p style="color:var(--text-muted);font-size:.9rem;line-height:1.7">Begge spillere plukker opp og spiller fra det valgte stedet. Gjenta prosessen for hvert slag frem til ballen er i hullet.</p>
         </div>
 
         <div style="background:var(--white);border:1px solid var(--gold-border);border-radius:var(--radius-lg);padding:28px 24px">
           <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
             <div style="width:36px;height:36px;background:var(--gold);border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--dark);flex-shrink:0">3</div>
-            <h3 style="font-family:var(--font-heading);font-size:1.1rem;color:var(--dark)">Record the Score</h3>
+            <h3 style="font-family:var(--font-heading);font-size:1.1rem;color:var(--dark)">Registrer Poengsummen</h3>
           </div>
-          <p style="color:var(--text-muted);font-size:.9rem;line-height:1.7">Once the ball is holed, record the total number of strokes taken. Enter it via the app after completing the hole.</p>
+          <p style="color:var(--text-muted);font-size:.9rem;line-height:1.7">Når ballen er i hullet, noter det totale antallet slag brukt. Registrer poengsummen via appen etter at hullet er fullført.</p>
         </div>
 
         <div style="background:var(--white);border:1px solid var(--gold-border);border-radius:var(--radius-lg);padding:28px 24px">
           <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
             <div style="width:36px;height:36px;background:var(--gold);border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--dark);flex-shrink:0">4</div>
-            <h3 style="font-family:var(--font-heading);font-size:1.1rem;color:var(--dark)">Photo Challenges</h3>
+            <h3 style="font-family:var(--font-heading);font-size:1.1rem;color:var(--dark)">Fotoutfordringer</h3>
           </div>
-          <p style="color:var(--text-muted);font-size:.9rem;line-height:1.7">On designated holes, you must upload a photo before your score is accepted. Follow the app's prompt — it's part of the fun!</p>
+          <p style="color:var(--text-muted);font-size:.9rem;line-height:1.7">På utvalgte hull må du laste opp et bilde før poengsummen godtas. Følg appens instruksjoner — det er en del av moroa!</p>
         </div>
       </div>
 
-      <!-- Special Awards -->
+      <!-- Spesielle Priser -->
       <div style="background:linear-gradient(135deg,var(--dark),var(--dark-mid));border:1px solid rgba(201,168,76,.25);border-radius:var(--radius-xl);padding:40px;text-align:center">
-        <div style="font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin-bottom:16px">Special Awards</div>
-        <h3 style="font-family:var(--font-heading);font-size:1.6rem;color:var(--white);margin-bottom:24px">Bonus Competitions</h3>
+        <div style="font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin-bottom:16px">Utmerkelser</div>
+        <h3 style="font-family:var(--font-heading);font-size:1.6rem;color:var(--white);margin-bottom:24px">Spesielle Priser</h3>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:500px;margin:0 auto">
           <div style="background:rgba(255,255,255,.05);border:1px solid rgba(201,168,76,.2);border-radius:var(--radius-lg);padding:20px">
             <div style="font-size:1.8rem;margin-bottom:8px">🏌️</div>
-            <div style="font-weight:700;color:var(--gold-light);margin-bottom:4px">Longest Drive</div>
-            <div style="font-size:.82rem;color:rgba(255,255,255,.5)">Par 4 & Par 5 holes — send it as far as possible</div>
+            <div style="font-weight:700;color:var(--gold-light);margin-bottom:4px">Lengste Drive</div>
+            <div style="font-size:.82rem;color:rgba(255,255,255,.5)">Par 4 og Par 5 hull — slå det så langt som mulig</div>
           </div>
           <div style="background:rgba(255,255,255,.05);border:1px solid rgba(201,168,76,.2);border-radius:var(--radius-lg);padding:20px">
             <div style="font-size:1.8rem;margin-bottom:8px">🎯</div>
-            <div style="font-weight:700;color:var(--gold-light);margin-bottom:4px">Closest to Pin</div>
-            <div style="font-size:.82rem;color:rgba(255,255,255,.5)">Par 3 holes — stick it tight to the flag</div>
+            <div style="font-weight:700;color:var(--gold-light);margin-bottom:4px">Nærmest Flagget</div>
+            <div style="font-size:.82rem;color:rgba(255,255,255,.5)">Par 3 hull — plasser ballen tett inntil flagget</div>
           </div>
         </div>
       </div>
@@ -156,52 +169,52 @@
   </div>
 </section>
 
-<!-- ── Participating Teams ─────────────────────────────────────────────────────── -->
+<!-- ── Deltagende Lag ──────────────────────────────────────────────────────── -->
 <section class="section" style="background:var(--white)">
   <div class="container">
     <div class="section-header">
-      <span class="section-tag">The Field</span>
-      <h2 class="section-title">Participating <span>Teams</span></h2>
+      <span class="section-tag">Deltakere</span>
+      <h2 class="section-title">Deltagende <span>Lag</span></h2>
     </div>
     <div id="teamsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:20px">
       <div style="text-align:center;padding:40px;color:var(--text-muted);grid-column:1/-1" id="teamsPlaceholder">
         <i class="fas fa-users" style="font-size:2rem;color:var(--gold-border);margin-bottom:12px;display:block"></i>
-        Teams will be listed here once the tournament is set up.
+        Lagene vil vises her når turneringen er satt opp.
       </div>
     </div>
   </div>
 </section>
 
-<!-- ── Special Holes ─────────────────────────────────────────────────────────── -->
-<section class="section" style="background:var(--off-white)" id="specialHolesSection">
+<!-- ── Fotoutfordringer ───────────────────────────────────────────────────── -->
+<section class="section" style="background:var(--off-white)">
   <div class="container">
     <div class="section-header">
-      <span class="section-tag">Photo Challenges</span>
-      <h2 class="section-title">Special <span>Holes</span></h2>
-      <p class="section-subtitle">These holes require a photo upload before your score will be accepted</p>
+      <span class="section-tag">Fotoutfordringer</span>
+      <h2 class="section-title">Spesielle <span>Hull</span></h2>
+      <p class="section-subtitle">Disse hullene krever opplasting av bilde før poengsummen godtas</p>
     </div>
     <div id="specialHolesGrid" style="display:flex;gap:16px;flex-wrap:wrap;justify-content:center">
       <div style="text-align:center;padding:32px;color:var(--text-muted);width:100%" id="specialPlaceholder">
         <i class="fas fa-camera" style="font-size:2rem;color:var(--gold-border);margin-bottom:12px;display:block"></i>
-        Photo challenge holes will be announced before tournament day.
+        Fotoutfordring-hullene vil bli kunngjort før turneringsdagen.
       </div>
     </div>
   </div>
 </section>
 
-<!-- ── CTA ─────────────────────────────────────────────────────────────────── -->
+<!-- ── CTA ────────────────────────────────────────────────────────────────── -->
 <section class="section--sm" style="background:var(--dark);text-align:center">
   <div class="container">
-    <h2 style="font-family:var(--font-heading);font-size:1.8rem;color:var(--white);margin-bottom:8px">Ready to <span style="color:var(--gold)">Compete?</span></h2>
-    <p style="color:rgba(255,255,255,.5);margin-bottom:28px">Enter your team PIN to access the score entry system on the day</p>
+    <h2 style="font-family:var(--font-heading);font-size:1.8rem;color:var(--white);margin-bottom:8px">Klar til å <span style="color:var(--gold)">konkurrere?</span></h2>
+    <p style="color:rgba(255,255,255,.5);margin-bottom:28px">Skriv inn lagets PIN for å få tilgang til poengregistreringssystemet på spilledagen</p>
     <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap">
-      <a href="/enter-score" class="btn btn--gold"><i class="fas fa-pencil"></i> Enter Score</a>
-      <a href="/scoreboard" class="btn btn--outline"><i class="fas fa-list-ol"></i> Live Scoreboard</a>
+      <a href="/enter-score" class="btn btn--gold"><i class="fas fa-pencil"></i> Registrer Poeng</a>
+      <a href="/scoreboard" class="btn btn--outline"><i class="fas fa-list-ol"></i> Live Resultattavle</a>
     </div>
   </div>
 </section>
 
-<!-- ── Footer ─────────────────────────────────────────────────────────────────── -->
+<!-- ── Bunntekst ──────────────────────────────────────────────────────────── -->
 <footer class="footer">
   <div class="container">
     <div class="footer-inner">
@@ -210,24 +223,24 @@
         <p class="footer-tagline">Power · Precision · Party</p>
       </div>
       <div>
-        <div class="footer-heading">Navigation</div>
+        <div class="footer-heading">Navigasjon</div>
         <div class="footer-links">
-          <a href="/">Home</a>
-          <a href="/gameday">Gameday Info</a>
-          <a href="/scoreboard">Live Scoreboard</a>
-          <a href="/legacy">Legacy</a>
+          <a href="/">Hjem</a>
+          <a href="/gameday">Spilledag</a>
+          <a href="/scoreboard">Live Resultattavle</a>
+          <a href="/legacy">Historikk</a>
         </div>
       </div>
       <div>
-        <div class="footer-heading">Participants</div>
+        <div class="footer-heading">Deltakere</div>
         <div class="footer-links">
-          <a href="/enter-score">Enter Your Score</a>
-          <a href="/admin">Admin Panel</a>
+          <a href="/enter-score">Registrer Poeng</a>
+          <a href="/admin">Administrasjonspanel</a>
         </div>
       </div>
     </div>
     <div class="footer-bottom">
-      <span>&copy; <span id="footerYear"></span> Lorgen Invitational.</span>
+      <span>&copy; <span id="footerYear"></span> Lorgen Invitational. Alle rettigheter reservert.</span>
       <span>Power · Precision · Party</span>
     </div>
   </div>
@@ -235,8 +248,12 @@
 
 <script>
 document.getElementById('footerYear').textContent = new Date().getFullYear();
-window.addEventListener('scroll', () => document.getElementById('navbar').classList.toggle('scrolled', window.scrollY > 40));
-document.getElementById('navToggle').addEventListener('click', () => document.getElementById('mobileMenu').classList.toggle('open'));
+window.addEventListener('scroll', () => {
+  document.getElementById('navbar').classList.toggle('scrolled', window.scrollY > 40);
+});
+document.getElementById('navToggle').addEventListener('click', () => {
+  document.getElementById('mobileMenu').classList.toggle('open');
+});
 
 async function loadGameday() {
   try {
@@ -245,53 +262,69 @@ async function loadGameday() {
     if (d.tournament) {
       const t = d.tournament;
       const dt = new Date(t.date);
-      const fmt = dt.toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
-      document.getElementById('heroDateLine').textContent = fmt + (t.course ? ' · ' + t.course : '');
-      document.getElementById('detDate').textContent = fmt;
+      const datoFull = dt.toLocaleDateString('nb-NO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+      const datoKort = dt.toLocaleDateString('nb-NO', { day: 'numeric', month: 'long', year: 'numeric' });
+
+      document.getElementById('heroDateLine').textContent = datoFull + (t.course ? ' · ' + t.course : '');
+      document.getElementById('detDate').textContent = datoKort;
       document.getElementById('detCourse').textContent = t.course || 'TBA';
+
       if (t.description) {
         document.getElementById('descText').textContent = t.description;
         document.getElementById('tournamentDesc').classList.remove('d-none');
       }
 
-      // Special holes
-      const photoHoles = d.holes.filter(h => h.requires_photo);
-      if (photoHoles.length > 0) {
-        document.getElementById('specialPlaceholder').remove();
-        const grid = document.getElementById('specialHolesGrid');
-        photoHoles.forEach(h => {
-          grid.innerHTML += `
-            <div style="background:var(--white);border:1.5px solid var(--gold);border-radius:var(--radius-lg);padding:24px 20px;text-align:center;min-width:140px">
+      if (t.gameday_info) {
+        document.getElementById('gamedayInfo').textContent = t.gameday_info;
+        document.getElementById('gamedayInfoWrap').classList.remove('d-none');
+      }
+
+      // Fotoutfordring-hull
+      if (d.holes) {
+        const photoHoles = d.holes.filter(h => h.requires_photo);
+        if (photoHoles.length > 0) {
+          const placeholder = document.getElementById('specialPlaceholder');
+          if (placeholder) placeholder.remove();
+          const grid = document.getElementById('specialHolesGrid');
+          photoHoles.forEach(h => {
+            const el = document.createElement('div');
+            el.style.cssText = 'background:var(--white);border:1.5px solid var(--gold);border-radius:var(--radius-lg);padding:24px 20px;text-align:center;min-width:140px';
+            el.innerHTML = `
               <div style="font-size:1.8rem;margin-bottom:8px">📸</div>
-              <div style="font-weight:700;color:var(--dark);font-size:1.1rem">Hole ${h.hole_number}</div>
-              <div style="font-size:.8rem;color:var(--text-muted);margin-top:4px">Par ${h.par} · Photo Required</div>
-            </div>`;
-        });
+              <div style="font-weight:700;color:var(--dark);font-size:1.1rem">Hull ${h.hole_number}</div>
+              <div style="font-size:.8rem;color:var(--text-muted);margin-top:4px">Par ${h.par} · Foto kreves</div>`;
+            grid.appendChild(el);
+          });
+        }
       }
     }
 
-    // Load teams
-    // Teams are loaded via scoreboard data (public scoreboard has team info)
+    // Last inn lag via resultattavle-data
     const sr = await fetch('/api/scoreboard');
     const sd = await sr.json();
     if (sd.scoreboard && sd.scoreboard.length > 0) {
-      document.getElementById('teamsPlaceholder').remove();
+      const placeholder = document.getElementById('teamsPlaceholder');
+      if (placeholder) placeholder.remove();
       const grid = document.getElementById('teamsGrid');
       sd.scoreboard.forEach((team, i) => {
-        grid.innerHTML += `
-          <div class="card" style="transition:all .25s">
-            <div class="card-body" style="display:flex;align-items:center;gap:16px">
-              <div style="width:44px;height:44px;background:var(--gold-pale);border:1px solid var(--gold-border);border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--gold-dark);flex-shrink:0">${i+1}</div>
-              <div>
-                <div style="font-weight:600;color:var(--dark)">${team.team_name}</div>
-                <div style="font-size:.82rem;color:var(--text-muted)">${team.player1} & ${team.player2}</div>
-              </div>
+        const el = document.createElement('div');
+        el.className = 'card';
+        el.innerHTML = `
+          <div class="card-body" style="display:flex;align-items:center;gap:16px">
+            <div style="width:44px;height:44px;background:var(--gold-pale);border:1px solid var(--gold-border);border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--gold-dark);flex-shrink:0">${i + 1}</div>
+            <div>
+              <div style="font-weight:600;color:var(--dark)">${team.team_name}</div>
+              <div style="font-size:.82rem;color:var(--text-muted)">${team.player1} &amp; ${team.player2}</div>
             </div>
           </div>`;
+        grid.appendChild(el);
       });
     }
-  } catch(e) {}
+  } catch (e) {
+    console.error(e);
+  }
 }
+
 loadGameday();
 </script>
 </body>

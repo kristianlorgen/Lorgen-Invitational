@@ -302,7 +302,7 @@ input, select, textarea { font-family: inherit; }
   min-height: 100vh;
   display: flex;
   align-items: center;
-  background: linear-gradient(160deg, var(--dark) 0%, var(--dark-mid) 50%, #0a2240 100%);
+  background: linear-gradient(160deg, var(--white) 0%, var(--gold-pale) 55%, var(--white) 100%);
   position: relative;
   overflow: hidden;
   padding-top: var(--nav-height);
@@ -312,13 +312,13 @@ input, select, textarea { font-family: inherit; }
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse 80% 60% at 50% 40%, rgba(201,168,76,.08) 0%, transparent 70%),
+    radial-gradient(ellipse 70% 50% at 50% 40%, rgba(201,168,76,.12) 0%, transparent 65%),
     repeating-linear-gradient(
       45deg,
       transparent,
-      transparent 40px,
-      rgba(201,168,76,.015) 40px,
-      rgba(201,168,76,.015) 41px
+      transparent 60px,
+      rgba(201,168,76,.03) 60px,
+      rgba(201,168,76,.03) 61px
     );
 }
 .hero-content {
@@ -329,9 +329,9 @@ input, select, textarea { font-family: inherit; }
   padding: 60px 24px;
 }
 .hero-logo {
-  width: min(260px, 55vw);
+  width: min(280px, 58vw);
   margin: 0 auto 32px;
-  filter: drop-shadow(0 0 40px rgba(201,168,76,.4));
+  filter: drop-shadow(0 4px 24px rgba(201,168,76,.25));
   animation: heroFloat 4s ease-in-out infinite;
 }
 @keyframes heroFloat {
@@ -341,8 +341,8 @@ input, select, textarea { font-family: inherit; }
 .hero-title {
   font-family: var(--font-heading);
   font-size: clamp(2.2rem, 6vw, 4rem);
-  color: var(--white);
-  letter-spacing: 0.06em;
+  color: var(--dark);
+  letter-spacing: 0.04em;
   line-height: 1.15;
   margin-bottom: 8px;
 }
@@ -352,7 +352,7 @@ input, select, textarea { font-family: inherit; }
   font-weight: 600;
   letter-spacing: 0.25em;
   text-transform: uppercase;
-  color: var(--gold-light);
+  color: var(--gold-dark);
   margin-bottom: 32px;
 }
 .hero-meta {
@@ -371,25 +371,26 @@ input, select, textarea { font-family: inherit; }
   font-weight: 600;
   letter-spacing: 0.15em;
   text-transform: uppercase;
-  color: var(--text-light);
+  color: var(--text-muted);
   margin-bottom: 4px;
 }
 .hero-meta-item .value {
   font-family: var(--font-heading);
   font-size: 1.2rem;
-  color: var(--gold-light);
+  color: var(--dark);
 }
 .hero-divider {
   width: 1px;
   height: 40px;
-  background: rgba(201,168,76,.3);
+  background: var(--gold-border);
 }
 .hero-actions { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
 
-/* ── Page Hero (inner pages) ──────────────────────────────────────────────── */
+/* ── Page Hero (inner pages — light gold/white per CLAUDE.md) ─────────────── */
 .page-hero {
-  background: linear-gradient(135deg, var(--dark) 0%, var(--dark-mid) 100%);
-  padding: calc(var(--nav-height) + 60px) 0 60px;
+  background: linear-gradient(135deg, var(--gold-pale) 0%, var(--white) 50%, var(--gold-pale) 100%);
+  border-bottom: 1px solid var(--gold-border);
+  padding: calc(var(--nav-height) + 56px) 0 56px;
   text-align: center;
   position: relative;
   overflow: hidden;
@@ -398,25 +399,32 @@ input, select, textarea { font-family: inherit; }
   content: '';
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse 60% 80% at 50% 50%, rgba(201,168,76,.07) 0%, transparent 70%);
+  background: radial-gradient(ellipse 60% 80% at 50% 50%, rgba(201,168,76,.1) 0%, transparent 70%);
 }
 .page-hero .container { position: relative; }
 .page-hero-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--gold);
-  margin-bottom: 12px;
+  color: var(--gold-dark);
+  background: rgba(201,168,76,.12);
+  border: 1px solid var(--gold-border);
+  padding: 5px 14px;
+  border-radius: var(--radius-pill);
+  margin-bottom: 16px;
 }
 .page-hero-title {
   font-family: var(--font-heading);
   font-size: clamp(2rem, 5vw, 3.2rem);
-  color: var(--white);
+  color: var(--dark);
   margin-bottom: 12px;
 }
 .page-hero-sub {
-  color: rgba(255,255,255,.65);
+  color: var(--text-muted);
   font-size: 1rem;
 }
 

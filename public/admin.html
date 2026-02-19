@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="nb">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Admin Panel — Lorgen Invitational</title>
+  <title>Administrasjonspanel — Lorgen Invitational</title>
   <link rel="icon" type="image/png" href="/images/logo.png">
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -16,6 +16,18 @@
     .data-table tr:last-child td { border-bottom:none; }
     .inline-form { display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap; }
     .inline-form .form-group { margin:0;flex:1;min-width:120px; }
+    .photo-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px; }
+    .photo-card { border:1px solid var(--gold-border);border-radius:var(--radius);overflow:hidden;background:var(--white); }
+    .photo-card img { width:100%;aspect-ratio:4/3;object-fit:cover;display:block; }
+    .photo-card-body { padding:10px 12px; }
+    .photo-card-body strong { display:block;font-size:.85rem;color:var(--dark); }
+    .photo-card-body span { font-size:.75rem;color:var(--text-muted); }
+    .dash-hero { display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px; }
+    @media(max-width:640px){ .dash-hero{grid-template-columns:1fr;} }
+    .dash-card { background:var(--white);border:1px solid var(--gold-border);border-radius:var(--radius-xl);padding:24px; }
+    .dash-card-label { font-size:.72rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--gold-dark);margin-bottom:12px; }
+    .dash-card-main { font-family:var(--font-heading);font-size:1.3rem;color:var(--dark);margin-bottom:4px;line-height:1.3; }
+    .dash-card-sub { font-size:.82rem;color:var(--text-muted); }
   </style>
 </head>
 <body>
@@ -23,221 +35,252 @@
 <!-- Toast -->
 <div class="toast-container" id="toastContainer"></div>
 
-<!-- ── LOGIN ─────────────────────────────────────────────────────────────────── -->
+<!-- ── INNLOGGING ─────────────────────────────────────────────────────────────── -->
 <div id="adminLogin" style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:linear-gradient(160deg,var(--dark),var(--dark-mid))">
-  <div style="max-width:400px;width:100%;text-align:center">
+  <div style="max-width:420px;width:100%;text-align:center">
     <img src="/images/logo.png" style="height:72px;margin:0 auto 24px;filter:drop-shadow(0 0 12px rgba(201,168,76,.5))">
-    <h1 style="font-family:var(--font-heading);font-size:1.6rem;color:var(--white);margin-bottom:4px">Admin Panel</h1>
-    <p style="color:rgba(255,255,255,.45);font-size:.85rem;margin-bottom:32px">Tournament administration access</p>
+    <h1 style="font-family:var(--font-heading);font-size:1.6rem;color:var(--white);margin-bottom:4px">Administrasjonspanel</h1>
+    <p style="color:rgba(255,255,255,.45);font-size:.85rem;margin-bottom:32px">Turneringsadministrasjon</p>
     <div style="background:rgba(255,255,255,.06);border:1px solid rgba(201,168,76,.2);border-radius:var(--radius-xl);padding:32px">
+
+      <!-- GitHub OAuth -->
+      <button onclick="loginWithGitHub()" class="btn btn--dark" style="width:100%;justify-content:center;gap:10px;margin-bottom:16px;background:#24292f;border:1px solid rgba(255,255,255,.15)">
+        <i class="fab fa-github" style="font-size:1.1rem"></i> Logg inn med GitHub
+      </button>
+
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+        <div style="flex:1;height:1px;background:rgba(255,255,255,.12)"></div>
+        <span style="font-size:.75rem;color:rgba(255,255,255,.35)">eller</span>
+        <div style="flex:1;height:1px;background:rgba(255,255,255,.12)"></div>
+      </div>
+
+      <!-- Passord-innlogging (reserve) -->
       <div class="form-group" style="text-align:left">
-        <label class="form-label" style="color:rgba(255,255,255,.7)">Admin Password</label>
-        <input type="password" class="form-input" id="adminPass" placeholder="Enter password" style="background:rgba(255,255,255,.08);border-color:rgba(201,168,76,.3);color:var(--white);" onkeydown="if(event.key==='Enter')doAdminLogin()">
+        <label class="form-label" style="color:rgba(255,255,255,.7)">Passord</label>
+        <input type="password" class="form-input" id="adminPass" placeholder="Skriv inn passord"
+          style="background:rgba(255,255,255,.08);border-color:rgba(201,168,76,.3);color:var(--white);"
+          onkeydown="if(event.key==='Enter')doAdminLogin()">
       </div>
       <div id="adminLoginErr" style="color:#f87171;font-size:.82rem;margin-bottom:12px;min-height:18px"></div>
       <button onclick="doAdminLogin()" class="btn btn--gold" style="width:100%;justify-content:center" id="adminLoginBtn">
-        <i class="fas fa-lock-open"></i> Login
+        <i class="fas fa-lock-open"></i> Logg inn
       </button>
     </div>
   </div>
 </div>
 
-<!-- ── ADMIN PANEL ──────────────────────────────────────────────────────────── -->
+<!-- ── ADMINISTRASJONSPANEL ──────────────────────────────────────────────────── -->
 <div id="adminPanel" class="d-none">
 
-  <!-- Top bar -->
+  <!-- Topplinje -->
   <div style="position:fixed;top:0;left:0;right:0;height:var(--nav-height);background:var(--dark);border-bottom:1px solid rgba(201,168,76,.2);z-index:1000;display:flex;align-items:center;padding:0 24px;gap:16px">
     <img src="/images/logo.png" style="height:40px">
-    <span style="font-family:var(--font-heading);font-size:1rem;color:var(--gold-light);flex:1">Admin Panel</span>
-    <a href="/" class="btn btn--outline btn--sm">← Site</a>
-    <button onclick="doAdminLogout()" class="btn btn--sm" style="background:rgba(255,255,255,.08);color:rgba(255,255,255,.6);border:1px solid rgba(255,255,255,.12)">Logout</button>
+    <span style="font-family:var(--font-heading);font-size:1rem;color:var(--gold-light);flex:1">Administrasjonspanel</span>
+    <a href="/" class="btn btn--outline btn--sm">← Nettsted</a>
+    <button onclick="doAdminLogout()" class="btn btn--sm" style="background:rgba(255,255,255,.08);color:rgba(255,255,255,.6);border:1px solid rgba(255,255,255,.12)">
+      <i class="fas fa-arrow-right-from-bracket"></i> Logg ut
+    </button>
   </div>
 
   <div class="admin-layout" style="margin-top:var(--nav-height)">
 
-    <!-- Sidebar -->
+    <!-- Sidemeny -->
     <div class="admin-sidebar">
       <div class="sidebar-section">
-        <div class="sidebar-label">Overview</div>
-        <div class="sidebar-link active" onclick="showPanel('dashboard')"><i class="fas fa-gauge"></i> Dashboard</div>
+        <div class="sidebar-label">Oversikt</div>
+        <div class="sidebar-link active" onclick="showPanel('dashboard')"><i class="fas fa-gauge"></i> Oversikt</div>
       </div>
       <div class="sidebar-section">
-        <div class="sidebar-label">Tournament</div>
-        <div class="sidebar-link" onclick="showPanel('tournament')"><i class="fas fa-calendar-star"></i> Tournaments</div>
-        <div class="sidebar-link" onclick="showPanel('teams')"><i class="fas fa-users"></i> Teams</div>
-        <div class="sidebar-link" onclick="showPanel('holes')"><i class="fas fa-golf-ball-tee"></i> Holes &amp; Course</div>
+        <div class="sidebar-label">Turnering</div>
+        <div class="sidebar-link" onclick="showPanel('tournament')"><i class="fas fa-calendar-star"></i> Turneringer</div>
+        <div class="sidebar-link" onclick="showPanel('teams')"><i class="fas fa-users"></i> Lag</div>
+        <div class="sidebar-link" onclick="showPanel('holes')"><i class="fas fa-golf-ball-tee"></i> Bane og Hull</div>
+        <div class="sidebar-link" onclick="showPanel('gameday')"><i class="fas fa-calendar-day"></i> Spilledag</div>
       </div>
       <div class="sidebar-section">
-        <div class="sidebar-label">Live Day</div>
-        <div class="sidebar-link" onclick="showPanel('scores')"><i class="fas fa-list-ol"></i> Scores</div>
-        <div class="sidebar-link" onclick="showPanel('awards')"><i class="fas fa-trophy"></i> Awards</div>
+        <div class="sidebar-label">Aktiv Dag</div>
+        <div class="sidebar-link" onclick="showPanel('scores')"><i class="fas fa-list-ol"></i> Poeng</div>
+        <div class="sidebar-link" onclick="showPanel('photos')"><i class="fas fa-images"></i> Bilder</div>
+        <div class="sidebar-link" onclick="showPanel('awards')"><i class="fas fa-trophy"></i> Utmerkelser</div>
       </div>
       <div class="sidebar-section">
-        <div class="sidebar-label">History</div>
-        <div class="sidebar-link" onclick="showPanel('legacy')"><i class="fas fa-crown"></i> Legacy</div>
+        <div class="sidebar-label">Historikk</div>
+        <div class="sidebar-link" onclick="showPanel('legacy')"><i class="fas fa-crown"></i> Æresgalleri</div>
       </div>
     </div>
 
-    <!-- Content -->
+    <!-- Innhold -->
     <div class="admin-content">
 
-      <!-- ── DASHBOARD ─────────────────────────────────────────────────────── -->
+      <!-- ── OVERSIKT ──────────────────────────────────────────────────────── -->
       <div class="admin-panel active" id="panel-dashboard">
-        <div class="admin-panel-title">Dashboard</div>
-        <div class="admin-panel-sub">Overview of the current tournament</div>
-        <div class="stats-row" id="dashStats">
-          <div class="stat-card"><div class="stat-num" id="statTournaments">—</div><div class="stat-label">Tournaments</div></div>
-          <div class="stat-card"><div class="stat-num" id="statTeams">—</div><div class="stat-label">Teams</div></div>
-          <div class="stat-card"><div class="stat-num" id="statScores">—</div><div class="stat-label">Scores Entered</div></div>
-          <div class="stat-card"><div class="stat-num" id="statLegacy">—</div><div class="stat-label">Champions</div></div>
-        </div>
-        <div class="card">
-          <div class="card-header"><strong>Active Tournament</strong></div>
-          <div class="card-body" id="dashActiveTournament">
-            <p style="color:var(--text-muted)">No active tournament. Create one in the Tournaments tab.</p>
+        <div class="admin-panel-title">Oversikt</div>
+        <div class="admin-panel-sub">Status og sammendrag for turneringen</div>
+
+        <!-- Neste Turnering + Regjerande Mestere -->
+        <div class="dash-hero">
+          <div class="dash-card">
+            <div class="dash-card-label"><i class="fas fa-calendar-star" style="color:var(--gold)"></i> &nbsp;Neste Turnering</div>
+            <div class="dash-card-main" id="dashNextName">—</div>
+            <div class="dash-card-sub" id="dashNextDetails">Ingen kommende turnering</div>
+          </div>
+          <div class="dash-card" style="background:var(--dark);border-color:rgba(201,168,76,.25)">
+            <div class="dash-card-label" style="color:var(--gold)"><i class="fas fa-crown" style="color:var(--gold)"></i> &nbsp;Regjerande Mestere</div>
+            <div class="dash-card-main" style="color:var(--gold-light)" id="dashChampName">—</div>
+            <div class="dash-card-sub" style="color:rgba(255,255,255,.5)" id="dashChampDetails">Ingen historikkoppføringer ennå</div>
           </div>
         </div>
+
+        <!-- Hurtigstatistikk -->
+        <div class="stats-row">
+          <div class="stat-card"><div class="stat-num" id="statTournaments">—</div><div class="stat-label">Turneringer</div></div>
+          <div class="stat-card"><div class="stat-num" id="statTeams">—</div><div class="stat-label">Lag</div></div>
+          <div class="stat-card"><div class="stat-num" id="statScores">—</div><div class="stat-label">Registrerte poeng</div></div>
+          <div class="stat-card"><div class="stat-num" id="statLegacy">—</div><div class="stat-label">Mestere</div></div>
+        </div>
+
+        <!-- Aktiv turnering -->
+        <div class="card">
+          <div class="card-header"><strong>Aktiv Turnering</strong></div>
+          <div class="card-body" id="dashActiveTournament">
+            <p style="color:var(--text-muted)">Ingen aktiv turnering. Opprett en under Turneringer og sett status til «aktiv».</p>
+          </div>
+        </div>
+
         <div style="margin-top:20px;display:flex;gap:12px;flex-wrap:wrap">
-          <a href="/scoreboard" target="_blank" class="btn btn--gold btn--sm"><i class="fas fa-list-ol"></i> Live Scoreboard</a>
-          <button onclick="showPanel('teams')" class="btn btn--dark btn--sm"><i class="fas fa-users"></i> Manage Teams</button>
-          <button onclick="showPanel('holes')" class="btn btn--dark btn--sm"><i class="fas fa-golf-ball-tee"></i> Configure Holes</button>
+          <a href="/scoreboard" target="_blank" class="btn btn--gold btn--sm"><i class="fas fa-list-ol"></i> Live Resultattavle</a>
+          <button onclick="showPanel('teams')" class="btn btn--dark btn--sm"><i class="fas fa-users"></i> Administrer Lag</button>
+          <button onclick="showPanel('holes')" class="btn btn--dark btn--sm"><i class="fas fa-golf-ball-tee"></i> Konfigurer Hull</button>
         </div>
       </div>
 
-      <!-- ── TOURNAMENTS ──────────────────────────────────────────────────── -->
+      <!-- ── TURNERINGER ────────────────────────────────────────────────────── -->
       <div class="admin-panel" id="panel-tournament">
-        <div class="admin-panel-title">Tournaments</div>
-        <div class="admin-panel-sub">Create and manage tournament editions</div>
+        <div class="admin-panel-title">Turneringer</div>
+        <div class="admin-panel-sub">Opprett og administrer turneringsutgaver</div>
 
-        <!-- Create form -->
         <div class="card" style="margin-bottom:24px">
-          <div class="card-header"><strong>Create New Tournament</strong></div>
+          <div class="card-header"><strong>Opprett ny turnering</strong></div>
           <div class="card-body">
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px">
-              <div class="form-group"><label class="form-label">Year</label><input class="form-input" id="tYear" type="number" min="2020" max="2050" placeholder="2025"></div>
-              <div class="form-group"><label class="form-label">Tournament Name</label><input class="form-input" id="tName" type="text" placeholder="Lorgen Invitational 2025"></div>
-              <div class="form-group"><label class="form-label">Date</label><input class="form-input" id="tDate" type="date"></div>
-              <div class="form-group"><label class="form-label">Course</label><input class="form-input" id="tCourse" type="text" placeholder="e.g. Bogstad Golf Club"></div>
-              <div class="form-group" style="grid-column:1/-1"><label class="form-label">Description</label><textarea class="form-input form-textarea" id="tDesc" placeholder="Short description for the homepage..." style="min-height:70px"></textarea></div>
+              <div class="form-group"><label class="form-label">År</label><input class="form-input" id="tYear" type="number" min="2020" max="2050" placeholder="2025"></div>
+              <div class="form-group"><label class="form-label">Turneringsnavn</label><input class="form-input" id="tName" type="text" placeholder="Lorgen Invitational 2025"></div>
+              <div class="form-group"><label class="form-label">Dato</label><input class="form-input" id="tDate" type="date"></div>
+              <div class="form-group"><label class="form-label">Bane</label><input class="form-input" id="tCourse" type="text" placeholder="f.eks. Bogstad Golfklubb"></div>
+              <div class="form-group" style="grid-column:1/-1"><label class="form-label">Beskrivelse</label><textarea class="form-input form-textarea" id="tDesc" placeholder="Kort beskrivelse til forsiden..." style="min-height:70px"></textarea></div>
             </div>
             <div style="margin-top:16px">
-              <button onclick="createTournament()" class="btn btn--gold btn--sm"><i class="fas fa-plus"></i> Create Tournament</button>
+              <button onclick="createTournament()" class="btn btn--gold btn--sm"><i class="fas fa-plus"></i> Opprett turnering</button>
             </div>
           </div>
         </div>
 
-        <!-- List -->
         <div class="card">
-          <div class="card-header"><strong>All Tournaments</strong></div>
+          <div class="card-header"><strong>Alle turneringer</strong></div>
           <div style="overflow-x:auto">
             <table class="data-table">
-              <thead><tr><th>Year</th><th>Name</th><th>Date</th><th>Course</th><th>Status</th><th>Actions</th></tr></thead>
-              <tbody id="tournamentsTable"><tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Loading...</td></tr></tbody>
+              <thead><tr><th>År</th><th>Navn</th><th>Dato</th><th>Bane</th><th>Status</th><th>Handlinger</th></tr></thead>
+              <tbody id="tournamentsTable"><tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Laster...</td></tr></tbody>
             </table>
           </div>
         </div>
       </div>
 
-      <!-- ── TEAMS ─────────────────────────────────────────────────────────── -->
+      <!-- ── LAG ───────────────────────────────────────────────────────────── -->
       <div class="admin-panel" id="panel-teams">
-        <div class="admin-panel-title">Teams</div>
-        <div class="admin-panel-sub">Add and manage participating teams and their PINs</div>
+        <div class="admin-panel-title">Lag</div>
+        <div class="admin-panel-sub">Legg til og administrer deltagende lag og PIN-koder</div>
 
         <div class="card" style="margin-bottom:24px">
-          <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
-            <strong>Tournament</strong>
-          </div>
           <div class="card-body">
             <div class="form-group" style="margin:0">
-              <label class="form-label">Select Tournament</label>
+              <label class="form-label">Velg turnering</label>
               <select class="form-select" id="teamsTournamentSelect" onchange="loadTeams()">
-                <option value="">— Select tournament —</option>
+                <option value="">— Velg turnering —</option>
               </select>
             </div>
           </div>
         </div>
 
-        <div class="card" style="margin-bottom:24px" id="addTeamCard" class="d-none">
-          <div class="card-header"><strong>Add Team</strong></div>
+        <div class="card" style="margin-bottom:24px" id="addTeamCard">
+          <div class="card-header"><strong>Legg til lag</strong></div>
           <div class="card-body">
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px">
-              <div class="form-group"><label class="form-label">Team Name</label><input class="form-input" id="newTeamName" placeholder="Team Eagles"></div>
-              <div class="form-group"><label class="form-label">Player 1</label><input class="form-input" id="newPlayer1" placeholder="First name"></div>
-              <div class="form-group"><label class="form-label">Player 2</label><input class="form-input" id="newPlayer2" placeholder="First name"></div>
+              <div class="form-group"><label class="form-label">Lagnavn</label><input class="form-input" id="newTeamName" placeholder="Team Eagles"></div>
+              <div class="form-group"><label class="form-label">Spiller 1</label><input class="form-input" id="newPlayer1" placeholder="Fornavn"></div>
+              <div class="form-group"><label class="form-label">Spiller 2</label><input class="form-input" id="newPlayer2" placeholder="Fornavn"></div>
               <div class="form-group">
-                <label class="form-label">PIN (4 digits)</label>
+                <label class="form-label">PIN (4 siffer)</label>
                 <input class="form-input" id="newPin" type="text" maxlength="4" pattern="[0-9]{4}" placeholder="1234" inputmode="numeric">
-                <div class="form-hint">Unique within this tournament</div>
+                <div class="form-hint">Unik innenfor denne turneringen</div>
               </div>
             </div>
             <div style="margin-top:16px;display:flex;gap:10px">
-              <button onclick="addTeam()" class="btn btn--gold btn--sm"><i class="fas fa-plus"></i> Add Team</button>
-              <button onclick="generatePin()" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-dice"></i> Random PIN</button>
+              <button onclick="addTeam()" class="btn btn--gold btn--sm"><i class="fas fa-plus"></i> Legg til lag</button>
+              <button onclick="generatePin()" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-dice"></i> Tilfeldig PIN</button>
             </div>
           </div>
         </div>
 
-        <div class="card" id="teamsListCard">
-          <div class="card-header"><strong>Teams</strong> <span id="teamCount" style="color:var(--text-muted);font-size:.82rem"></span></div>
+        <div class="card">
+          <div class="card-header"><strong>Lag</strong> <span id="teamCount" style="color:var(--text-muted);font-size:.82rem"></span></div>
           <div style="overflow-x:auto">
             <table class="data-table">
-              <thead><tr><th>#</th><th>Team Name</th><th>Player 1</th><th>Player 2</th><th>PIN</th><th>Actions</th></tr></thead>
-              <tbody id="teamsTable"><tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Select a tournament above</td></tr></tbody>
+              <thead><tr><th>#</th><th>Lagnavn</th><th>Spiller 1</th><th>Spiller 2</th><th>PIN</th><th>Handlinger</th></tr></thead>
+              <tbody id="teamsTable"><tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Velg en turnering ovenfor</td></tr></tbody>
             </table>
           </div>
         </div>
       </div>
 
-      <!-- ── HOLES ──────────────────────────────────────────────────────────── -->
+      <!-- ── BANE OG HULL ───────────────────────────────────────────────────── -->
       <div class="admin-panel" id="panel-holes">
-        <div class="admin-panel-title">Holes &amp; Course</div>
-        <div class="admin-panel-sub">Set par values and mark which holes require a photo upload</div>
+        <div class="admin-panel-title">Bane og Hull</div>
+        <div class="admin-panel-sub">Sett par-verdier og marker hull med fotoutfordring</div>
 
         <div class="card" style="margin-bottom:24px">
           <div class="card-body">
             <div class="form-group" style="margin:0">
-              <label class="form-label">Select Tournament</label>
+              <label class="form-label">Velg turnering</label>
               <select class="form-select" id="holesTournamentSelect" onchange="loadHoles()">
-                <option value="">— Select tournament —</option>
+                <option value="">— Velg turnering —</option>
               </select>
             </div>
           </div>
         </div>
 
-        <div class="card" id="holesConfig" class="d-none">
+        <div class="card" id="holesConfig">
           <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
-            <strong>Hole Configuration</strong>
-            <button onclick="saveHoles()" class="btn btn--gold btn--sm"><i class="fas fa-floppy-disk"></i> Save All</button>
+            <strong>Hullkonfigurasjon</strong>
+            <button onclick="saveHoles()" class="btn btn--gold btn--sm"><i class="fas fa-floppy-disk"></i> Lagre alle</button>
           </div>
           <div class="card-body">
             <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:20px">
               <i class="fas fa-info-circle" style="color:var(--gold)"></i>
-              Set the par for each hole and tick "📸 Photo" to make photo upload mandatory before score entry on that hole.
+              Sett par for hvert hull, og huk av «📸 Foto» for å kreve bildeopplasting på det hullet.
             </p>
-            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:12px" id="holesGrid">
-              <!-- Populated by JS -->
-            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:12px" id="holesGrid"></div>
             <div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--gold-border);display:flex;gap:12px;flex-wrap:wrap">
-              <button onclick="setAllPar(3)" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)">All Par 3</button>
-              <button onclick="setAllPar(4)" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)">All Par 4</button>
-              <button onclick="setAllPar(5)" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)">All Par 5</button>
-              <button onclick="clearAllPhotos()" class="btn btn--outline btn--sm" style="color:var(--danger);border-color:#fecaca">Clear All Photos</button>
+              <button onclick="setAllPar(3)" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)">Alle Par 3</button>
+              <button onclick="setAllPar(4)" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)">Alle Par 4</button>
+              <button onclick="setAllPar(5)" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)">Alle Par 5</button>
+              <button onclick="clearAllPhotos()" class="btn btn--outline btn--sm" style="color:var(--danger);border-color:#fecaca">Fjern alle fotokrav</button>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- ── SCORES ──────────────────────────────────────────────────────────── -->
-      <div class="admin-panel" id="panel-scores">
-        <div class="admin-panel-title">Scores</div>
-        <div class="admin-panel-sub">View and override submitted scores, view photo challenges</div>
+      <!-- ── SPILLEDAG ──────────────────────────────────────────────────────── -->
+      <div class="admin-panel" id="panel-gameday">
+        <div class="admin-panel-title">Spilledag</div>
+        <div class="admin-panel-sub">Rediger program og informasjon som vises på den offentlige Spilledag-siden</div>
 
         <div class="card" style="margin-bottom:24px">
           <div class="card-body">
             <div class="form-group" style="margin:0">
-              <label class="form-label">Select Tournament</label>
-              <select class="form-select" id="scoresTournamentSelect" onchange="loadScores()">
-                <option value="">— Select tournament —</option>
+              <label class="form-label">Velg turnering</label>
+              <select class="form-select" id="gamedayTournamentSelect" onchange="loadGameday()">
+                <option value="">— Velg turnering —</option>
               </select>
             </div>
           </div>
@@ -245,107 +288,172 @@
 
         <div class="card">
           <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
-            <strong>Submitted Scores</strong>
-            <button onclick="loadScores()" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-rotate-right"></i> Refresh</button>
+            <strong>Program og informasjon</strong>
+            <button onclick="saveGameday()" class="btn btn--gold btn--sm"><i class="fas fa-floppy-disk"></i> Lagre</button>
+          </div>
+          <div class="card-body">
+            <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:16px">
+              <i class="fas fa-info-circle" style="color:var(--gold)"></i>
+              Teksten vises som program på den offentlige Spilledag-siden. Bruk linjeskift for å strukturere innholdet.
+            </p>
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Spilledag-tekst</label>
+              <textarea class="form-input form-textarea" id="gamedayInfo" rows="12"
+                placeholder="f.eks.&#10;08:00 — Oppmøte og registrering&#10;08:30 — Frokost&#10;10:00 — Tee-off&#10;15:00 — Overrekkelse av premier"></textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── POENG ──────────────────────────────────────────────────────────── -->
+      <div class="admin-panel" id="panel-scores">
+        <div class="admin-panel-title">Poeng</div>
+        <div class="admin-panel-sub">Se og overstyr innsendte poeng</div>
+
+        <div class="card" style="margin-bottom:24px">
+          <div class="card-body">
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Velg turnering</label>
+              <select class="form-select" id="scoresTournamentSelect" onchange="loadScores()">
+                <option value="">— Velg turnering —</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
+            <strong>Innsendte poeng</strong>
+            <button onclick="loadScores()" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-rotate-right"></i> Oppdater</button>
           </div>
           <div style="overflow-x:auto">
             <table class="data-table">
-              <thead><tr><th>Team</th><th>Players</th><th>Hole</th><th>Par</th><th>Score</th><th>+/−</th><th>Photo</th><th>Actions</th></tr></thead>
-              <tbody id="scoresTable"><tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted)">Select a tournament above</td></tr></tbody>
+              <thead><tr><th>Lag</th><th>Spillere</th><th>Hull</th><th>Par</th><th>Poeng</th><th>+/−</th><th>Bilde</th><th>Handlinger</th></tr></thead>
+              <tbody id="scoresTable"><tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted)">Velg en turnering ovenfor</td></tr></tbody>
             </table>
           </div>
         </div>
       </div>
 
-      <!-- ── AWARDS ──────────────────────────────────────────────────────────── -->
+      <!-- ── BILDER ─────────────────────────────────────────────────────────── -->
+      <div class="admin-panel" id="panel-photos">
+        <div class="admin-panel-title">Bilder</div>
+        <div class="admin-panel-sub">Alle opplastede bilder fra fotoutfordringer</div>
+
+        <div class="card" style="margin-bottom:24px">
+          <div class="card-body" style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end">
+            <div class="form-group" style="margin:0;flex:1;min-width:200px">
+              <label class="form-label">Velg turnering</label>
+              <select class="form-select" id="photosTournamentSelect" onchange="loadPhotos()">
+                <option value="">— Velg turnering —</option>
+              </select>
+            </div>
+            <button onclick="loadPhotos()" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-rotate-right"></i> Oppdater</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
+            <strong>Opplastede bilder</strong>
+            <span id="photoCount" style="font-size:.82rem;color:var(--text-muted)"></span>
+          </div>
+          <div class="card-body">
+            <div id="photosGrid" class="photo-grid">
+              <p style="color:var(--text-muted);grid-column:1/-1">Velg en turnering ovenfor.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── UTMERKELSER ────────────────────────────────────────────────────── -->
       <div class="admin-panel" id="panel-awards">
-        <div class="admin-panel-title">Awards</div>
-        <div class="admin-panel-sub">Assign Longest Drive and Closest to Pin winners</div>
+        <div class="admin-panel-title">Utmerkelser</div>
+        <div class="admin-panel-sub">Tildel Lengste Drive og Nærmest Flagget</div>
 
         <div class="card" style="margin-bottom:24px">
           <div class="card-body">
             <div class="form-group" style="margin:0">
-              <label class="form-label">Select Tournament</label>
+              <label class="form-label">Velg turnering</label>
               <select class="form-select" id="awardsTournamentSelect" onchange="loadAwards()">
-                <option value="">— Select tournament —</option>
+                <option value="">— Velg turnering —</option>
               </select>
             </div>
           </div>
         </div>
 
         <div class="card" style="margin-bottom:24px">
-          <div class="card-header"><strong>Assign Award</strong></div>
+          <div class="card-header"><strong>Tildel utmerkelse</strong></div>
           <div class="card-body">
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px">
               <div class="form-group">
-                <label class="form-label">Award Type</label>
+                <label class="form-label">Type</label>
                 <select class="form-select" id="awardType">
-                  <option value="longest_drive">🏌️ Longest Drive</option>
-                  <option value="closest_to_pin">🎯 Closest to Pin</option>
+                  <option value="longest_drive">🏌️ Lengste Drive</option>
+                  <option value="closest_to_pin">🎯 Nærmest Flagget</option>
                 </select>
               </div>
               <div class="form-group">
-                <label class="form-label">Hole Number</label>
-                <input class="form-input" id="awardHole" type="number" min="1" max="18" placeholder="e.g. 7">
+                <label class="form-label">Hullnummer</label>
+                <input class="form-input" id="awardHole" type="number" min="1" max="18" placeholder="f.eks. 7">
               </div>
               <div class="form-group">
-                <label class="form-label">Winning Team</label>
+                <label class="form-label">Vinnende lag</label>
                 <select class="form-select" id="awardTeam">
-                  <option value="">— Select team —</option>
+                  <option value="">— Velg lag —</option>
                 </select>
               </div>
               <div class="form-group">
-                <label class="form-label">Detail (optional)</label>
-                <input class="form-input" id="awardDetail" placeholder="e.g. 285m / 1.2m">
+                <label class="form-label">Detalj (valgfritt)</label>
+                <input class="form-input" id="awardDetail" placeholder="f.eks. 285m / 1,2m">
               </div>
             </div>
             <div style="margin-top:16px">
-              <button onclick="saveAward()" class="btn btn--gold btn--sm"><i class="fas fa-trophy"></i> Assign Award</button>
+              <button onclick="saveAward()" class="btn btn--gold btn--sm"><i class="fas fa-trophy"></i> Tildel utmerkelse</button>
             </div>
           </div>
         </div>
 
         <div class="card">
-          <div class="card-header"><strong>Current Awards</strong></div>
+          <div class="card-header"><strong>Gjeldende utmerkelser</strong></div>
           <div style="overflow-x:auto">
             <table class="data-table">
-              <thead><tr><th>Type</th><th>Hole</th><th>Winner</th><th>Detail</th><th>Actions</th></tr></thead>
-              <tbody id="awardsTable"><tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-muted)">Select a tournament above</td></tr></tbody>
+              <thead><tr><th>Type</th><th>Hull</th><th>Vinner</th><th>Detalj</th><th>Handlinger</th></tr></thead>
+              <tbody id="awardsTable"><tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-muted)">Velg en turnering ovenfor</td></tr></tbody>
             </table>
           </div>
         </div>
       </div>
 
-      <!-- ── LEGACY ──────────────────────────────────────────────────────────── -->
+      <!-- ── ÆRESGALLERI ────────────────────────────────────────────────────── -->
       <div class="admin-panel" id="panel-legacy">
-        <div class="admin-panel-title">Legacy</div>
-        <div class="admin-panel-sub">Manage the Hall of Fame — past tournament champions</div>
+        <div class="admin-panel-title">Æresgalleri</div>
+        <div class="admin-panel-sub">Administrer historikk og tidligere mesterlag — kilden til «Regjerande Mestere»</div>
 
         <div class="card" style="margin-bottom:24px">
-          <div class="card-header"><strong>Add Legacy Entry</strong></div>
+          <div class="card-header"><strong>Legg til historikkoppføring</strong></div>
           <div class="card-body">
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px">
-              <div class="form-group"><label class="form-label">Year</label><input class="form-input" id="lYear" type="number" placeholder="2024"></div>
-              <div class="form-group"><label class="form-label">Winner Team Name</label><input class="form-input" id="lTeam" placeholder="Team Eagles"></div>
-              <div class="form-group"><label class="form-label">Player 1</label><input class="form-input" id="lP1" placeholder="Name"></div>
-              <div class="form-group"><label class="form-label">Player 2</label><input class="form-input" id="lP2" placeholder="Name"></div>
-              <div class="form-group"><label class="form-label">Total Score</label><input class="form-input" id="lScore" placeholder="e.g. 62"></div>
-              <div class="form-group"><label class="form-label">Score to Par</label><input class="form-input" id="lToPar" placeholder="e.g. -10 or E or +2"></div>
-              <div class="form-group"><label class="form-label">Course</label><input class="form-input" id="lCourse" placeholder="Course name"></div>
-              <div class="form-group"><label class="form-label">Notes</label><input class="form-input" id="lNotes" placeholder="Optional notes"></div>
+              <div class="form-group"><label class="form-label">År</label><input class="form-input" id="lYear" type="number" placeholder="2024"></div>
+              <div class="form-group"><label class="form-label">Vinnerlag</label><input class="form-input" id="lTeam" placeholder="Team Eagles"></div>
+              <div class="form-group"><label class="form-label">Spiller 1</label><input class="form-input" id="lP1" placeholder="Navn"></div>
+              <div class="form-group"><label class="form-label">Spiller 2</label><input class="form-input" id="lP2" placeholder="Navn"></div>
+              <div class="form-group"><label class="form-label">Totalpoeng</label><input class="form-input" id="lScore" placeholder="f.eks. 62"></div>
+              <div class="form-group"><label class="form-label">Poeng til par</label><input class="form-input" id="lToPar" placeholder="f.eks. -10, E eller +2"></div>
+              <div class="form-group"><label class="form-label">Bane</label><input class="form-input" id="lCourse" placeholder="Banenavn"></div>
+              <div class="form-group"><label class="form-label">Notater</label><input class="form-input" id="lNotes" placeholder="Valgfrie notater"></div>
             </div>
             <div style="margin-top:16px">
-              <button onclick="addLegacy()" class="btn btn--gold btn--sm"><i class="fas fa-plus"></i> Add to Legacy</button>
+              <button onclick="addLegacy()" class="btn btn--gold btn--sm"><i class="fas fa-plus"></i> Legg til i historikk</button>
             </div>
           </div>
         </div>
 
         <div class="card">
-          <div class="card-header"><strong>Hall of Fame</strong></div>
+          <div class="card-header"><strong>Æresgalleri</strong></div>
           <div style="overflow-x:auto">
             <table class="data-table">
-              <thead><tr><th>Year</th><th>Champions</th><th>Players</th><th>Score</th><th>+/−</th><th>Course</th><th>Actions</th></tr></thead>
-              <tbody id="legacyTable"><tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted)">Loading...</td></tr></tbody>
+              <thead><tr><th>År</th><th>Mestere</th><th>Spillere</th><th>Poeng</th><th>+/−</th><th>Bane</th><th>Handlinger</th></tr></thead>
+              <tbody id="legacyTable"><tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted)">Laster...</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -356,7 +464,7 @@
 </div><!-- /adminPanel -->
 
 <script>
-// ── Utilities ──────────────────────────────────────────────────────────────────
+// ── Hjelpefunksjoner ──────────────────────────────────────────────────────────
 function showToast(msg, type='success') {
   const t = document.createElement('div');
   t.className = `toast toast--${type}`;
@@ -366,16 +474,22 @@ function showToast(msg, type='success') {
 }
 
 async function api(url, options={}) {
-  const r = await fetch(url, {
-    headers: {'Content-Type':'application/json'},
-    ...options
-  });
+  const r = await fetch(url, { headers:{'Content-Type':'application/json'}, ...options });
   const d = await r.json();
-  if (!r.ok) throw new Error(d.error || 'Request failed');
+  if (!r.ok) throw new Error(d.error || 'Forespørsel mislyktes');
   return d;
 }
 
-// ── Auth ───────────────────────────────────────────────────────────────────────
+// ── Auth ──────────────────────────────────────────────────────────────────────
+async function loginWithGitHub() {
+  try {
+    const d = await api('/api/auth/github-url');
+    window.location.href = d.url;
+  } catch(e) {
+    showToast('Kunne ikke starte GitHub-innlogging: ' + e.message, 'error');
+  }
+}
+
 async function doAdminLogin() {
   const pw = document.getElementById('adminPass').value;
   const btn = document.getElementById('adminLoginBtn');
@@ -383,17 +497,17 @@ async function doAdminLogin() {
   btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
   document.getElementById('adminLoginErr').textContent = '';
   try {
-    const d = await api('/api/auth/admin-login', { method:'POST', body: JSON.stringify({password:pw}) });
+    const d = await api('/api/auth/admin-login', { method:'POST', body:JSON.stringify({password:pw}) });
     if (d.success) {
       document.getElementById('adminLogin').classList.add('d-none');
       document.getElementById('adminPanel').classList.remove('d-none');
       await initAdmin();
     }
   } catch(e) {
-    document.getElementById('adminLoginErr').textContent = e.message || 'Invalid password';
+    document.getElementById('adminLoginErr').textContent = e.message || 'Ugyldig passord';
   }
   btn.disabled = false;
-  btn.innerHTML = '<i class="fas fa-lock-open"></i> Login';
+  btn.innerHTML = '<i class="fas fa-lock-open"></i> Logg inn';
 }
 document.getElementById('adminPass').addEventListener('keydown', e => { if(e.key==='Enter') doAdminLogin(); });
 
@@ -402,8 +516,31 @@ async function doAdminLogout() {
   location.reload();
 }
 
-// Check existing session
+// Sjekk eksisterende sesjon ved sideinnlasting — inkludert GitHub OAuth-callback
 (async () => {
+  // Supabase OAuth redirects back with #access_token=... in the URL hash
+  const hash = new URLSearchParams(window.location.hash.slice(1));
+  const oauthToken = hash.get('access_token');
+  if (oauthToken) {
+    // Clear the hash from the URL bar without triggering a reload
+    history.replaceState(null, '', window.location.pathname);
+    try {
+      const d = await api('/api/auth/github-token', {
+        method: 'POST', body: JSON.stringify({ access_token: oauthToken })
+      });
+      if (d.success) {
+        document.getElementById('adminLogin').classList.add('d-none');
+        document.getElementById('adminPanel').classList.remove('d-none');
+        showToast('Innlogget med GitHub' + (d.username ? ' som ' + d.username : '') + ' ✓');
+        await initAdmin();
+        return;
+      }
+    } catch(e) {
+      document.getElementById('adminLoginErr').textContent = e.message;
+    }
+  }
+
+  // Normal session check
   try {
     const d = await api('/api/auth/status');
     if (d.type === 'admin') {
@@ -414,16 +551,17 @@ async function doAdminLogout() {
   } catch(_) {}
 })();
 
-// ── Panel navigation ───────────────────────────────────────────────────────────
+// ── Panelnavigasjon ───────────────────────────────────────────────────────────
 function showPanel(id) {
   document.querySelectorAll('.admin-panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.sidebar-link').forEach(l => l.classList.remove('active'));
   document.getElementById('panel-' + id).classList.add('active');
-  const links = document.querySelectorAll('.sidebar-link');
-  links.forEach(l => { if(l.getAttribute('onclick') && l.getAttribute('onclick').includes("'"+id+"'")) l.classList.add('active'); });
+  document.querySelectorAll('.sidebar-link').forEach(l => {
+    if (l.getAttribute('onclick') && l.getAttribute('onclick').includes("'"+id+"'")) l.classList.add('active');
+  });
 }
 
-// ── State ─────────────────────────────────────────────────────────────────────
+// ── Tilstand ──────────────────────────────────────────────────────────────────
 let allTournaments = [];
 
 async function initAdmin() {
@@ -432,7 +570,7 @@ async function initAdmin() {
   await loadLegacy();
 }
 
-// ── Tournaments ───────────────────────────────────────────────────────────────
+// ── Turneringer ───────────────────────────────────────────────────────────────
 async function loadTournaments() {
   const d = await api('/api/admin/tournaments');
   allTournaments = d.tournaments;
@@ -440,13 +578,18 @@ async function loadTournaments() {
   populateTournamentSelects();
 }
 
+function statusLabel(s) {
+  return s==='upcoming'?'Kommende':s==='active'?'Aktiv':s==='completed'?'Fullført':s;
+}
+
 function populateTournamentSelects() {
-  const selects = ['teamsTournamentSelect','holesTournamentSelect','scoresTournamentSelect','awardsTournamentSelect'];
-  selects.forEach(id => {
+  const ids = ['teamsTournamentSelect','holesTournamentSelect','scoresTournamentSelect',
+               'awardsTournamentSelect','gamedayTournamentSelect','photosTournamentSelect'];
+  ids.forEach(id => {
     const sel = document.getElementById(id);
     const cur = sel.value;
-    sel.innerHTML = '<option value="">— Select tournament —</option>' +
-      allTournaments.map(t => `<option value="${t.id}">${t.name} (${t.year}) - ${t.status}</option>`).join('');
+    sel.innerHTML = '<option value="">— Velg turnering —</option>' +
+      allTournaments.map(t => `<option value="${t.id}">${t.name} (${t.year}) — ${statusLabel(t.status)}</option>`).join('');
     if (cur) sel.value = cur;
   });
 }
@@ -454,41 +597,38 @@ function populateTournamentSelects() {
 function renderTournamentsTable() {
   const tbody = document.getElementById('tournamentsTable');
   if (!allTournaments.length) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">No tournaments yet</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen turneringer ennå</td></tr>';
     return;
   }
   tbody.innerHTML = allTournaments.map(t => `
     <tr>
       <td><strong>${t.year}</strong></td>
       <td>${t.name}</td>
-      <td>${new Date(t.date).toLocaleDateString('en-GB')}</td>
-      <td>${t.course || '—'}</td>
+      <td>${new Date(t.date).toLocaleDateString('nb-NO')}</td>
+      <td>${t.course||'—'}</td>
       <td>
         <select onchange="changeTournamentStatus(${t.id},this.value)" style="padding:4px 8px;border:1px solid var(--gold-border);border-radius:4px;font-size:.8rem">
-          <option ${t.status==='upcoming'?'selected':''}>upcoming</option>
-          <option ${t.status==='active'?'selected':''}>active</option>
-          <option ${t.status==='completed'?'selected':''}>completed</option>
+          <option value="upcoming" ${t.status==='upcoming'?'selected':''}>Kommende</option>
+          <option value="active"   ${t.status==='active'  ?'selected':''}>Aktiv</option>
+          <option value="completed"${t.status==='completed'?'selected':''}>Fullført</option>
         </select>
       </td>
       <td>
-        <button onclick="deleteTournament(${t.id},'${t.name}')" class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
+        <button onclick="deleteTournament(${t.id},${JSON.stringify(t.name)})" class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
       </td>
     </tr>`).join('');
 }
 
 async function createTournament() {
-  const year=document.getElementById('tYear').value,
-        name=document.getElementById('tName').value,
-        date=document.getElementById('tDate').value,
-        course=document.getElementById('tCourse').value,
+  const year=document.getElementById('tYear').value, name=document.getElementById('tName').value,
+        date=document.getElementById('tDate').value, course=document.getElementById('tCourse').value,
         description=document.getElementById('tDesc').value;
-  if (!year||!name||!date) { showToast('Year, name and date are required','error'); return; }
+  if (!year||!name||!date) { showToast('År, navn og dato er påkrevd','error'); return; }
   try {
     await api('/api/admin/tournament',{method:'POST',body:JSON.stringify({year,name,date,course,description})});
-    showToast('Tournament created!');
-    ['tYear','tName','tDate','tCourse','tDesc'].forEach(id => document.getElementById(id).value='');
-    await loadTournaments();
-    await loadDashboard();
+    showToast('Turnering opprettet!');
+    ['tYear','tName','tDate','tCourse','tDesc'].forEach(id=>document.getElementById(id).value='');
+    await loadTournaments(); await loadDashboard();
   } catch(e) { showToast(e.message,'error'); }
 }
 
@@ -497,99 +637,112 @@ async function changeTournamentStatus(id, status) {
   if (!t) return;
   try {
     await api('/api/admin/tournament/'+id,{method:'PUT',body:JSON.stringify({...t,status})});
-    showToast('Status updated to "'+status+'"');
-    await loadTournaments();
-    await loadDashboard();
+    showToast('Status oppdatert til «'+statusLabel(status)+'»');
+    await loadTournaments(); await loadDashboard();
   } catch(e) { showToast(e.message,'error'); }
 }
 
 async function deleteTournament(id, name) {
-  if (!confirm(`Delete "${name}" and ALL its data? This cannot be undone.`)) return;
+  if (!confirm(`Slett «${name}» og ALL tilhørende data? Dette kan ikke angres.`)) return;
   try {
     await api('/api/admin/tournament/'+id,{method:'DELETE'});
-    showToast('Tournament deleted');
-    await loadTournaments();
-    await loadDashboard();
+    showToast('Turnering slettet');
+    await loadTournaments(); await loadDashboard();
   } catch(e) { showToast(e.message,'error'); }
 }
 
-// ── Dashboard ─────────────────────────────────────────────────────────────────
+// ── Oversikt (dashboard) ──────────────────────────────────────────────────────
 async function loadDashboard() {
   document.getElementById('statTournaments').textContent = allTournaments.length;
-  const active = allTournaments.find(t => t.status === 'active');
-  const legacy = await api('/api/admin/legacy');
-  document.getElementById('statLegacy').textContent = legacy.legacy.length;
 
-  if (active) {
-    const teams = await api('/api/admin/tournament/'+active.id+'/teams');
-    const scores = await api('/api/admin/tournament/'+active.id+'/scores');
-    document.getElementById('statTeams').textContent = teams.teams.length;
-    document.getElementById('statScores').textContent = scores.scores.length;
-    document.getElementById('dashActiveTournament').innerHTML = `
-      <div style="display:flex;gap:16px;flex-wrap:wrap">
-        <div><div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em">Name</div><strong>${active.name}</strong></div>
-        <div><div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em">Date</div><strong>${new Date(active.date).toLocaleDateString('en-GB')}</strong></div>
-        <div><div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em">Course</div><strong>${active.course||'—'}</strong></div>
-        <div><div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em">Status</div><span class="badge badge--active">Active</span></div>
-      </div>`;
+  const upcoming = allTournaments.find(t=>t.status==='upcoming') || allTournaments.find(t=>t.status==='active');
+  if (upcoming) {
+    document.getElementById('dashNextName').textContent = upcoming.name;
+    document.getElementById('dashNextDetails').textContent =
+      new Date(upcoming.date).toLocaleDateString('nb-NO',{weekday:'long',year:'numeric',month:'long',day:'numeric'}) +
+      (upcoming.course ? ' · '+upcoming.course : '');
   } else {
-    const upcoming = allTournaments.find(t => t.status === 'upcoming');
-    if (upcoming) {
-      document.getElementById('dashActiveTournament').innerHTML = `<p>Next up: <strong>${upcoming.name}</strong> on ${new Date(upcoming.date).toLocaleDateString('en-GB')} — status is "upcoming"</p>`;
-    } else {
-      document.getElementById('dashActiveTournament').innerHTML = '<p style="color:var(--text-muted)">No active tournament. Create one in the Tournaments tab, then set its status to "active".</p>';
+    document.getElementById('dashNextName').textContent = '—';
+    document.getElementById('dashNextDetails').textContent = 'Ingen kommende turnering';
+  }
+
+  try {
+    const legacy = await api('/api/admin/legacy');
+    document.getElementById('statLegacy').textContent = legacy.legacy.length;
+    if (legacy.legacy.length) {
+      const latest = legacy.legacy[0];
+      document.getElementById('dashChampName').textContent = latest.winner_team;
+      document.getElementById('dashChampDetails').textContent =
+        latest.player1+' & '+latest.player2+' — '+latest.year+(latest.score_to_par?' ('+latest.score_to_par+')':'');
     }
+  } catch(_) {}
+
+  const active = allTournaments.find(t=>t.status==='active');
+  if (active) {
+    try {
+      const [teams, scores] = await Promise.all([
+        api('/api/admin/tournament/'+active.id+'/teams'),
+        api('/api/admin/tournament/'+active.id+'/scores')
+      ]);
+      document.getElementById('statTeams').textContent = teams.teams.length;
+      document.getElementById('statScores').textContent = scores.scores.length;
+      document.getElementById('dashActiveTournament').innerHTML = `
+        <div style="display:flex;gap:16px;flex-wrap:wrap">
+          <div><div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em">Navn</div><strong>${active.name}</strong></div>
+          <div><div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em">Dato</div><strong>${new Date(active.date).toLocaleDateString('nb-NO')}</strong></div>
+          <div><div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em">Bane</div><strong>${active.course||'—'}</strong></div>
+          <div><div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em">Status</div><span class="badge badge--active">Aktiv</span></div>
+        </div>`;
+    } catch(_) {}
+  } else {
+    document.getElementById('dashActiveTournament').innerHTML =
+      '<p style="color:var(--text-muted)">Ingen aktiv turnering. Opprett en under Turneringer og sett status til «aktiv».</p>';
     document.getElementById('statTeams').textContent = '—';
     document.getElementById('statScores').textContent = '—';
   }
 }
 
-// ── Teams ─────────────────────────────────────────────────────────────────────
+// ── Lag ───────────────────────────────────────────────────────────────────────
 async function loadTeams() {
   const tid = document.getElementById('teamsTournamentSelect').value;
   if (!tid) return;
-  document.getElementById('addTeamCard').classList.remove('d-none');
   const d = await api('/api/admin/tournament/'+tid+'/teams');
-  const teams = d.teams;
-  document.getElementById('teamCount').textContent = `(${teams.length} teams)`;
-  document.getElementById('teamsTable').innerHTML = teams.length === 0
-    ? '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">No teams yet. Add one above.</td></tr>'
-    : teams.map((t,i) => `
+  document.getElementById('teamCount').textContent = `(${d.teams.length} lag)`;
+  document.getElementById('teamsTable').innerHTML = !d.teams.length
+    ? '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen lag ennå. Legg til ett ovenfor.</td></tr>'
+    : d.teams.map((t,i) => `
         <tr>
           <td>${i+1}</td>
           <td><strong>${t.team_name}</strong></td>
           <td>${t.player1}</td>
           <td>${t.player2}</td>
-          <td><code style="background:var(--light);padding:2px 8px;border-radius:4px;font-weight:700">${t.pin_code}</code></td>
-          <td><button onclick="deleteTeam(${t.id},'${t.team_name}')" class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button></td>
+          <td><code style="background:var(--gold-pale);padding:2px 8px;border-radius:4px;font-weight:700;color:var(--gold-dark)">${t.pin_code}</code></td>
+          <td><button onclick="deleteTeam(${t.id},${JSON.stringify(t.team_name)})" class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button></td>
         </tr>`).join('');
 }
 
 async function addTeam() {
   const tid = document.getElementById('teamsTournamentSelect').value;
-  if (!tid) { showToast('Select a tournament first','error'); return; }
+  if (!tid) { showToast('Velg en turnering først','error'); return; }
   const team_name=document.getElementById('newTeamName').value,
         player1=document.getElementById('newPlayer1').value,
         player2=document.getElementById('newPlayer2').value,
         pin_code=document.getElementById('newPin').value;
-  if (!team_name||!player1||!player2||!pin_code) { showToast('All fields required','error'); return; }
-  if (!/^\d{4}$/.test(pin_code)) { showToast('PIN must be exactly 4 digits','error'); return; }
+  if (!team_name||!player1||!player2||!pin_code) { showToast('Alle felt er påkrevd','error'); return; }
+  if (!/^\d{4}$/.test(pin_code)) { showToast('PIN må være nøyaktig 4 siffer','error'); return; }
   try {
     await api('/api/admin/team',{method:'POST',body:JSON.stringify({tournament_id:tid,team_name,player1,player2,pin_code})});
-    showToast('Team added!');
+    showToast('Lag lagt til!');
     ['newTeamName','newPlayer1','newPlayer2','newPin'].forEach(id=>document.getElementById(id).value='');
-    await loadTeams();
-    await loadDashboard();
-    // Also refresh award team select if visible
-    loadAwardTeams();
+    await loadTeams(); await loadDashboard(); loadAwardTeams();
   } catch(e) { showToast(e.message,'error'); }
 }
 
 async function deleteTeam(id, name) {
-  if (!confirm(`Delete team "${name}"? Their scores will also be deleted.`)) return;
+  if (!confirm(`Slett laget «${name}»? Alle tilknyttede poeng slettes også.`)) return;
   try {
     await api('/api/admin/team/'+id,{method:'DELETE'});
-    showToast('Team deleted');
+    showToast('Lag slettet');
     await loadTeams();
   } catch(e) { showToast(e.message,'error'); }
 }
@@ -598,22 +751,21 @@ function generatePin() {
   document.getElementById('newPin').value = String(Math.floor(1000+Math.random()*9000));
 }
 
-// ── Holes ─────────────────────────────────────────────────────────────────────
-let holesConfig = [];
+// ── Bane og Hull ──────────────────────────────────────────────────────────────
+let holesData = [];
 
 async function loadHoles() {
   const tid = document.getElementById('holesTournamentSelect').value;
   if (!tid) return;
   const d = await api('/api/admin/tournament/'+tid+'/holes');
-  holesConfig = d.holes;
-  document.getElementById('holesConfig').classList.remove('d-none');
+  holesData = d.holes;
   renderHolesGrid();
 }
 
 function renderHolesGrid() {
-  document.getElementById('holesGrid').innerHTML = holesConfig.map(h => `
+  document.getElementById('holesGrid').innerHTML = holesData.map(h => `
     <div style="background:var(--white);border:1px solid var(--gold-border);border-radius:var(--radius);padding:14px 10px;text-align:center">
-      <div style="font-size:.72rem;font-weight:700;color:var(--text-muted);margin-bottom:8px;letter-spacing:.08em">HOLE ${h.hole_number}</div>
+      <div style="font-size:.72rem;font-weight:700;color:var(--text-muted);margin-bottom:8px;letter-spacing:.08em">HULL ${h.hole_number}</div>
       <div style="font-size:.72rem;color:var(--text-muted);margin-bottom:4px">Par</div>
       <select id="h-par-${h.hole_number}" style="width:100%;padding:4px;border:1px solid var(--gold-border);border-radius:4px;text-align:center">
         <option ${h.par===3?'selected':''}>3</option>
@@ -622,7 +774,7 @@ function renderHolesGrid() {
       </select>
       <label style="display:flex;align-items:center;justify-content:center;gap:4px;margin-top:10px;font-size:.72rem;color:var(--text-muted);cursor:pointer">
         <input type="checkbox" id="h-photo-${h.hole_number}" ${h.requires_photo?'checked':''} style="accent-color:var(--gold)">
-        📸 Photo
+        📸 Foto
       </label>
     </div>`).join('');
 }
@@ -630,57 +782,75 @@ function renderHolesGrid() {
 async function saveHoles() {
   const tid = document.getElementById('holesTournamentSelect').value;
   if (!tid) return;
-  const holes = holesConfig.map(h => ({
+  const holes = holesData.map(h => ({
     hole_number: h.hole_number,
     par: parseInt(document.getElementById('h-par-'+h.hole_number).value),
     requires_photo: document.getElementById('h-photo-'+h.hole_number).checked
   }));
   try {
     await api('/api/admin/tournament/'+tid+'/holes',{method:'POST',body:JSON.stringify({holes})});
-    showToast('Hole configuration saved!');
+    showToast('Hullkonfigurasjon lagret!');
     await loadHoles();
   } catch(e) { showToast(e.message,'error'); }
 }
 
 function setAllPar(par) {
-  holesConfig.forEach(h => { const el=document.getElementById('h-par-'+h.hole_number); if(el) el.value=par; });
+  holesData.forEach(h => { const el=document.getElementById('h-par-'+h.hole_number); if(el) el.value=par; });
 }
 function clearAllPhotos() {
-  holesConfig.forEach(h => { const el=document.getElementById('h-photo-'+h.hole_number); if(el) el.checked=false; });
+  holesData.forEach(h => { const el=document.getElementById('h-photo-'+h.hole_number); if(el) el.checked=false; });
 }
 
-// ── Scores ────────────────────────────────────────────────────────────────────
+// ── Spilledag ─────────────────────────────────────────────────────────────────
+async function loadGameday() {
+  const tid = document.getElementById('gamedayTournamentSelect').value;
+  if (!tid) return;
+  const t = allTournaments.find(x => String(x.id) === String(tid));
+  document.getElementById('gamedayInfo').value = (t && t.gameday_info) ? t.gameday_info : '';
+}
+
+async function saveGameday() {
+  const tid = document.getElementById('gamedayTournamentSelect').value;
+  if (!tid) { showToast('Velg en turnering først','error'); return; }
+  const gameday_info = document.getElementById('gamedayInfo').value;
+  try {
+    await api('/api/admin/tournament/'+tid+'/gameday',{method:'PUT',body:JSON.stringify({gameday_info})});
+    showToast('Spilledag-informasjon lagret!');
+    await loadTournaments();
+  } catch(e) { showToast(e.message,'error'); }
+}
+
+// ── Poeng ─────────────────────────────────────────────────────────────────────
 async function loadScores() {
   const tid = document.getElementById('scoresTournamentSelect').value;
   if (!tid) return;
   const d = await api('/api/admin/tournament/'+tid+'/scores');
   const tbody = document.getElementById('scoresTable');
   if (!d.scores.length) {
-    tbody.innerHTML='<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted)">No scores submitted yet</td></tr>';
+    tbody.innerHTML='<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen poeng innsendt ennå</td></tr>';
     return;
   }
   tbody.innerHTML = d.scores.map(s => {
     const diff = s.score - s.par;
-    const parStr = diff>0?`+${diff}`:diff===0?'E':diff;
-    return `
-      <tr>
-        <td><strong>${s.team_name}</strong></td>
-        <td style="font-size:.82rem;color:var(--text-muted)">${s.player1} &amp; ${s.player2}</td>
-        <td style="text-align:center">${s.hole_number}</td>
-        <td style="text-align:center">${s.par}</td>
-        <td style="text-align:center">
-          <input type="number" min="1" max="20" value="${s.score}" id="sc-${s.id}"
-            style="width:60px;padding:4px;border:1px solid var(--gold-border);border-radius:4px;text-align:center">
-        </td>
-        <td style="text-align:center;font-weight:600;color:${diff<0?'var(--success)':diff>0?'var(--danger)':'var(--text)'}">${parStr}</td>
-        <td style="text-align:center">
-          ${s.photo_path ? `<a href="${s.photo_path}" target="_blank" class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)"><i class="fas fa-image"></i></a>` : '—'}
-        </td>
-        <td style="display:flex;gap:6px">
-          <button onclick="updateScore(${s.id})" class="btn btn--sm" style="background:var(--success);color:white;border:none"><i class="fas fa-check"></i></button>
-          <button onclick="deleteScore(${s.id})" class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
-        </td>
-      </tr>`;
+    const parStr = diff>0?`+${diff}`:diff===0?'E':String(diff);
+    return `<tr>
+      <td><strong>${s.team_name}</strong></td>
+      <td style="font-size:.82rem;color:var(--text-muted)">${s.player1} &amp; ${s.player2}</td>
+      <td style="text-align:center">${s.hole_number}</td>
+      <td style="text-align:center">${s.par}</td>
+      <td style="text-align:center">
+        <input type="number" min="1" max="20" value="${s.score}" id="sc-${s.id}"
+          style="width:60px;padding:4px;border:1px solid var(--gold-border);border-radius:4px;text-align:center">
+      </td>
+      <td style="text-align:center;font-weight:600;color:${diff<0?'var(--success)':diff>0?'var(--danger)':'var(--text)'}">${parStr}</td>
+      <td style="text-align:center">
+        ${s.photo_path?`<a href="${s.photo_path}" target="_blank" class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)"><i class="fas fa-image"></i></a>`:'—'}
+      </td>
+      <td style="display:flex;gap:6px">
+        <button onclick="updateScore(${s.id})" class="btn btn--sm" style="background:var(--success);color:white;border:none"><i class="fas fa-check"></i></button>
+        <button onclick="deleteScore(${s.id})" class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
+      </td>
+    </tr>`;
   }).join('');
 }
 
@@ -688,30 +858,61 @@ async function updateScore(id) {
   const score = parseInt(document.getElementById('sc-'+id).value);
   try {
     await api('/api/admin/score/'+id,{method:'PUT',body:JSON.stringify({score})});
-    showToast('Score updated');
+    showToast('Poengsum oppdatert');
     await loadScores();
   } catch(e) { showToast(e.message,'error'); }
 }
 
 async function deleteScore(id) {
-  if (!confirm('Delete this score entry?')) return;
+  if (!confirm('Slett denne poengregistreringen?')) return;
   try {
     await api('/api/admin/score/'+id,{method:'DELETE'});
-    showToast('Score deleted');
+    showToast('Poeng slettet');
     await loadScores();
   } catch(e) { showToast(e.message,'error'); }
 }
 
-// ── Awards ────────────────────────────────────────────────────────────────────
+// ── Bilder ────────────────────────────────────────────────────────────────────
+async function loadPhotos() {
+  const tid = document.getElementById('photosTournamentSelect').value;
+  const grid = document.getElementById('photosGrid');
+  const countEl = document.getElementById('photoCount');
+  if (!tid) {
+    grid.innerHTML = '<p style="color:var(--text-muted);grid-column:1/-1">Velg en turnering ovenfor.</p>';
+    countEl.textContent = '';
+    return;
+  }
+  grid.innerHTML = '<p style="color:var(--text-muted);grid-column:1/-1">Laster bilder...</p>';
+  try {
+    const d = await api('/api/admin/tournament/'+tid+'/photos');
+    countEl.textContent = d.photos.length + ' bilde' + (d.photos.length===1?'':'r');
+    if (!d.photos.length) {
+      grid.innerHTML = '<p style="color:var(--text-muted);grid-column:1/-1">Ingen bilder lastet opp ennå.</p>';
+      return;
+    }
+    grid.innerHTML = d.photos.map(p => `
+      <div class="photo-card">
+        <a href="${p.photo_path}" target="_blank">
+          <img src="${p.photo_path}" alt="Hull ${p.hole_number}" loading="lazy">
+        </a>
+        <div class="photo-card-body">
+          <strong>${p.team_name} — Hull ${p.hole_number}</strong>
+          <span>${p.player1} &amp; ${p.player2}</span>
+          <span style="display:block;margin-top:4px">${new Date(p.submitted_at).toLocaleString('nb-NO')}</span>
+        </div>
+      </div>`).join('');
+  } catch(e) { showToast('Kunne ikke laste bilder: '+e.message,'error'); }
+}
+
+// ── Utmerkelser ───────────────────────────────────────────────────────────────
 async function loadAwards() {
   const tid = document.getElementById('awardsTournamentSelect').value;
   if (!tid) return;
   await loadAwardTeams();
   const d = await api('/api/admin/tournament/'+tid+'/awards');
-  const tbody = document.getElementById('awardsTable');
-  const typeLabels = { 'longest_drive':'🏌️ Longest Drive', 'closest_to_pin':'🎯 Closest to Pin' };
-  tbody.innerHTML = !d.awards.length
-    ? '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-muted)">No awards assigned yet</td></tr>'
+  const typeLabels = {'longest_drive':'🏌️ Lengste Drive','closest_to_pin':'🎯 Nærmest Flagget'};
+  document.getElementById('awardsTable').innerHTML = !d.awards.length
+    ? '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen utmerkelser tildelt ennå</td></tr>'
     : d.awards.map(a => `
         <tr>
           <td>${typeLabels[a.award_type]||a.award_type}</td>
@@ -728,42 +929,41 @@ async function loadAwardTeams() {
   try {
     const d = await api('/api/admin/tournament/'+tid+'/teams');
     document.getElementById('awardTeam').innerHTML =
-      '<option value="">— Select team —</option>' +
-      d.teams.map(t => `<option value="${t.id}">${t.team_name} (${t.player1} & ${t.player2})</option>`).join('');
+      '<option value="">— Velg lag —</option>' +
+      d.teams.map(t=>`<option value="${t.id}">${t.team_name} (${t.player1} &amp; ${t.player2})</option>`).join('');
   } catch(_) {}
 }
 
 async function saveAward() {
   const tid = document.getElementById('awardsTournamentSelect').value;
-  if (!tid) { showToast('Select a tournament first','error'); return; }
+  if (!tid) { showToast('Velg en turnering først','error'); return; }
   const award_type=document.getElementById('awardType').value,
         hole_number=document.getElementById('awardHole').value,
         team_id=document.getElementById('awardTeam').value,
         detail=document.getElementById('awardDetail').value;
-  if (!team_id) { showToast('Please select a team','error'); return; }
+  if (!team_id) { showToast('Velg et lag','error'); return; }
   try {
     await api('/api/admin/award',{method:'POST',body:JSON.stringify({tournament_id:tid,award_type,team_id,hole_number,detail})});
-    showToast('Award assigned!');
+    showToast('Utmerkelse tildelt!');
     ['awardHole','awardDetail'].forEach(id=>document.getElementById(id).value='');
     await loadAwards();
   } catch(e) { showToast(e.message,'error'); }
 }
 
 async function deleteAward(id) {
-  if (!confirm('Remove this award?')) return;
+  if (!confirm('Fjerne denne utmerkelsen?')) return;
   try {
     await api('/api/admin/award/'+id,{method:'DELETE'});
-    showToast('Award removed');
+    showToast('Utmerkelse fjernet');
     await loadAwards();
   } catch(e) { showToast(e.message,'error'); }
 }
 
-// ── Legacy ────────────────────────────────────────────────────────────────────
+// ── Æresgalleri ───────────────────────────────────────────────────────────────
 async function loadLegacy() {
   const d = await api('/api/admin/legacy');
-  const tbody = document.getElementById('legacyTable');
-  tbody.innerHTML = !d.legacy.length
-    ? '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted)">No legacy entries yet</td></tr>'
+  document.getElementById('legacyTable').innerHTML = !d.legacy.length
+    ? '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen historikkoppføringer ennå</td></tr>'
     : d.legacy.map(c => `
         <tr>
           <td><strong>${c.year}</strong></td>
@@ -777,29 +977,25 @@ async function loadLegacy() {
 }
 
 async function addLegacy() {
-  const year=document.getElementById('lYear').value,
-        winner_team=document.getElementById('lTeam').value,
-        player1=document.getElementById('lP1').value,
-        player2=document.getElementById('lP2').value,
-        score=document.getElementById('lScore').value,
-        score_to_par=document.getElementById('lToPar').value,
-        course=document.getElementById('lCourse').value,
-        notes=document.getElementById('lNotes').value;
-  if (!year||!winner_team||!player1||!player2) { showToast('Year, team and players required','error'); return; }
+  const year=document.getElementById('lYear').value, winner_team=document.getElementById('lTeam').value,
+        player1=document.getElementById('lP1').value, player2=document.getElementById('lP2').value,
+        score=document.getElementById('lScore').value, score_to_par=document.getElementById('lToPar').value,
+        course=document.getElementById('lCourse').value, notes=document.getElementById('lNotes').value;
+  if (!year||!winner_team||!player1||!player2) { showToast('År, lag og spillere er påkrevd','error'); return; }
   try {
     await api('/api/admin/legacy',{method:'POST',body:JSON.stringify({year,winner_team,player1,player2,score,score_to_par,course,notes})});
-    showToast('Legacy entry added!');
+    showToast('Historikkoppføring lagt til!');
     ['lYear','lTeam','lP1','lP2','lScore','lToPar','lCourse','lNotes'].forEach(id=>document.getElementById(id).value='');
-    await loadLegacy();
+    await loadLegacy(); await loadDashboard();
   } catch(e) { showToast(e.message,'error'); }
 }
 
 async function deleteLegacy(id, year) {
-  if (!confirm(`Remove the ${year} legacy entry?`)) return;
+  if (!confirm(`Fjerne historikkoppføringen fra ${year}?`)) return;
   try {
     await api('/api/admin/legacy/'+id,{method:'DELETE'});
-    showToast('Legacy entry removed');
-    await loadLegacy();
+    showToast('Historikkoppføring fjernet');
+    await loadLegacy(); await loadDashboard();
   } catch(e) { showToast(e.message,'error'); }
 }
 </script>
