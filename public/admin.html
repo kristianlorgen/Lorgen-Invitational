@@ -474,12 +474,13 @@
           <div class="card-header"><strong>Æresgalleri</strong></div>
           <div style="overflow-x:auto">
             <table class="data-table">
-              <thead><tr><th>År</th><th>Mestere</th><th>Spillere</th><th>Poeng</th><th>+/−</th><th>Bane</th><th>Handlinger</th></tr></thead>
-              <tbody id="legacyTable"><tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted)">Laster...</td></tr></tbody>
+              <thead><tr><th>År</th><th>Mestere</th><th>Spillere</th><th>Poeng</th><th>+/−</th><th>Bane</th><th>Bilde</th><th>Handlinger</th></tr></thead>
+              <tbody id="legacyTable"><tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted)">Laster...</td></tr></tbody>
             </table>
           </div>
         </div>
       </div>
+      <input type="file" id="legacyPhotoInput" accept="image/*" style="display:none">
 
     </div><!-- /admin-content -->
   </div><!-- /admin-layout -->
@@ -1031,10 +1032,12 @@ async function deleteAward(id) {
 }
 
 // ── Æresgalleri ───────────────────────────────────────────────────────────────
+let pendingLegacyPhotoId = null;
+
 async function loadLegacy() {
   const d = await api('/api/admin/legacy');
   document.getElementById('legacyTable').innerHTML = !d.legacy.length
-    ? '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen historikkoppføringer ennå</td></tr>'
+    ? '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen historikkoppføringer ennå</td></tr>'
     : d.legacy.map(c => `
         <tr>
           <td><strong>${c.year}</strong></td>
@@ -1043,9 +1046,50 @@ async function loadLegacy() {
           <td>${c.score||'—'}</td>
           <td style="font-weight:600">${c.score_to_par||'—'}</td>
           <td style="font-size:.82rem;color:var(--text-muted)">${c.course||'—'}</td>
-          <td><button onclick="deleteLegacy(${c.id},${c.year})" class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button></td>
+          <td style="text-align:center">
+            ${c.winner_photo
+              ? `<a href="${c.winner_photo}" target="_blank">
+                   <img src="${c.winner_photo}" alt="Vinnerbilde ${c.year}"
+                     style="height:40px;width:56px;object-fit:cover;border-radius:4px;border:1px solid var(--gold-border);display:block">
+                 </a>`
+              : '<span style="color:var(--text-muted);font-size:.75rem">—</span>'}
+          </td>
+          <td style="display:flex;gap:6px">
+            <button onclick="triggerLegacyPhoto(${c.id})" class="btn btn--sm"
+              style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)"
+              title="Last opp vinnerbilde">
+              <i class="fas fa-camera"></i>
+            </button>
+            <button onclick="deleteLegacy(${c.id},${c.year})" class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
+          </td>
         </tr>`).join('');
 }
+
+function triggerLegacyPhoto(id) {
+  pendingLegacyPhotoId = id;
+  document.getElementById('legacyPhotoInput').click();
+}
+
+document.getElementById('legacyPhotoInput').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file || !pendingLegacyPhotoId) return;
+  const fd = new FormData();
+  fd.append('photo', file);
+  try {
+    const r = await fetch('/api/admin/legacy/' + pendingLegacyPhotoId + '/photo', { method: 'POST', body: fd });
+    const d = await r.json();
+    if (d.success) {
+      showToast('Vinnerbilde lastet opp!');
+      await loadLegacy();
+    } else {
+      showToast(d.error || 'Opplasting mislyktes', 'error');
+    }
+  } catch(e) {
+    showToast('Opplasting mislyktes', 'error');
+  }
+  e.target.value = '';
+  pendingLegacyPhotoId = null;
+});
 
 async function addLegacy() {
   const year=document.getElementById('lYear').value, winner_team=document.getElementById('lTeam').value,

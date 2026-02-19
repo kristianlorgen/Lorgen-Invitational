@@ -646,6 +646,32 @@ app.put('/api/admin/legacy/:id', requireAdmin, (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+app.post('/api/admin/legacy/:id/photo', requireAdmin, (req, res) => {
+  const legacyId = req.params.id;
+  const entry = db.prepare('SELECT id FROM legacy WHERE id=?').get(legacyId);
+  if (!entry) return res.status(404).json({ error: 'Oppføring ikke funnet' });
+  const dir = './uploads/legacy';
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const legacyUpload = multer({
+    storage: multer.diskStorage({
+      destination: dir,
+      filename: (req, file, cb) => cb(null, `legacy-${legacyId}-${Date.now()}${path.extname(file.originalname)}`)
+    }),
+    limits: { fileSize: 15 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+      if (file.mimetype.startsWith('image/')) return cb(null, true);
+      cb(new Error('Kun bilder er tillatt'));
+    }
+  }).single('photo');
+  legacyUpload(req, res, err => {
+    if (err) return res.status(400).json({ error: err.message });
+    if (!req.file) return res.status(400).json({ error: 'Ingen fil lastet opp' });
+    const photoPath = `/uploads/legacy/${req.file.filename}`;
+    db.prepare('UPDATE legacy SET winner_photo=? WHERE id=?').run(photoPath, legacyId);
+    res.json({ success: true, winner_photo: photoPath });
+  });
+});
+
 app.delete('/api/admin/legacy/:id', requireAdmin, (req, res) => {
   try {
     db.prepare('DELETE FROM legacy WHERE id=?').run(req.params.id);
