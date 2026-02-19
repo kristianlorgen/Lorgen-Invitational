@@ -120,6 +120,10 @@ function buildScoreboard(tournament) {
 //  PUBLIC API
 // ════════════════════════════════════════════════════════════════════════════
 
+app.get('/api/version', (req, res) => {
+  res.json({ version: '3.0.0-sqlite', stack: 'SQLite', lang: 'nb', ok: true });
+});
+
 app.get('/api/tournament', (req, res) => {
   try {
     const t = getActiveTournament();
