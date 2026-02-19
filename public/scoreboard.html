@@ -293,8 +293,8 @@ function renderAwards(awards) {
       <div class="award-card">
         <span class="award-icon">${info.icon}</span>
         <div class="award-label">${info.label}${a.hole_number ? ' — Hull ' + a.hole_number : ''}</div>
-        <div class="award-team">${a.team_name || 'TBD'}</div>
-        ${a.player1 || a.player2 ? `<div class="award-players">${[a.player1, a.player2].filter(Boolean).join(' &amp; ')}</div>` : ''}
+        <div class="award-team">${a.player_name || a.team_name || 'TBD'}</div>
+        ${a.team_name && a.player_name ? `<div class="award-players">${a.team_name}</div>` : ''}
         ${a.detail ? `<div class="award-detail">${a.detail}</div>` : ''}
       </div>`;
   }).join('');

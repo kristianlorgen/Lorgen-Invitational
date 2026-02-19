@@ -40,7 +40,7 @@ const upload = multer({
 // ── Middleware ───────────────────────────────────────────────────────────────
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use('/uploads', express.static('uploads'));
+app.use('/uploads', express.static('uploads', { fallthrough: true }));
 app.use(express.static('public'));
 app.use(session({
   secret: process.env.SESSION_SECRET || 'lorgen-inv-secret',
@@ -78,7 +78,8 @@ function buildScoreboard(tournament) {
 
   const awards = rawAwards.map(a => ({
     id: a.id, tournament_id: a.tournament_id, award_type: a.award_type,
-    team_id: a.team_id, hole_number: a.hole_number, detail: a.detail,
+    team_id: a.team_id, player_name: a.player_name || null,
+    hole_number: a.hole_number, detail: a.detail,
     team_name: a.team_name || null, player1: a.player1 || null, player2: a.player2 || null
   }));
 
@@ -209,7 +210,8 @@ app.get('/api/team/scorecard', requireTeam, (req, res) => {
     const team   = db.prepare('SELECT * FROM teams WHERE id=?').get(req.session.teamId);
     const holes  = db.prepare('SELECT * FROM holes WHERE tournament_id=? ORDER BY hole_number').all(req.session.tournamentId);
     const scores = db.prepare('SELECT * FROM scores WHERE team_id=?').all(req.session.teamId);
-    res.json({ team, holes, scores });
+    const claims = db.prepare('SELECT * FROM award_claims WHERE tournament_id=? AND team_id=?').all(req.session.tournamentId, req.session.teamId);
+    res.json({ team, holes, scores, claims });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -242,22 +244,39 @@ app.post('/api/team/submit-score', requireTeam, (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/team/upload-photo/:hole', requireTeam, upload.single('photo'), (req, res) => {
+app.post('/api/team/upload-photo/:hole', requireTeam, (req, res) => {
   const holeNum = parseInt(req.params.hole);
-  if (!req.file) return res.status(400).json({ error: 'Ingen fil lastet opp' });
+  const tid = req.session.tournamentId;
   try {
-    const hole = db.prepare('SELECT * FROM holes WHERE tournament_id=? AND hole_number=?')
-      .get(req.session.tournamentId, holeNum);
+    const hole = db.prepare('SELECT * FROM holes WHERE tournament_id=? AND hole_number=?').get(tid, holeNum);
     if (!hole) return res.status(404).json({ error: 'Hull ikke funnet' });
-    const photoPath = `/uploads/${req.file.filename}`;
-    const existing = db.prepare('SELECT id FROM scores WHERE team_id=? AND hole_number=?')
-      .get(req.session.teamId, holeNum);
-    if (existing) {
-      db.prepare('UPDATE scores SET photo_path=? WHERE id=?').run(photoPath, existing.id);
-    } else {
-      db.prepare('INSERT INTO scores (team_id, hole_number, score, photo_path) VALUES (?,?,0,?)').run(req.session.teamId, holeNum, photoPath);
-    }
-    res.json({ success: true, photo_path: photoPath });
+    const uploadDir = hole.requires_photo ? `./uploads/t${tid}/h${holeNum}` : './uploads';
+    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+    const dynamicUpload = multer({
+      storage: multer.diskStorage({
+        destination: uploadDir,
+        filename: (req, file, cb) => cb(null, `hole-${Date.now()}-${Math.round(Math.random()*1e6)}${path.extname(file.originalname)}`)
+      }),
+      limits: { fileSize: 15 * 1024 * 1024 },
+      fileFilter: (req, file, cb) => {
+        if (file.mimetype.startsWith('image/')) return cb(null, true);
+        cb(new Error('Kun bilder er tillatt'));
+      }
+    }).single('photo');
+    dynamicUpload(req, res, err => {
+      if (err) return res.status(400).json({ error: err.message });
+      if (!req.file) return res.status(400).json({ error: 'Ingen fil lastet opp' });
+      const photoPath = hole.requires_photo
+        ? `/uploads/t${tid}/h${holeNum}/${req.file.filename}`
+        : `/uploads/${req.file.filename}`;
+      const existing = db.prepare('SELECT id FROM scores WHERE team_id=? AND hole_number=?').get(req.session.teamId, holeNum);
+      if (existing) {
+        db.prepare('UPDATE scores SET photo_path=? WHERE id=?').run(photoPath, existing.id);
+      } else {
+        db.prepare('INSERT INTO scores (team_id, hole_number, score, photo_path) VALUES (?,?,0,?)').run(req.session.teamId, holeNum, photoPath);
+      }
+      res.json({ success: true, photo_path: photoPath });
+    });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -373,10 +392,19 @@ app.get('/api/admin/tournament/:id/holes', requireAdmin, (req, res) => {
 
 app.post('/api/admin/tournament/:id/holes', requireAdmin, (req, res) => {
   const { holes } = req.body;
+  const tid = req.params.id;
   try {
-    const update = db.prepare('UPDATE holes SET par=?, requires_photo=? WHERE tournament_id=? AND hole_number=?');
+    const update = db.prepare(
+      'UPDATE holes SET par=?, requires_photo=?, is_longest_drive=?, is_closest_to_pin=? WHERE tournament_id=? AND hole_number=?'
+    );
     const updateAll = db.transaction(() => {
-      for (const h of holes) update.run(h.par, h.requires_photo ? 1 : 0, req.params.id, h.hole_number);
+      for (const h of holes) {
+        update.run(h.par, h.requires_photo ? 1 : 0, h.is_longest_drive ? 1 : 0, h.is_closest_to_pin ? 1 : 0, tid, h.hole_number);
+        if (h.requires_photo) {
+          const dir = `./uploads/t${tid}/h${h.hole_number}`;
+          if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        }
+      }
     });
     updateAll();
     res.json({ success: true });
@@ -452,6 +480,64 @@ app.get('/api/admin/tournament/:id/photos', requireAdmin, (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Team award claim ─────────────────────────────────────────────────────────
+
+app.post('/api/team/claim-award', requireTeam, (req, res) => {
+  const { hole_number, award_type, player_name, detail } = req.body;
+  if (!hole_number || !award_type || !player_name)
+    return res.status(400).json({ error: 'Hull, type og spillernavn er påkrevd' });
+  if (!['longest_drive','closest_to_pin'].includes(award_type))
+    return res.status(400).json({ error: 'Ugyldig utmerkelsestype' });
+  try {
+    const hole = db.prepare('SELECT * FROM holes WHERE tournament_id=? AND hole_number=?')
+      .get(req.session.tournamentId, hole_number);
+    if (!hole) return res.status(404).json({ error: 'Hull ikke funnet' });
+    if (award_type === 'longest_drive' && !hole.is_longest_drive)
+      return res.status(400).json({ error: 'Dette hullet har ingen Lengste Drive-konkurranse' });
+    if (award_type === 'closest_to_pin' && !hole.is_closest_to_pin)
+      return res.status(400).json({ error: 'Dette hullet har ingen Nærmest Flagget-konkurranse' });
+    db.prepare(
+      `INSERT INTO award_claims (tournament_id, team_id, hole_number, award_type, player_name, detail)
+       VALUES (?,?,?,?,?,?)
+       ON CONFLICT(tournament_id, team_id, hole_number, award_type)
+       DO UPDATE SET player_name=excluded.player_name, detail=excluded.detail, claimed_at=CURRENT_TIMESTAMP`
+    ).run(req.session.tournamentId, req.session.teamId, hole_number, award_type, player_name, detail||'');
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Public photo gallery ──────────────────────────────────────────────────────
+
+app.get('/api/gallery', (req, res) => {
+  try {
+    let t = db.prepare(`SELECT * FROM tournaments WHERE status='active' ORDER BY date DESC LIMIT 1`).get();
+    if (!t) t = db.prepare(`SELECT * FROM tournaments WHERE status='completed' ORDER BY date DESC LIMIT 1`).get();
+    if (!t) return res.json({ photos: [], tournament: null });
+    const teams = db.prepare('SELECT id,team_name FROM teams WHERE tournament_id=?').all(t.id);
+    if (!teams.length) return res.json({ photos: [], tournament: t });
+    const teamIds = teams.map(tm => tm.id);
+    const teamsMap = {};
+    teams.forEach(tm => teamsMap[tm.id] = tm);
+    const photoHoles = db.prepare('SELECT hole_number FROM holes WHERE tournament_id=? AND requires_photo=1 ORDER BY hole_number').all(t.id);
+    if (!photoHoles.length) return res.json({ photos: [], tournament: t });
+    const holeNums = photoHoles.map(h => h.hole_number);
+    const scores = db.prepare(
+      `SELECT s.*, s.team_id FROM scores
+       WHERE team_id IN (${teamIds.map(()=>'?').join(',')})
+       AND hole_number IN (${holeNums.map(()=>'?').join(',')})
+       AND photo_path IS NOT NULL AND photo_path != ''
+       ORDER BY submitted_at DESC`
+    ).all(...teamIds, ...holeNums);
+    const photos = scores.map(s => ({
+      hole_number: s.hole_number,
+      photo_path: s.photo_path,
+      team_name: teamsMap[s.team_id]?.team_name || '',
+      submitted_at: s.submitted_at
+    }));
+    res.json({ photos, tournament: t });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Admin gallery (admin-uploaded photos) ────────────────────────────────────
 
 app.get('/api/admin/tournament/:id/gallery', requireAdmin, (req, res) => {
@@ -498,13 +584,24 @@ app.get('/api/admin/tournament/:id/awards', requireAdmin, (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+app.get('/api/admin/tournament/:id/award-claims', requireAdmin, (req, res) => {
+  try {
+    const claims = db.prepare(
+      `SELECT ac.*, t.team_name, t.player1, t.player2
+       FROM award_claims ac LEFT JOIN teams t ON t.id=ac.team_id
+       WHERE ac.tournament_id=? ORDER BY ac.claimed_at DESC`
+    ).all(req.params.id);
+    res.json({ claims });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/admin/award', requireAdmin, (req, res) => {
-  const { tournament_id, award_type, team_id, hole_number, detail } = req.body;
+  const { tournament_id, award_type, team_id, player_name, hole_number, detail } = req.body;
   try {
     db.prepare(
-      `INSERT INTO awards (tournament_id, award_type, team_id, hole_number, detail) VALUES (?,?,?,?,?)
-       ON CONFLICT(tournament_id, award_type, hole_number) DO UPDATE SET team_id=excluded.team_id, detail=excluded.detail`
-    ).run(tournament_id, award_type, team_id||null, hole_number||0, detail||'');
+      `INSERT INTO awards (tournament_id, award_type, team_id, player_name, hole_number, detail) VALUES (?,?,?,?,?,?)
+       ON CONFLICT(tournament_id, award_type, hole_number) DO UPDATE SET team_id=excluded.team_id, player_name=excluded.player_name, detail=excluded.detail`
+    ).run(tournament_id, award_type, team_id||null, player_name||'', hole_number||0, detail||'');
     broadcast('award_updated', {});
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }

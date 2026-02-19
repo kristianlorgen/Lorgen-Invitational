@@ -35,6 +35,35 @@
     .hole-card.done { border-color: var(--success); }
     .hole-card.done .stepper-val { border-color: var(--success); color: var(--success); }
     .photo-preview { width: 100%; height: 80px; object-fit: cover; border-radius: var(--radius-sm); margin-bottom: 8px; }
+    .competition-banner {
+      background: linear-gradient(135deg, rgba(201,168,76,.15), rgba(201,168,76,.05));
+      border: 1px solid rgba(201,168,76,.4);
+      border-radius: var(--radius-sm);
+      padding: 8px 10px;
+      margin-bottom: 10px;
+      font-size: .72rem;
+      font-weight: 600;
+      color: var(--gold-dark);
+      text-align: center;
+    }
+    .claim-section {
+      border-top: 1px dashed var(--gold-border);
+      margin-top: 10px;
+      padding-top: 10px;
+    }
+    .claim-section label { font-size:.68rem; font-weight:600; color:var(--text-muted); display:block; margin-bottom:3px; }
+    .claim-section select, .claim-section input {
+      width:100%; padding:5px 8px; border:1px solid var(--gold-border);
+      border-radius:var(--radius-sm); font-size:.78rem; margin-bottom:6px;
+      background:var(--white); color:var(--text);
+    }
+    .claim-section .claim-btn {
+      width:100%; padding:5px; font-size:.72rem; background:var(--gold-pale);
+      border:1px solid var(--gold-border); border-radius:var(--radius-sm);
+      color:var(--gold-dark); cursor:pointer; font-weight:600;
+    }
+    .claim-section .claim-btn:hover { background:var(--gold-border); }
+    .claim-sent { font-size:.68rem; color:var(--success); text-align:center; font-weight:600; }
   </style>
 </head>
 <body>
@@ -199,6 +228,7 @@ function showToast(msg, type = 'success') {
 let teamData     = null;
 let holesData    = [];
 let scoresData   = {};
+let claimsData   = {}; // key: "holeNum_awardType" → claim object
 let pendingPhotoHole = null;
 
 async function doLogin() {
@@ -246,6 +276,9 @@ async function loadScorecard() {
   teamData = d.team;
   holesData = d.holes;
   d.scores.forEach(s => { scoresData[s.hole_number] = s; });
+  if (d.claims) {
+    d.claims.forEach(c => { claimsData[c.hole_number + '_' + c.award_type] = c; });
+  }
   renderScorecard();
 }
 
@@ -275,11 +308,50 @@ function renderScorecard() {
     const hasScore = saved && saved.score > 0;
     const needsPhoto = h.requires_photo;
     const blocked    = needsPhoto && !hasPhoto;
+    const hasLd  = h.is_longest_drive;
+    const hasCtp = h.is_closest_to_pin;
+    const ldClaim  = claimsData[h.hole_number + '_longest_drive'];
+    const ctpClaim = claimsData[h.hole_number + '_closest_to_pin'];
+
+    const competitionBanners = [
+      hasLd  ? '<div class="competition-banner">🏌️ Konkurranse: Lengste Drive på dette hullet!</div>' : '',
+      hasCtp ? '<div class="competition-banner">🎯 Konkurranse: Nærmest Flagget på dette hullet!</div>' : ''
+    ].join('');
+
+    const ldSection = hasLd ? `
+      <div class="claim-section" id="ld-section-${h.hole_number}">
+        <div style="font-size:.68rem;font-weight:700;color:var(--gold-dark);margin-bottom:6px">🏌️ Meld inn Lengste Drive</div>
+        <label>Spiller</label>
+        <select id="ld-player-${h.hole_number}">
+          <option value="${teamData.player1}">${teamData.player1}</option>
+          <option value="${teamData.player2}">${teamData.player2}</option>
+        </select>
+        <label>Distanse (f.eks. 285m)</label>
+        <input type="text" id="ld-detail-${h.hole_number}" placeholder="f.eks. 285m" value="${ldClaim ? ldClaim.detail : ''}">
+        ${ldClaim ? `<div class="claim-sent">✓ Innmeldt: ${ldClaim.player_name} — ${ldClaim.detail||''}</div>` : ''}
+        <button class="claim-btn" onclick="submitClaim(${h.hole_number},'longest_drive')">Meld inn kandidat</button>
+      </div>` : '';
+
+    const ctpSection = hasCtp ? `
+      <div class="claim-section" id="ctp-section-${h.hole_number}">
+        <div style="font-size:.68rem;font-weight:700;color:var(--gold-dark);margin-bottom:6px">🎯 Meld inn Nærmest Flagget</div>
+        <label>Spiller</label>
+        <select id="ctp-player-${h.hole_number}">
+          <option value="${teamData.player1}">${teamData.player1}</option>
+          <option value="${teamData.player2}">${teamData.player2}</option>
+        </select>
+        <label>Avstand fra flagget (f.eks. 1,2m)</label>
+        <input type="text" id="ctp-detail-${h.hole_number}" placeholder="f.eks. 1,2m" value="${ctpClaim ? ctpClaim.detail : ''}">
+        ${ctpClaim ? `<div class="claim-sent">✓ Innmeldt: ${ctpClaim.player_name} — ${ctpClaim.detail||''}</div>` : ''}
+        <button class="claim-btn" onclick="submitClaim(${h.hole_number},'closest_to_pin')">Meld inn kandidat</button>
+      </div>` : '';
 
     return `
       <div class="hole-card ${hasScore ? 'done' : ''} ${needsPhoto && !hasPhoto ? 'photo-required' : ''}" id="hole-card-${h.hole_number}">
         <div class="hole-number-badge">Hull ${h.hole_number}</div>
         <div class="hole-par">Par ${h.par}</div>
+
+        ${competitionBanners}
 
         ${needsPhoto ? `
           <div class="hole-photo-btn ${hasPhoto ? 'uploaded' : ''}" onclick="triggerPhoto(${h.hole_number})" id="photobtn-${h.hole_number}">
@@ -308,6 +380,9 @@ function renderScorecard() {
             ? '<i class="fas fa-circle-check"></i> Lagret'
             : '<i class="fas fa-floppy-disk"></i> Lagre'}
         </button>
+
+        ${ldSection}
+        ${ctpSection}
       </div>`;
   }).join('');
 }
@@ -387,6 +462,31 @@ document.getElementById('photoInput').addEventListener('change', async e => {
   e.target.value = '';
   pendingPhotoHole = null;
 });
+
+// Innsending av konkurransekandidatur
+async function submitClaim(holeNum, awardType) {
+  const prefix = awardType === 'longest_drive' ? 'ld' : 'ctp';
+  const player_name = document.getElementById(prefix + '-player-' + holeNum)?.value;
+  const detail = document.getElementById(prefix + '-detail-' + holeNum)?.value || '';
+  if (!player_name) { showToast('Velg en spiller', 'error'); return; }
+  try {
+    const r = await fetch('/api/team/claim-award', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hole_number: holeNum, award_type: awardType, player_name, detail })
+    });
+    const d = await r.json();
+    if (d.success) {
+      claimsData[holeNum + '_' + awardType] = { player_name, detail, hole_number: holeNum, award_type: awardType };
+      showToast('Kandidatur registrert!', 'success');
+      renderScorecard();
+    } else {
+      showToast(d.error || 'Kunne ikke registrere kandidatur', 'error');
+    }
+  } catch(e) {
+    showToast('Tilkoblingsfeil — prøv igjen', 'error');
+  }
+}
 
 // Sjekk automatisk om bruker allerede er innlogget
 async function checkSession() {
