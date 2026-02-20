@@ -633,26 +633,24 @@ app.get('/api/gallery', (req, res) => {
   try {
     let t = getActiveTournament();
     if (!t) t = db.prepare(`SELECT * FROM tournaments WHERE status='completed' ORDER BY date DESC LIMIT 1`).get();
-    if (!t) return res.json({ photos: [], tournament: null });
+    const collectPhotosForTournament = (tournamentId) => {
+      const items = [];
 
-    const photos = [];
+      const galleryPhotos = db.prepare(
+        `SELECT id, photo_path, caption, uploaded_at FROM gallery_photos WHERE tournament_id=? ORDER BY uploaded_at DESC`
+      ).all(tournamentId);
+      galleryPhotos.forEach(g => items.push({
+        photo_ref: `gallery:${g.id}`,
+        hole_number: null,
+        photo_path: normalizePhotoPath(g.photo_path),
+        team_name: g.caption || '',
+        submitted_at: g.uploaded_at,
+        source: 'gallery'
+      }));
 
-    // Admin-uploaded gallery photos
-    const galleryPhotos = db.prepare(
-      `SELECT id, photo_path, caption, uploaded_at FROM gallery_photos WHERE tournament_id=? ORDER BY uploaded_at DESC`
-    ).all(t.id);
-    galleryPhotos.forEach(g => photos.push({
-      photo_ref: `gallery:${g.id}`,
-      hole_number: null,
-      photo_path: normalizePhotoPath(g.photo_path),
-      team_name: g.caption || '',
-      submitted_at: g.uploaded_at,
-      source: 'gallery'
-    }));
+      const teams = db.prepare('SELECT id,team_name FROM teams WHERE tournament_id=?').all(tournamentId);
+      if (!teams.length) return items;
 
-    // Player-uploaded hole photos
-    const teams = db.prepare('SELECT id,team_name FROM teams WHERE tournament_id=?').all(t.id);
-    if (teams.length) {
       const teamIds = teams.map(tm => tm.id);
       const teamsMap = {};
       teams.forEach(tm => teamsMap[tm.id] = tm);
@@ -662,7 +660,7 @@ app.get('/api/gallery', (req, res) => {
          AND photo_path IS NOT NULL AND photo_path != ''
          ORDER BY submitted_at DESC`
       ).all(...teamIds);
-      scores.forEach(s => photos.push({
+      scores.forEach(s => items.push({
         photo_ref: `score:${s.id}`,
         hole_number: s.hole_number,
         photo_path: normalizePhotoPath(s.photo_path),
@@ -670,6 +668,54 @@ app.get('/api/gallery', (req, res) => {
         submitted_at: s.submitted_at,
         source: 'player'
       }));
+
+      return items;
+    };
+
+    if (!t) {
+      const latestWithPhotos = db.prepare(
+        `SELECT x.tournament_id FROM (
+           SELECT gp.tournament_id, gp.uploaded_at AS ts FROM gallery_photos gp
+           UNION ALL
+           SELECT tm.tournament_id, s.submitted_at AS ts
+           FROM scores s
+           JOIN teams tm ON tm.id=s.team_id
+           WHERE s.photo_path IS NOT NULL AND s.photo_path != ''
+         ) x
+         ORDER BY x.ts DESC
+         LIMIT 1`
+      ).get();
+      if (latestWithPhotos?.tournament_id) {
+        t = db.prepare('SELECT * FROM tournaments WHERE id=?').get(latestWithPhotos.tournament_id);
+      }
+    }
+
+    if (!t) return res.json({ photos: [], tournament: null });
+
+    let photos = collectPhotosForTournament(t.id);
+    if (!photos.length) {
+      const latestWithPhotos = db.prepare(
+        `SELECT x.tournament_id FROM (
+           SELECT gp.tournament_id, gp.uploaded_at AS ts FROM gallery_photos gp
+           UNION ALL
+           SELECT tm.tournament_id, s.submitted_at AS ts
+           FROM scores s
+           JOIN teams tm ON tm.id=s.team_id
+           WHERE s.photo_path IS NOT NULL AND s.photo_path != ''
+         ) x
+         ORDER BY x.ts DESC
+         LIMIT 1`
+      ).get();
+      if (latestWithPhotos?.tournament_id && latestWithPhotos.tournament_id !== t.id) {
+        const fallbackTournament = db.prepare('SELECT * FROM tournaments WHERE id=?').get(latestWithPhotos.tournament_id);
+        if (fallbackTournament) {
+          const fallbackPhotos = collectPhotosForTournament(fallbackTournament.id);
+          if (fallbackPhotos.length) {
+            t = fallbackTournament;
+            photos = fallbackPhotos;
+          }
+        }
+      }
     }
 
     // Add vote counts and voter status
