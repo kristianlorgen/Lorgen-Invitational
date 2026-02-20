@@ -9,22 +9,20 @@
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <style>
-    .hole-card { cursor: default; }
-    .hole-card:hover { transform: none; box-shadow: var(--shadow-sm); }
-    .score-stepper { display: flex; align-items: center; gap: 8px; justify-content: center; margin: 8px 0 12px; }
+    .score-stepper { display: flex; align-items: center; gap: 12px; justify-content: center; margin: 16px 0; }
     .stepper-btn {
-      width: 32px; height: 32px;
+      width: 48px; height: 48px;
       background: var(--gold-pale); border: 1px solid var(--gold-border);
-      border-radius: 50%; font-size: 1.1rem; font-weight: 700;
+      border-radius: 50%; font-size: 1.4rem; font-weight: 700;
       color: var(--gold-dark); display: flex; align-items: center; justify-content: center;
       transition: all .2s; cursor: pointer;
     }
     .stepper-btn:hover { background: var(--gold); color: var(--dark); }
     .stepper-btn:disabled { opacity: .4; cursor: not-allowed; }
     .stepper-val {
-      width: 56px; height: 56px; border: 2px solid var(--gold-border);
+      width: 80px; height: 80px; border: 2px solid var(--gold-border);
       border-radius: var(--radius); text-align: center;
-      font-size: 1.8rem; font-weight: 700; color: var(--dark);
+      font-size: 2.4rem; font-weight: 700; color: var(--dark);
       background: var(--white); outline: none;
       transition: all .2s; -moz-appearance: textfield;
     }
@@ -32,38 +30,61 @@
     .stepper-val::-webkit-inner-spin-button { -webkit-appearance: none; }
     .stepper-val:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(201,168,76,.15); }
     .stepper-val:disabled { background: var(--light); color: var(--text-muted); }
-    .hole-card.done { border-color: var(--success); }
-    .hole-card.done .stepper-val { border-color: var(--success); color: var(--success); }
-    .photo-preview { width: 100%; height: 80px; object-fit: cover; border-radius: var(--radius-sm); margin-bottom: 8px; }
+    .stepper-val.saved { border-color: var(--success); color: var(--success); }
+    .photo-preview { width: 100%; height: 120px; object-fit: cover; border-radius: var(--radius-sm); margin-bottom: 12px; }
     .competition-banner {
       background: linear-gradient(135deg, rgba(201,168,76,.15), rgba(201,168,76,.05));
-      border: 1px solid rgba(201,168,76,.4);
-      border-radius: var(--radius-sm);
-      padding: 8px 10px;
-      margin-bottom: 10px;
-      font-size: .72rem;
-      font-weight: 600;
-      color: var(--gold-dark);
-      text-align: center;
+      border: 1px solid rgba(201,168,76,.4); border-radius: var(--radius-sm);
+      padding: 10px 12px; margin-bottom: 12px; font-size: .78rem; font-weight: 600;
+      color: var(--gold-dark); text-align: center;
     }
     .claim-section {
-      border-top: 1px dashed var(--gold-border);
-      margin-top: 10px;
-      padding-top: 10px;
+      border-top: 1px dashed var(--gold-border); margin-top: 12px; padding-top: 12px;
     }
-    .claim-section label { font-size:.68rem; font-weight:600; color:var(--text-muted); display:block; margin-bottom:3px; }
+    .claim-section label { font-size:.72rem; font-weight:600; color:var(--text-muted); display:block; margin-bottom:4px; }
     .claim-section select, .claim-section input {
-      width:100%; padding:5px 8px; border:1px solid var(--gold-border);
-      border-radius:var(--radius-sm); font-size:.78rem; margin-bottom:6px;
+      width:100%; padding:6px 10px; border:1px solid var(--gold-border);
+      border-radius:var(--radius-sm); font-size:.82rem; margin-bottom:8px;
       background:var(--white); color:var(--text);
     }
     .claim-section .claim-btn {
-      width:100%; padding:5px; font-size:.72rem; background:var(--gold-pale);
+      width:100%; padding:7px; font-size:.78rem; background:var(--gold-pale);
       border:1px solid var(--gold-border); border-radius:var(--radius-sm);
       color:var(--gold-dark); cursor:pointer; font-weight:600;
     }
     .claim-section .claim-btn:hover { background:var(--gold-border); }
-    .claim-sent { font-size:.68rem; color:var(--success); text-align:center; font-weight:600; }
+    .claim-sent { font-size:.72rem; color:var(--success); text-align:center; font-weight:600; margin-top:4px; }
+
+    /* Hole nav dots */
+    .hole-dot {
+      width: 20px; height: 20px; border-radius: 50%;
+      border: 2px solid var(--gold-border); background: var(--white);
+      cursor: pointer; transition: all .2s; font-size: .55rem;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--text-muted); font-weight: 700;
+    }
+    .hole-dot.done { background: var(--success); border-color: var(--success); color: var(--white); }
+    .hole-dot.active { background: var(--gold); border-color: var(--gold-dark); color: var(--dark); }
+    .hole-dot.photo-required { border-color: var(--warning); }
+
+    /* Compact summary bar */
+    .summary-bar {
+      position: sticky; bottom: 0; z-index: 100;
+      background: var(--dark); border-top: 1px solid rgba(201,168,76,.2);
+      padding: 6px 0;
+    }
+    .summary-bar-inner {
+      display: flex; align-items: center; justify-content: center; gap: 24px;
+    }
+    .summary-item { text-align: center; }
+    .summary-label {
+      font-size: .52rem; color: rgba(255,255,255,.4);
+      text-transform: uppercase; letter-spacing: .12em; line-height: 1;
+    }
+    .summary-value {
+      font-family: var(--font-heading); font-size: 1.05rem;
+      color: var(--gold-light); line-height: 1.2;
+    }
   </style>
 </head>
 <body>
@@ -94,7 +115,6 @@
   <a href="/enter-score" class="nav-link">Registrer Poeng</a>
 </div>
 
-<!-- Toast-varslinger -->
 <div class="toast-container" id="toastContainer"></div>
 
 <!-- ── INNLOGGINGSSKJERM ───────────────────────────────────────────────────── -->
@@ -124,7 +144,7 @@
 <!-- ── RESULTATKORTSKJERM ─────────────────────────────────────────────────── -->
 <div id="scorecardScreen" class="d-none">
   <!-- Skjermhode -->
-  <div class="page-hero" style="padding-bottom:40px">
+  <div class="page-hero" style="padding-bottom:32px">
     <div class="container">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
         <div>
@@ -143,51 +163,93 @@
     </div>
   </div>
 
-  <!-- Resultatkortgitter -->
-  <section class="section" style="background:var(--off-white)">
-    <div class="container">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px">
-        <div>
-          <h2 style="font-family:var(--font-heading);font-size:1.3rem;color:var(--dark)">Ditt Resultatkort</h2>
-          <p style="font-size:.82rem;color:var(--text-muted);margin-top:2px">Registrer poengsummen etter hvert fullførte hull</p>
-        </div>
-        <div style="font-size:.82rem;color:var(--text-muted)">
-          <span style="color:var(--success)"><i class="fas fa-circle-check"></i></span> = Lagret &nbsp;
-          <span style="color:var(--warning)"><i class="fas fa-camera"></i></span> = Foto kreves
-        </div>
-      </div>
+  <!-- Hullnavigasjon (prikker) -->
+  <div style="background:var(--white);padding:12px 16px;border-bottom:1px solid var(--gold-border)">
+    <div class="container" style="max-width:600px">
+      <div style="display:flex;justify-content:center;flex-wrap:wrap;gap:5px" id="holeDotsRow"></div>
+    </div>
+  </div>
 
-      <div class="score-entry-grid" id="holeGrid">
+  <!-- Enkelt hull-visning -->
+  <section style="background:var(--off-white);padding:24px 0 100px">
+    <div class="container" style="max-width:480px">
+
+      <!-- Hull-kort -->
+      <div id="singleHoleCard" style="background:var(--white);border:1px solid var(--gold-border);border-radius:var(--radius-xl);padding:24px;box-shadow:var(--shadow-sm)">
         <!-- Fylles av JS -->
       </div>
+
+      <!-- Forrige / Neste -->
+      <div style="display:flex;gap:12px;margin-top:16px">
+        <button onclick="prevHole()" class="btn btn--outline" id="prevBtn"
+          style="flex:1;justify-content:center;color:var(--gold-dark);border-color:var(--gold-border)">
+          <i class="fas fa-arrow-left"></i> Forrige
+        </button>
+        <button onclick="nextHole()" class="btn btn--gold" id="nextBtn"
+          style="flex:1;justify-content:center">
+          Neste <i class="fas fa-arrow-right"></i>
+        </button>
+      </div>
+
     </div>
   </section>
+
+  <!-- Låst-banner -->
+  <div id="lockedBanner" class="d-none" style="background:#dc2626;padding:10px 16px;text-align:center;font-size:.82rem;font-weight:600;color:white;display:flex;align-items:center;justify-content:center;gap:8px;position:sticky;top:var(--nav-height);z-index:90">
+    <i class="fas fa-lock"></i> Resultatkort låst — kontakt admin for å gjøre endringer
+  </div>
 
   <!-- Oppsummeringsbar (festet til bunn) -->
-  <section class="section--sm" style="background:var(--dark);position:sticky;bottom:0;z-index:100;border-top:1px solid rgba(201,168,76,.2)">
+  <div class="summary-bar">
     <div class="container">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
-        <div style="display:flex;gap:32px">
-          <div style="text-align:center">
-            <div style="font-size:.65rem;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.12em">Totalt</div>
-            <div style="font-family:var(--font-heading);font-size:1.6rem;color:var(--gold-light)" id="summaryTotal">—</div>
-          </div>
-          <div style="text-align:center">
-            <div style="font-size:.65rem;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.12em">vs Par</div>
-            <div style="font-family:var(--font-heading);font-size:1.6rem;color:var(--gold-light)" id="summaryToPar">—</div>
-          </div>
-          <div style="text-align:center">
-            <div style="font-size:.65rem;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.12em">Hull</div>
-            <div style="font-family:var(--font-heading);font-size:1.6rem;color:var(--gold-light)" id="summaryHoles">0/18</div>
-          </div>
+      <div class="summary-bar-inner">
+        <div class="summary-item">
+          <div class="summary-label">Plass</div>
+          <div class="summary-value" id="summaryPos">—</div>
         </div>
-        <a href="/scoreboard" class="btn btn--outline btn--sm"><i class="fas fa-list-ol"></i> Live Resultattavle</a>
+        <div class="summary-item">
+          <div class="summary-label">Totalt</div>
+          <div class="summary-value" id="summaryTotal">—</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-label">vs Par</div>
+          <div class="summary-value" id="summaryToPar">—</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-label">Hull</div>
+          <div class="summary-value" id="summaryHoles">0/18</div>
+        </div>
       </div>
     </div>
-  </section>
+  </div>
 </div>
 
-<!-- Skjult filinput for bilder -->
+<!-- ── Rundeoppsummering modal ────────────────────────────────────────────── -->
+<div id="summaryModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:2000;align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto">
+  <div style="background:var(--white);border-radius:var(--radius-xl);padding:28px;max-width:480px;width:100%;margin:auto;box-shadow:0 24px 48px rgba(0,0,0,.3)">
+    <div style="text-align:center;margin-bottom:20px">
+      <div style="font-size:2.8rem;margin-bottom:8px">⛳</div>
+      <h2 style="font-family:var(--font-heading);font-size:1.5rem;color:var(--dark);margin-bottom:4px">Runden er fullført!</h2>
+      <p id="summaryTeamLabel" style="color:var(--text-muted);font-size:.85rem"></p>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px" id="summaryStats"></div>
+    <div id="summaryBreakdown" style="margin-bottom:20px"></div>
+    <div id="summaryHoleTable" style="margin-bottom:20px"></div>
+    <div style="background:rgba(201,168,76,.08);border:1px solid rgba(201,168,76,.3);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:18px;font-size:.78rem;color:var(--gold-dark);text-align:center">
+      <i class="fas fa-lock" style="margin-right:6px"></i>
+      Etter låsing kan kun admin endre poengene dine
+    </div>
+    <div style="display:flex;gap:12px">
+      <button onclick="closeSummary()" class="btn btn--outline" style="flex:1;justify-content:center;color:var(--text-muted)">
+        <i class="fas fa-arrow-left"></i> Gå tilbake
+      </button>
+      <button onclick="lockAndClose()" class="btn btn--gold" style="flex:1;justify-content:center" id="summaryLockBtn">
+        <i class="fas fa-lock"></i> Lås inn resultater
+      </button>
+    </div>
+  </div>
+</div>
+
 <input type="file" id="photoInput" accept="image/*" capture="environment" style="display:none">
 
 <script>
@@ -198,7 +260,6 @@ document.getElementById('navToggle').addEventListener('click', () => {
   document.getElementById('mobileMenu').classList.toggle('open');
 });
 
-// PIN-inndata UX
 const digits = document.querySelectorAll('.pin-digit');
 digits.forEach((d, i) => {
   d.addEventListener('input', e => {
@@ -224,28 +285,22 @@ function showToast(msg, type = 'success') {
   setTimeout(() => t.remove(), 4000);
 }
 
-// Tilstand
 let teamData     = null;
 let holesData    = [];
 let scoresData   = {};
-let claimsData   = {}; // key: "holeNum_awardType" → claim object
+let claimsData   = {};
 let pendingPhotoHole = null;
+let currentHoleIndex = 0;
 
 async function doLogin() {
   const pin = getPin();
-  if (pin.length < 4) {
-    document.getElementById('loginError').textContent = 'Vennligst skriv inn din 4-sifrede PIN';
-    return;
-  }
+  if (pin.length < 4) { document.getElementById('loginError').textContent = 'Vennligst skriv inn din 4-sifrede PIN'; return; }
   const btn = document.getElementById('loginBtn');
-  btn.disabled = true;
-  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Bekrefter...';
+  btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Bekrefter...';
   document.getElementById('loginError').textContent = '';
   try {
     const r = await fetch('/api/auth/team-login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin })
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin })
     });
     const d = await r.json();
     if (d.success) {
@@ -255,14 +310,10 @@ async function doLogin() {
       document.getElementById('scorecardScreen').classList.remove('d-none');
     } else {
       document.getElementById('loginError').textContent = d.error || 'Ugyldig PIN';
-      digits.forEach(d => d.value = '');
-      digits[0].focus();
+      digits.forEach(d => d.value = ''); digits[0].focus();
     }
-  } catch (e) {
-    document.getElementById('loginError').textContent = 'Tilkoblingsfeil, prøv igjen';
-  }
-  btn.disabled = false;
-  btn.innerHTML = '<i class="fas fa-arrow-right-to-bracket"></i> Logg inn';
+  } catch (e) { document.getElementById('loginError').textContent = 'Tilkoblingsfeil, prøv igjen'; }
+  btn.disabled = false; btn.innerHTML = '<i class="fas fa-arrow-right-to-bracket"></i> Logg inn';
 }
 
 async function doLogout() {
@@ -273,20 +324,23 @@ async function doLogout() {
 async function loadScorecard() {
   const r = await fetch('/api/team/scorecard');
   const d = await r.json();
-  teamData = d.team;
-  holesData = d.holes;
+  teamData = d.team; holesData = d.holes;
   d.scores.forEach(s => { scoresData[s.hole_number] = s; });
-  if (d.claims) {
-    d.claims.forEach(c => { claimsData[c.hole_number + '_' + c.award_type] = c; });
-  }
-  renderScorecard();
+  if (d.claims) d.claims.forEach(c => { claimsData[c.hole_number + '_' + c.award_type] = c; });
+  renderAll();
+  loadPosition();
+  if (teamData.locked) showLockedState();
 }
 
-function renderScorecard() {
-  const grid = document.getElementById('holeGrid');
+function renderAll() {
   document.getElementById('scTeamName').textContent = teamData.team_name;
   document.getElementById('scPlayers').textContent = teamData.player1 + ' & ' + teamData.player2;
+  updateSummary();
+  renderDots();
+  renderCurrentHole();
+}
 
+function updateSummary() {
   let totalScore = 0, totalPar = 0, holesCompleted = 0;
   Object.values(scoresData).forEach(s => {
     if (s.score > 0) {
@@ -294,108 +348,271 @@ function renderScorecard() {
       if (h) { totalScore += s.score; totalPar += h.par; holesCompleted++; }
     }
   });
-
   document.getElementById('scProgress').textContent = holesCompleted + ' / 18';
   document.getElementById('summaryHoles').textContent = holesCompleted + '/18';
   document.getElementById('summaryTotal').textContent = holesCompleted > 0 ? totalScore : '—';
   const toPar = totalScore - totalPar;
   document.getElementById('summaryToPar').textContent =
     holesCompleted > 0 ? (toPar > 0 ? '+' + toPar : toPar === 0 ? 'E' : toPar) : '—';
+}
 
-  grid.innerHTML = holesData.map(h => {
-    const saved    = scoresData[h.hole_number];
-    const hasPhoto = saved && saved.photo_path;
+async function loadPosition() {
+  try {
+    const r = await fetch('/api/scoreboard');
+    const d = await r.json();
+    if (d.scoreboard && teamData) {
+      const idx = d.scoreboard.findIndex(t => t.team_id === teamData.id);
+      document.getElementById('summaryPos').textContent = idx >= 0 ? '#' + (idx + 1) : '—';
+    }
+  } catch(_) {}
+}
+
+function renderDots() {
+  const wrap = document.getElementById('holeDotsRow');
+  wrap.innerHTML = holesData.map((h, i) => {
+    const saved = scoresData[h.hole_number];
     const hasScore = saved && saved.score > 0;
     const needsPhoto = h.requires_photo;
-    const blocked    = needsPhoto && !hasPhoto;
-    const hasLd  = h.is_longest_drive;
-    const hasCtp = h.is_closest_to_pin;
-    const ldClaim  = claimsData[h.hole_number + '_longest_drive'];
-    const ctpClaim = claimsData[h.hole_number + '_closest_to_pin'];
-
-    const competitionBanners = [
-      hasLd  ? '<div class="competition-banner">🏌️ Konkurranse: Lengste Drive på dette hullet!</div>' : '',
-      hasCtp ? '<div class="competition-banner">🎯 Konkurranse: Nærmest Flagget på dette hullet!</div>' : ''
-    ].join('');
-
-    const ldSection = hasLd ? `
-      <div class="claim-section" id="ld-section-${h.hole_number}">
-        <div style="font-size:.68rem;font-weight:700;color:var(--gold-dark);margin-bottom:6px">🏌️ Meld inn Lengste Drive</div>
-        <label>Spiller</label>
-        <select id="ld-player-${h.hole_number}">
-          <option value="${teamData.player1}">${teamData.player1}</option>
-          <option value="${teamData.player2}">${teamData.player2}</option>
-        </select>
-        <label>Distanse (f.eks. 285m)</label>
-        <input type="text" id="ld-detail-${h.hole_number}" placeholder="f.eks. 285m" value="${ldClaim ? ldClaim.detail : ''}">
-        ${ldClaim ? `<div class="claim-sent">✓ Innmeldt: ${ldClaim.player_name} — ${ldClaim.detail||''}</div>` : ''}
-        <button class="claim-btn" onclick="submitClaim(${h.hole_number},'longest_drive')">Meld inn kandidat</button>
-      </div>` : '';
-
-    const ctpSection = hasCtp ? `
-      <div class="claim-section" id="ctp-section-${h.hole_number}">
-        <div style="font-size:.68rem;font-weight:700;color:var(--gold-dark);margin-bottom:6px">🎯 Meld inn Nærmest Flagget</div>
-        <label>Spiller</label>
-        <select id="ctp-player-${h.hole_number}">
-          <option value="${teamData.player1}">${teamData.player1}</option>
-          <option value="${teamData.player2}">${teamData.player2}</option>
-        </select>
-        <label>Avstand fra flagget (f.eks. 1,2m)</label>
-        <input type="text" id="ctp-detail-${h.hole_number}" placeholder="f.eks. 1,2m" value="${ctpClaim ? ctpClaim.detail : ''}">
-        ${ctpClaim ? `<div class="claim-sent">✓ Innmeldt: ${ctpClaim.player_name} — ${ctpClaim.detail||''}</div>` : ''}
-        <button class="claim-btn" onclick="submitClaim(${h.hole_number},'closest_to_pin')">Meld inn kandidat</button>
-      </div>` : '';
-
-    return `
-      <div class="hole-card ${hasScore ? 'done' : ''} ${needsPhoto && !hasPhoto ? 'photo-required' : ''}" id="hole-card-${h.hole_number}">
-        <div class="hole-number-badge">Hull ${h.hole_number}</div>
-        <div class="hole-par">Par ${h.par}</div>
-
-        ${competitionBanners}
-
-        ${needsPhoto ? `
-          <div class="hole-photo-btn ${hasPhoto ? 'uploaded' : ''}" onclick="triggerPhoto(${h.hole_number})" id="photobtn-${h.hole_number}">
-            ${hasPhoto
-              ? '<i class="fas fa-circle-check"></i> Bilde lagret'
-              : '<i class="fas fa-camera"></i> Last opp bilde først'}
-          </div>
-          ${hasPhoto ? `<img class="photo-preview" src="${saved.photo_path}" alt="Hull ${h.hole_number} bilde" id="photopreview-${h.hole_number}">` : ''}
-        ` : ''}
-
-        <div class="score-stepper">
-          <button class="stepper-btn" onclick="changeScore(${h.hole_number},-1)" ${blocked ? 'disabled' : ''}>−</button>
-          <input class="stepper-val" type="number" min="1" max="20" id="score-${h.hole_number}"
-            value="${hasScore ? saved.score : ''}"
-            placeholder="${blocked ? '—' : h.par}"
-            ${blocked ? 'disabled' : ''}
-            onchange="submitScore(${h.hole_number})">
-          <button class="stepper-btn" onclick="changeScore(${h.hole_number},1)" ${blocked ? 'disabled' : ''}>+</button>
-        </div>
-
-        <button onclick="submitScore(${h.hole_number})" class="btn btn--gold btn--sm"
-          style="width:100%;justify-content:center;font-size:.75rem"
-          id="savebtn-${h.hole_number}"
-          ${blocked ? 'disabled' : ''}>
-          ${hasScore
-            ? '<i class="fas fa-circle-check"></i> Lagret'
-            : '<i class="fas fa-floppy-disk"></i> Lagre'}
-        </button>
-
-        ${ldSection}
-        ${ctpSection}
-      </div>`;
+    const hasPhoto = saved && saved.photo_path;
+    let cls = 'hole-dot';
+    if (hasScore) cls += ' done';
+    if (i === currentHoleIndex) cls += ' active';
+    if (needsPhoto && !hasPhoto && !hasScore) cls += ' photo-required';
+    return `<div class="${cls}" onclick="goToHole(${i})" title="Hull ${h.hole_number}">${h.hole_number}</div>`;
   }).join('');
+}
+
+function renderCurrentHole() {
+  if (!holesData.length) return;
+  const h = holesData[currentHoleIndex];
+  const card = document.getElementById('singleHoleCard');
+  const saved    = scoresData[h.hole_number];
+  const hasPhoto = saved && saved.photo_path;
+  const hasScore = saved && saved.score > 0;
+  const needsPhoto = h.requires_photo;
+  const blocked    = needsPhoto && !hasPhoto;
+  const hasLd  = h.is_longest_drive;
+  const hasCtp = h.is_closest_to_pin;
+  const ldClaim  = claimsData[h.hole_number + '_longest_drive'];
+  const ctpClaim = claimsData[h.hole_number + '_closest_to_pin'];
+
+  const competitionBanners = [
+    hasLd  ? '<div class="competition-banner">🏌️ Konkurranse: Lengste Drive på dette hullet!</div>' : '',
+    hasCtp ? '<div class="competition-banner">🎯 Konkurranse: Nærmest Flagget på dette hullet!</div>' : ''
+  ].join('');
+
+  const ldSection = hasLd ? `
+    <div class="claim-section">
+      <div style="font-size:.72rem;font-weight:700;color:var(--gold-dark);margin-bottom:8px">🏌️ Meld inn Lengste Drive</div>
+      <label>Spiller</label>
+      <select id="ld-player-${h.hole_number}">
+        <option value="${teamData.player1}">${teamData.player1}</option>
+        <option value="${teamData.player2}">${teamData.player2}</option>
+      </select>
+      <label>Distanse (f.eks. 285m)</label>
+      <input type="text" id="ld-detail-${h.hole_number}" placeholder="f.eks. 285m" value="${ldClaim ? ldClaim.detail : ''}">
+      ${ldClaim ? `<div class="claim-sent">✓ Innmeldt: ${ldClaim.player_name} — ${ldClaim.detail||''}</div>` : ''}
+      <button class="claim-btn" onclick="submitClaim(${h.hole_number},'longest_drive')">Meld inn kandidat</button>
+    </div>` : '';
+
+  const ctpSection = hasCtp ? `
+    <div class="claim-section">
+      <div style="font-size:.72rem;font-weight:700;color:var(--gold-dark);margin-bottom:8px">🎯 Meld inn Nærmest Flagget</div>
+      <label>Spiller</label>
+      <select id="ctp-player-${h.hole_number}">
+        <option value="${teamData.player1}">${teamData.player1}</option>
+        <option value="${teamData.player2}">${teamData.player2}</option>
+      </select>
+      <label>Avstand fra flagget (f.eks. 1,2m)</label>
+      <input type="text" id="ctp-detail-${h.hole_number}" placeholder="f.eks. 1,2m" value="${ctpClaim ? ctpClaim.detail : ''}">
+      ${ctpClaim ? `<div class="claim-sent">✓ Innmeldt: ${ctpClaim.player_name} — ${ctpClaim.detail||''}</div>` : ''}
+      <button class="claim-btn" onclick="submitClaim(${h.hole_number},'closest_to_pin')">Meld inn kandidat</button>
+    </div>` : '';
+
+  card.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div>
+        <div style="font-size:.65rem;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--text-muted)">Hull</div>
+        <div style="font-family:var(--font-heading);font-size:2.2rem;color:var(--dark);line-height:1">${h.hole_number}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:.65rem;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--text-muted)">Par</div>
+        <div style="font-family:var(--font-heading);font-size:2.2rem;color:var(--gold-dark);line-height:1">${h.par}</div>
+      </div>
+    </div>
+
+    ${competitionBanners}
+
+    ${needsPhoto ? `
+      <div class="hole-photo-btn ${hasPhoto ? 'uploaded' : ''}" onclick="triggerPhoto(${h.hole_number})" id="photobtn-${h.hole_number}" style="margin-bottom:12px">
+        ${hasPhoto
+          ? '<i class="fas fa-circle-check"></i> Bilde lagret'
+          : '<i class="fas fa-camera"></i> Last opp bilde først'}
+      </div>
+      ${hasPhoto ? `<img class="photo-preview" src="${saved.photo_path}" alt="Hull ${h.hole_number} bilde">` : ''}
+    ` : ''}
+
+    <div class="score-stepper">
+      <button class="stepper-btn" onclick="changeScore(${h.hole_number},-1)" ${blocked ? 'disabled' : ''}>−</button>
+      <input class="stepper-val ${hasScore ? 'saved' : ''}" type="number" min="1" max="20"
+        id="score-${h.hole_number}"
+        value="${hasScore ? saved.score : ''}"
+        placeholder="${blocked ? '—' : h.par}"
+        ${blocked ? 'disabled' : ''}
+        onchange="submitScore(${h.hole_number})">
+      <button class="stepper-btn" onclick="changeScore(${h.hole_number},1)" ${blocked ? 'disabled' : ''}>+</button>
+    </div>
+
+    <button onclick="submitScore(${h.hole_number})" class="btn btn--gold"
+      style="width:100%;justify-content:center;margin-top:4px"
+      id="savebtn-${h.hole_number}"
+      ${blocked ? 'disabled' : ''}>
+      ${hasScore
+        ? '<i class="fas fa-circle-check"></i> Lagret'
+        : '<i class="fas fa-floppy-disk"></i> Lagre poengsum'}
+    </button>
+
+    ${ldSection}
+    ${ctpSection}
+  `;
+
+  // Update prev/next button states
+  document.getElementById('prevBtn').disabled = currentHoleIndex === 0;
+  const nextBtn = document.getElementById('nextBtn');
+  const isLastHole = currentHoleIndex === holesData.length - 1;
+  if (teamData && teamData.locked) {
+    nextBtn.disabled = true;
+    nextBtn.innerHTML = '<i class="fas fa-lock"></i> Låst';
+    nextBtn.onclick = null;
+  } else if (isLastHole) {
+    nextBtn.disabled = false;
+    nextBtn.innerHTML = '<i class="fas fa-flag-checkered"></i> Ferdig';
+    nextBtn.onclick = finishRound;
+  } else {
+    nextBtn.disabled = false;
+    nextBtn.innerHTML = 'Neste <i class="fas fa-arrow-right"></i>';
+    nextBtn.onclick = nextHole;
+  }
+}
+
+function goToHole(index) {
+  currentHoleIndex = index;
+  renderDots();
+  renderCurrentHole();
+}
+
+function prevHole() {
+  if (currentHoleIndex > 0) { currentHoleIndex--; renderDots(); renderCurrentHole(); }
+}
+
+function nextHole() {
+  if (currentHoleIndex < holesData.length - 1) { currentHoleIndex++; renderDots(); renderCurrentHole(); }
 }
 
 function changeScore(holeNum, delta) {
   const input = document.getElementById('score-' + holeNum);
   const current = parseInt(input.value) || 0;
-  const newVal = Math.max(1, Math.min(20, current + delta));
-  input.value = newVal;
+  input.value = Math.max(1, Math.min(20, current + delta));
   submitScore(holeNum);
 }
 
+function finishRound() {
+  let totalScore = 0, totalPar = 0, holesCompleted = 0;
+  let eagles = 0, birdies = 0, pars = 0, bogeys = 0, doubles = 0;
+  const holeDetails = [];
+  holesData.forEach(h => {
+    const s = scoresData[h.hole_number];
+    if (s && s.score > 0) {
+      totalScore += s.score; totalPar += h.par; holesCompleted++;
+      const diff = s.score - h.par;
+      if (diff <= -2) eagles++; else if (diff === -1) birdies++;
+      else if (diff === 0) pars++; else if (diff === 1) bogeys++; else doubles++;
+      holeDetails.push({ hole_number: h.hole_number, par: h.par, score: s.score, diff });
+    }
+  });
+  const toPar = holesCompleted > 0 ? totalScore - totalPar : null;
+  document.getElementById('summaryTeamLabel').textContent = teamData.team_name + ' — ' + teamData.player1 + ' & ' + teamData.player2;
+  document.getElementById('summaryStats').innerHTML = [
+    { label: 'Totalt', value: totalScore || '—' },
+    { label: 'vs Par', value: toPar !== null ? (toPar > 0 ? '+'+toPar : toPar === 0 ? 'E' : toPar) : '—' },
+    { label: 'Hull', value: holesCompleted + '/18' }
+  ].map(s => `<div style="text-align:center;background:var(--gold-pale);border-radius:var(--radius);padding:14px 8px">
+    <div style="font-size:.6rem;text-transform:uppercase;letter-spacing:.12em;color:var(--gold-dark);font-weight:700;margin-bottom:4px">${s.label}</div>
+    <div style="font-family:var(--font-heading);font-size:1.4rem;color:var(--dark)">${s.value}</div>
+  </div>`).join('');
+  document.getElementById('summaryBreakdown').innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;text-align:center">
+      ${[['Eagle+',eagles,'chip-eagle'],['Birdie',birdies,'chip-birdie'],['Par',pars,'chip-par'],['Bogey',bogeys,'chip-bogey'],['Dobbelt+',doubles,'chip-double']].map(([label,count,cls]) =>
+        `<div style="background:var(--off-white);border-radius:var(--radius-sm);padding:8px 4px">
+          <div class="score-chip ${cls}" style="width:28px;height:28px;margin:0 auto 4px;font-size:.75rem">${count}</div>
+          <div style="font-size:.6rem;color:var(--text-muted)">${label}</div>
+        </div>`).join('')}
+    </div>`;
+  const sorted = [...holeDetails].sort((a,b) => a.hole_number - b.hole_number);
+  document.getElementById('summaryHoleTable').innerHTML = `
+    <div style="max-height:200px;overflow-y:auto;border:1px solid var(--gold-border);border-radius:var(--radius-sm)">
+      <table style="width:100%;border-collapse:collapse;font-size:.8rem">
+        <thead style="position:sticky;top:0;background:var(--dark)">
+          <tr>
+            <th style="padding:6px 10px;color:var(--gold-light);text-align:center">Hull</th>
+            <th style="padding:6px 10px;color:var(--gold-light);text-align:center">Par</th>
+            <th style="padding:6px 10px;color:var(--gold-light);text-align:center">Poeng</th>
+            <th style="padding:6px 10px;color:var(--gold-light);text-align:center">+/−</th>
+          </tr>
+        </thead>
+        <tbody>${sorted.map(h => {
+          const ds = h.diff > 0 ? '+'+h.diff : h.diff === 0 ? 'E' : String(h.diff);
+          const dc = h.diff < 0 ? '#059669' : h.diff > 0 ? '#dc2626' : 'var(--text-muted)';
+          return `<tr style="border-bottom:1px solid var(--gold-border)">
+            <td style="padding:6px 10px;text-align:center;font-weight:600">${h.hole_number}</td>
+            <td style="padding:6px 10px;text-align:center;color:var(--text-muted)">${h.par}</td>
+            <td style="padding:6px 10px;text-align:center;font-weight:700">${h.score}</td>
+            <td style="padding:6px 10px;text-align:center;color:${dc};font-weight:600">${ds}</td>
+          </tr>`;
+        }).join('')}
+        <tr style="background:var(--gold-pale);font-weight:700">
+          <td style="padding:8px 10px;text-align:center" colspan="2">Totalt</td>
+          <td style="padding:8px 10px;text-align:center">${totalScore}</td>
+          <td style="padding:8px 10px;text-align:center;color:${toPar < 0 ? '#059669' : toPar > 0 ? '#dc2626' : 'var(--text-muted)'}">${toPar > 0 ? '+'+toPar : toPar === 0 ? 'E' : toPar}</td>
+        </tr></tbody>
+      </table>
+    </div>`;
+  if (holesCompleted < holesData.length) {
+    document.getElementById('summaryLockBtn').innerHTML = `<i class="fas fa-lock"></i> Lås inn (${holesCompleted}/18 hull)`;
+  } else {
+    document.getElementById('summaryLockBtn').innerHTML = '<i class="fas fa-lock"></i> Lås inn resultater';
+  }
+  document.getElementById('summaryModal').style.display = 'flex';
+}
+
+function closeSummary() {
+  document.getElementById('summaryModal').style.display = 'none';
+}
+
+async function lockAndClose() {
+  const btn = document.getElementById('summaryLockBtn');
+  btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Låser...';
+  try {
+    const r = await fetch('/api/team/lock-scorecard', { method: 'POST' });
+    const d = await r.json();
+    if (d.success) {
+      teamData.locked = 1;
+      closeSummary(); showLockedState();
+      showToast('Resultatkort låst! Bra spilt! 🏆', 'success');
+    } else { showToast(d.error || 'Kunne ikke låse resultatkort', 'error'); }
+  } catch(e) { showToast('Tilkoblingsfeil', 'error'); }
+  btn.disabled = false; btn.innerHTML = '<i class="fas fa-lock"></i> Lås inn resultater';
+}
+
+function showLockedState() {
+  const banner = document.getElementById('lockedBanner');
+  banner.classList.remove('d-none');
+  banner.style.display = 'flex';
+  renderDots(); renderCurrentHole();
+}
+
 async function submitScore(holeNum) {
+  if (teamData && teamData.locked) { showToast('Resultatkort er låst', 'error'); return; }
   const input = document.getElementById('score-' + holeNum);
   const score = parseInt(input.value);
   if (!score || score < 1) return;
@@ -406,8 +623,7 @@ async function submitScore(holeNum) {
 
   try {
     const r = await fetch('/api/team/submit-score', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ hole_number: holeNum, score })
     });
     const d = await r.json();
@@ -415,20 +631,22 @@ async function submitScore(holeNum) {
       if (!scoresData[holeNum]) scoresData[holeNum] = {};
       scoresData[holeNum].score = score;
       scoresData[holeNum].hole_number = holeNum;
-      renderScorecard();
+      updateSummary();
+      renderDots();
+      renderCurrentHole();
+      loadPosition();
     } else {
       showToast(d.error || 'Kunne ikke lagre poengsum', 'error');
       btn.disabled = false;
-      btn.innerHTML = '<i class="fas fa-floppy-disk"></i> Lagre';
+      btn.innerHTML = '<i class="fas fa-floppy-disk"></i> Lagre poengsum';
     }
   } catch (e) {
     showToast('Tilkoblingsfeil — prøv igjen', 'error');
     btn.disabled = false;
-    btn.innerHTML = '<i class="fas fa-floppy-disk"></i> Lagre';
+    btn.innerHTML = '<i class="fas fa-floppy-disk"></i> Lagre poengsum';
   }
 }
 
-// Bildeopplasting
 function triggerPhoto(holeNum) {
   pendingPhotoHole = holeNum;
   document.getElementById('photoInput').click();
@@ -437,14 +655,11 @@ function triggerPhoto(holeNum) {
 document.getElementById('photoInput').addEventListener('change', async e => {
   const file = e.target.files[0];
   if (!file || !pendingPhotoHole) return;
-
   const holeNum = pendingPhotoHole;
   const btn = document.getElementById('photobtn-' + holeNum);
   if (btn) { btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Laster opp...'; }
-
   const fd = new FormData();
   fd.append('photo', file);
-
   try {
     const r = await fetch('/api/team/upload-photo/' + holeNum, { method: 'POST', body: fd });
     const d = await r.json();
@@ -452,18 +667,12 @@ document.getElementById('photoInput').addEventListener('change', async e => {
       if (!scoresData[holeNum]) scoresData[holeNum] = {};
       scoresData[holeNum].photo_path = d.photo_path;
       showToast('Bilde lastet opp for hull ' + holeNum + '!', 'success');
-      renderScorecard();
-    } else {
-      showToast(d.error || 'Opplasting mislyktes', 'error');
-    }
-  } catch (e) {
-    showToast('Opplasting mislyktes — sjekk tilkoblingen', 'error');
-  }
-  e.target.value = '';
-  pendingPhotoHole = null;
+      renderDots(); renderCurrentHole();
+    } else { showToast(d.error || 'Opplasting mislyktes', 'error'); }
+  } catch (e) { showToast('Opplasting mislyktes — sjekk tilkoblingen', 'error'); }
+  e.target.value = ''; pendingPhotoHole = null;
 });
 
-// Innsending av konkurransekandidatur
 async function submitClaim(holeNum, awardType) {
   const prefix = awardType === 'longest_drive' ? 'ld' : 'ctp';
   const player_name = document.getElementById(prefix + '-player-' + holeNum)?.value;
@@ -471,24 +680,18 @@ async function submitClaim(holeNum, awardType) {
   if (!player_name) { showToast('Velg en spiller', 'error'); return; }
   try {
     const r = await fetch('/api/team/claim-award', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ hole_number: holeNum, award_type: awardType, player_name, detail })
     });
     const d = await r.json();
     if (d.success) {
       claimsData[holeNum + '_' + awardType] = { player_name, detail, hole_number: holeNum, award_type: awardType };
       showToast('Kandidatur registrert!', 'success');
-      renderScorecard();
-    } else {
-      showToast(d.error || 'Kunne ikke registrere kandidatur', 'error');
-    }
-  } catch(e) {
-    showToast('Tilkoblingsfeil — prøv igjen', 'error');
-  }
+      renderCurrentHole();
+    } else { showToast(d.error || 'Kunne ikke registrere kandidatur', 'error'); }
+  } catch(e) { showToast('Tilkoblingsfeil — prøv igjen', 'error'); }
 }
 
-// Sjekk automatisk om bruker allerede er innlogget
 async function checkSession() {
   try {
     const r = await fetch('/api/auth/status');
@@ -501,6 +704,9 @@ async function checkSession() {
     }
   } catch (_) {}
 }
+
+// Oppdater posisjon hvert minutt
+setInterval(loadPosition, 60000);
 
 checkSession();
 </script>

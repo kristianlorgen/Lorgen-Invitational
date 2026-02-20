@@ -11,6 +11,24 @@
   <style>
     .leaderboard-row-1 { background: linear-gradient(90deg, rgba(201,168,76,.08), transparent) !important; }
     .leaderboard-row-1 td:first-child { border-left: 3px solid var(--gold); }
+
+    /* Kamerarull */
+    .photo-reel {
+      display: flex; gap: 10px; overflow: hidden; position: relative;
+    }
+    .photo-reel-item {
+      flex: 0 0 auto; width: 160px; border-radius: var(--radius);
+      overflow: hidden; border: 1px solid rgba(201,168,76,.25);
+      transition: opacity .5s;
+    }
+    .photo-reel-item img {
+      width: 100%; height: 120px; object-fit: cover; display: block;
+    }
+    .photo-reel-caption {
+      padding: 6px 8px; background: rgba(0,0,0,.45);
+      font-size: .68rem; color: rgba(255,255,255,.8);
+    }
+    .photo-reel-caption strong { display: block; color: var(--gold-light); }
   </style>
 </head>
 <body>
@@ -65,6 +83,17 @@
   <a href="/legacy" class="btn btn--gold"><i class="fas fa-trophy"></i> Se tidligere mestere</a>
 </div>
 
+<!-- ── Kamerarull ──────────────────────────────────────────────────────────── -->
+<div id="photoReelWrap" style="background:var(--dark);padding:16px 0;border-bottom:1px solid rgba(201,168,76,.15);display:none">
+  <div class="container">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <i class="fas fa-camera" style="color:var(--gold);font-size:.85rem"></i>
+      <span style="font-size:.7rem;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--gold)">Kamerarull fra banen</span>
+    </div>
+    <div class="photo-reel" id="photoReel"></div>
+  </div>
+</div>
+
 <!-- ── Ledertavle ─────────────────────────────────────────────────────────── -->
 <section class="section" style="background:var(--white)" id="sbMain">
   <div class="container">
@@ -98,13 +127,34 @@
   </div>
 </section>
 
+<!-- ── Utmerkelser ────────────────────────────────────────────────────────── -->
+<section class="section--sm" style="background:var(--dark)" id="awardsSection">
+  <div class="container">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
+      <div>
+        <div style="font-size:.68rem;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--gold);margin-bottom:4px">
+          <i class="fas fa-trophy"></i> &nbsp;Utmerkelser
+        </div>
+        <h2 style="font-family:var(--font-heading);font-size:1.3rem;color:var(--white)">Spesielle <span style="color:var(--gold-light)">Utmerkelser</span></h2>
+      </div>
+      <div id="awardsLiveBadge" style="display:none">
+        <div class="live-badge"><div class="live-dot"></div>Live</div>
+      </div>
+    </div>
+    <div class="awards-grid" id="awardsGrid"></div>
+    <div id="awardsEmpty" style="text-align:center;padding:20px;color:rgba(255,255,255,.3)" class="d-none">
+      <i class="fas fa-trophy" style="font-size:1.6rem;color:rgba(201,168,76,.2);margin-bottom:8px;display:block"></i>
+      Utmerkelser annonseres under turneringen
+    </div>
+  </div>
+</section>
+
 <!-- ── Hull for Hull resultatkort ─────────────────────────────────────────── -->
 <section class="section" style="background:var(--off-white)" id="scorecardSection">
   <div class="container">
     <div class="section-header" style="margin-bottom:28px">
       <span class="section-tag">Hull for Hull</span>
       <h2 class="section-title">Fullstendig <span>Resultatkort</span></h2>
-      <p class="section-subtitle">Fullstendig Resultatkort</p>
     </div>
     <div class="scorecard-wrap">
       <table class="scorecard" id="scorecardTable">
@@ -118,23 +168,6 @@
       <span><span class="score-chip chip-par" style="display:inline-flex;width:20px;height:20px;font-size:.7rem">–</span> Par</span>
       <span><span class="score-chip chip-bogey" style="display:inline-flex;width:20px;height:20px;font-size:.7rem">1</span> Bogey</span>
       <span><span class="score-chip chip-double" style="display:inline-flex;width:20px;height:20px;font-size:.7rem">2</span> Dobbelt+</span>
-    </div>
-  </div>
-</section>
-
-<!-- ── Utmerkelser ────────────────────────────────────────────────────────── -->
-<section class="section" style="background:var(--dark)" id="awardsSection">
-  <div class="container">
-    <div class="section-header" style="margin-bottom:36px">
-      <span class="section-tag" style="background:rgba(201,168,76,.12);border-color:rgba(201,168,76,.3);color:var(--gold)">Æresbevisninger</span>
-      <h2 class="section-title" style="color:var(--white)">Spesielle <span>Utmerkelser</span></h2>
-    </div>
-    <div class="awards-grid" id="awardsGrid">
-      <!-- Fylles av JS -->
-    </div>
-    <div id="awardsEmpty" style="text-align:center;padding:32px;color:rgba(255,255,255,.35)" class="d-none">
-      <i class="fas fa-trophy" style="font-size:2rem;color:rgba(201,168,76,.2);margin-bottom:12px;display:block"></i>
-      Utmerkelser vil bli annonsert under turneringen
     </div>
   </div>
 </section>
@@ -331,6 +364,7 @@ async function loadScoreboard() {
 
     if (d.tournament.status === 'active') {
       document.getElementById('liveBadge').style.display = 'inline-flex';
+      document.getElementById('awardsLiveBadge').style.display = 'block';
     }
 
     const naa = new Date().toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -360,10 +394,60 @@ function connectSSE() {
   };
 }
 
+// ── Kamerarull ────────────────────────────────────────────────────────────────
+let reelPhotos = [];
+let reelOffset = 0;
+let reelTimer = null;
+
+async function loadPhotoReel() {
+  try {
+    const r = await fetch('/api/gallery');
+    const d = await r.json();
+    if (!d.photos || d.photos.length === 0) {
+      document.getElementById('photoReelWrap').style.display = 'none';
+      return;
+    }
+    reelPhotos = d.photos;
+    document.getElementById('photoReelWrap').style.display = 'block';
+    renderReel();
+    if (reelTimer) clearInterval(reelTimer);
+    if (reelPhotos.length > 4) {
+      reelTimer = setInterval(advanceReel, 3500);
+    }
+  } catch(_) {}
+}
+
+function renderReel() {
+  const track = document.getElementById('photoReel');
+  // Show a sliding window of up to 8 photos starting at reelOffset
+  const visible = [];
+  for (let i = 0; i < Math.min(8, reelPhotos.length); i++) {
+    visible.push(reelPhotos[(reelOffset + i) % reelPhotos.length]);
+  }
+  track.innerHTML = visible.map(p => `
+    <div class="photo-reel-item">
+      <a href="${p.photo_path}" target="_blank">
+        <img src="${p.photo_path}" alt="Hull ${p.hole_number}" loading="lazy">
+      </a>
+      <div class="photo-reel-caption">
+        <strong>Hull ${p.hole_number}</strong>
+        ${p.team_name || ''}
+      </div>
+    </div>`).join('');
+}
+
+function advanceReel() {
+  reelOffset = (reelOffset + 1) % reelPhotos.length;
+  renderReel();
+}
+
 loadScoreboard();
+loadPhotoReel();
 connectSSE();
 // Reserveoppdatering hvert 60. sekund
 setInterval(loadScoreboard, 60000);
+// Oppdater kamerarullen hvert 30. sekund (nye bilder kan komme inn)
+setInterval(loadPhotoReel, 30000);
 </script>
 </body>
 </html>
