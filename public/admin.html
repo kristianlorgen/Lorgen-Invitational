@@ -1681,12 +1681,20 @@ async function importCourseHoles() {
   try {
     const d = await api(`/api/admin/course/${courseId}/holes`);
     const importedHoles = d.holes;
-    // Apply to current tournament holes
+    // Apply hole config to tournament
     await api('/api/admin/tournament/' + tid + '/holes', {
       method: 'POST',
       body: JSON.stringify({ holes: importedHoles })
     });
-    showToast('Hull-mal importert!');
+    // Also copy slope_rating from course to tournament
+    const course = _allCourses.find(c => c.id === parseInt(courseId));
+    if (course) {
+      await api('/api/admin/tournament/' + tid + '/slope', {
+        method: 'PUT',
+        body: JSON.stringify({ slope_rating: course.slope_rating })
+      });
+    }
+    showToast('Hull-mal og slope importert!');
     await loadHoles();
   } catch(e) { showToast(e.message, 'error'); }
 }

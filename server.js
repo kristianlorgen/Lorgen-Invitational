@@ -299,6 +299,7 @@ app.post('/api/team/upload-photo/:hole', requireTeam, (req, res) => {
       } else {
         db.prepare('INSERT INTO scores (team_id, hole_number, score, photo_path) VALUES (?,?,0,?)').run(req.session.teamId, holeNum, photoPath);
       }
+      broadcast('score_updated', { tournament_id: tid });
       res.json({ success: true, photo_path: photoPath });
     });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -338,6 +339,13 @@ app.put('/api/admin/tournament/:id', requireAdmin, (req, res) => {
     db.prepare(
       'UPDATE tournaments SET year=?, name=?, date=?, course=?, description=?, gameday_info=?, status=?, slope_rating=? WHERE id=?'
     ).run(year, name, date, course||'', description||'', gameday_info||'', status, slope_rating||113, req.params.id);
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/admin/tournament/:id/slope', requireAdmin, (req, res) => {
+  try {
+    db.prepare('UPDATE tournaments SET slope_rating=? WHERE id=?').run(parseInt(req.body.slope_rating)||113, req.params.id);
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -534,13 +542,28 @@ app.post('/api/team/claim-award', requireTeam, (req, res) => {
        ON CONFLICT(tournament_id, team_id, hole_number, award_type)
        DO UPDATE SET player_name=excluded.player_name, detail=excluded.detail, claimed_at=CURRENT_TIMESTAMP`
     ).run(req.session.tournamentId, req.session.teamId, hole_number, award_type, player_name, detail||'');
-    // Auto-register claim as award (admin can edit later)
-    db.prepare(
-      `INSERT INTO awards (tournament_id, award_type, team_id, player_name, hole_number, detail)
-       VALUES (?,?,?,?,?,?)
-       ON CONFLICT(tournament_id, award_type, hole_number)
-       DO UPDATE SET team_id=excluded.team_id, player_name=excluded.player_name, detail=excluded.detail`
-    ).run(req.session.tournamentId, award_type, req.session.teamId, player_name, hole_number, detail||'');
+    // Auto-register claim as award only if it beats the current best result
+    const existingAward = db.prepare(
+      'SELECT detail FROM awards WHERE tournament_id=? AND award_type=? AND hole_number=?'
+    ).get(req.session.tournamentId, award_type, hole_number);
+    const newVal = parseFloat(detail) || 0;
+    let shouldUpdate = true;
+    if (existingAward && existingAward.detail) {
+      const existingVal = parseFloat(existingAward.detail) || 0;
+      if (award_type === 'longest_drive') {
+        shouldUpdate = newVal > existingVal; // lengre drive vinner
+      } else if (award_type === 'closest_to_pin') {
+        shouldUpdate = newVal > 0 && newVal < existingVal; // nærmere hullet (færre meter) vinner
+      }
+    }
+    if (shouldUpdate) {
+      db.prepare(
+        `INSERT INTO awards (tournament_id, award_type, team_id, player_name, hole_number, detail)
+         VALUES (?,?,?,?,?,?)
+         ON CONFLICT(tournament_id, award_type, hole_number)
+         DO UPDATE SET team_id=excluded.team_id, player_name=excluded.player_name, detail=excluded.detail`
+      ).run(req.session.tournamentId, award_type, req.session.teamId, player_name, hole_number, detail||'');
+    }
     broadcast('award_updated', {});
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -576,30 +599,25 @@ app.get('/api/gallery', (req, res) => {
       source: 'gallery'
     }));
 
-    // Player-uploaded hole photos (from fotoutfordring holes)
+    // Player-uploaded hole photos (alle hull med bilde, ikke bare fotoutfordring)
     const teams = db.prepare('SELECT id,team_name FROM teams WHERE tournament_id=?').all(t.id);
     if (teams.length) {
       const teamIds = teams.map(tm => tm.id);
       const teamsMap = {};
       teams.forEach(tm => teamsMap[tm.id] = tm);
-      const photoHoles = db.prepare('SELECT hole_number FROM holes WHERE tournament_id=? AND requires_photo=1 ORDER BY hole_number').all(t.id);
-      if (photoHoles.length) {
-        const holeNums = photoHoles.map(h => h.hole_number);
-        const scores = db.prepare(
-          `SELECT s.*, s.team_id FROM scores
-           WHERE team_id IN (${teamIds.map(()=>'?').join(',')})
-           AND hole_number IN (${holeNums.map(()=>'?').join(',')})
-           AND photo_path IS NOT NULL AND photo_path != ''
-           ORDER BY submitted_at DESC`
-        ).all(...teamIds, ...holeNums);
-        scores.forEach(s => photos.push({
-          hole_number: s.hole_number,
-          photo_path: s.photo_path,
-          team_name: teamsMap[s.team_id]?.team_name || '',
-          submitted_at: s.submitted_at,
-          source: 'player'
-        }));
-      }
+      const scores = db.prepare(
+        `SELECT s.*, s.team_id FROM scores
+         WHERE team_id IN (${teamIds.map(()=>'?').join(',')})
+         AND photo_path IS NOT NULL AND photo_path != ''
+         ORDER BY submitted_at DESC`
+      ).all(...teamIds);
+      scores.forEach(s => photos.push({
+        hole_number: s.hole_number,
+        photo_path: s.photo_path,
+        team_name: teamsMap[s.team_id]?.team_name || '',
+        submitted_at: s.submitted_at,
+        source: 'player'
+      }));
     }
 
     // Sort all photos by newest first
