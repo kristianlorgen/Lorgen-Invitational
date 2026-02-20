@@ -91,6 +91,8 @@ function buildScoreboard(tournament) {
     team_name: a.team_name || null, player1: a.player1 || null, player2: a.player2 || null
   }));
 
+  const slopeRating = tournament.slope_rating || 113;
+
   const scoreboard = teams.map(team => {
     const teamScores = allScoreRows.filter(s => s.team_id === team.id);
     let total = 0, par = 0, done = 0;
@@ -100,19 +102,26 @@ function buildScoreboard(tournament) {
       if (h) { total += s.score; par += h.par; done++; }
       holeScores[s.hole_number] = { score: s.score, photo: s.photo_path };
     });
+    const hcpIndex = ((team.player1_handicap || 0) + (team.player2_handicap || 0)) * 0.5;
+    const courseHcp = Math.round(hcpIndex * slopeRating / 113);
+    const netScore = total > 0 ? total - courseHcp : 0;
+    const netToPar = total > 0 ? netScore - par : 0;
     return {
       team_id: team.id, team_name: team.team_name,
       player1: team.player1, player2: team.player2,
+      player1_handicap: team.player1_handicap || 0, player2_handicap: team.player2_handicap || 0,
+      handicap: courseHcp, net_score: netScore, net_to_par: netToPar,
       total_score: total, total_par: par, to_par: total - par,
       holes_completed: done, hole_scores: holeScores
     };
   });
 
+  const hasHandicaps = teams.some(t => (t.player1_handicap || 0) + (t.player2_handicap || 0) > 0);
   scoreboard.sort((a, b) => {
     if (a.holes_completed === 0 && b.holes_completed === 0) return 0;
     if (a.holes_completed === 0) return 1;
     if (b.holes_completed === 0) return -1;
-    return a.to_par - b.to_par;
+    return hasHandicaps ? (a.net_to_par - b.net_to_par) : (a.to_par - b.to_par);
   });
 
   return { tournament, scoreboard, holes, awards };
@@ -306,12 +315,12 @@ app.get('/api/admin/tournaments', requireAdmin, (req, res) => {
 });
 
 app.post('/api/admin/tournament', requireAdmin, (req, res) => {
-  const { year, name, date, course, description, gameday_info } = req.body;
+  const { year, name, date, course, description, gameday_info, slope_rating } = req.body;
   if (!year || !name || !date) return res.status(400).json({ error: 'År, navn og dato er påkrevd' });
   try {
     const result = db.prepare(
-      'INSERT INTO tournaments (year, name, date, course, description, gameday_info) VALUES (?,?,?,?,?,?)'
-    ).run(year, name, date, course||'', description||'', gameday_info||'');
+      'INSERT INTO tournaments (year, name, date, course, description, gameday_info, slope_rating) VALUES (?,?,?,?,?,?,?)'
+    ).run(year, name, date, course||'', description||'', gameday_info||'', slope_rating||113);
     const tid = result.lastInsertRowid;
     const insertHole = db.prepare('INSERT INTO holes (tournament_id, hole_number, par, requires_photo) VALUES (?,?,4,0)');
     const insertAllHoles = db.transaction(() => {
@@ -323,11 +332,11 @@ app.post('/api/admin/tournament', requireAdmin, (req, res) => {
 });
 
 app.put('/api/admin/tournament/:id', requireAdmin, (req, res) => {
-  const { year, name, date, course, description, gameday_info, status } = req.body;
+  const { year, name, date, course, description, gameday_info, status, slope_rating } = req.body;
   try {
     db.prepare(
-      'UPDATE tournaments SET year=?, name=?, date=?, course=?, description=?, gameday_info=?, status=? WHERE id=?'
-    ).run(year, name, date, course||'', description||'', gameday_info||'', status, req.params.id);
+      'UPDATE tournaments SET year=?, name=?, date=?, course=?, description=?, gameday_info=?, status=?, slope_rating=? WHERE id=?'
+    ).run(year, name, date, course||'', description||'', gameday_info||'', status, slope_rating||113, req.params.id);
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -367,24 +376,24 @@ app.get('/api/admin/tournament/:id/teams', requireAdmin, (req, res) => {
 });
 
 app.post('/api/admin/team', requireAdmin, (req, res) => {
-  const { tournament_id, team_name, player1, player2, pin_code } = req.body;
+  const { tournament_id, team_name, player1, player2, pin_code, player1_handicap, player2_handicap } = req.body;
   if (!tournament_id || !team_name || !player1 || !player2 || !pin_code)
     return res.status(400).json({ error: 'Alle felt er påkrevd' });
   try {
     const existing = db.prepare('SELECT id FROM teams WHERE tournament_id=? AND pin_code=?').get(tournament_id, pin_code);
     if (existing) return res.status(400).json({ error: 'PIN allerede i bruk i denne turneringen' });
     const result = db.prepare(
-      'INSERT INTO teams (tournament_id, team_name, player1, player2, pin_code) VALUES (?,?,?,?,?)'
-    ).run(tournament_id, team_name, player1, player2, pin_code);
+      'INSERT INTO teams (tournament_id, team_name, player1, player2, pin_code, player1_handicap, player2_handicap) VALUES (?,?,?,?,?,?,?)'
+    ).run(tournament_id, team_name, player1, player2, pin_code, parseFloat(player1_handicap)||0, parseFloat(player2_handicap)||0);
     res.json({ success: true, id: result.lastInsertRowid });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.put('/api/admin/team/:id', requireAdmin, (req, res) => {
-  const { team_name, player1, player2, pin_code } = req.body;
+  const { team_name, player1, player2, pin_code, player1_handicap, player2_handicap } = req.body;
   try {
-    db.prepare('UPDATE teams SET team_name=?, player1=?, player2=?, pin_code=? WHERE id=?')
-      .run(team_name, player1, player2, pin_code, req.params.id);
+    db.prepare('UPDATE teams SET team_name=?, player1=?, player2=?, pin_code=?, player1_handicap=?, player2_handicap=? WHERE id=?')
+      .run(team_name, player1, player2, pin_code, parseFloat(player1_handicap)||0, parseFloat(player2_handicap)||0, req.params.id);
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -524,6 +533,14 @@ app.post('/api/team/claim-award', requireTeam, (req, res) => {
        ON CONFLICT(tournament_id, team_id, hole_number, award_type)
        DO UPDATE SET player_name=excluded.player_name, detail=excluded.detail, claimed_at=CURRENT_TIMESTAMP`
     ).run(req.session.tournamentId, req.session.teamId, hole_number, award_type, player_name, detail||'');
+    // Auto-register claim as award (admin can edit later)
+    db.prepare(
+      `INSERT INTO awards (tournament_id, award_type, team_id, player_name, hole_number, detail)
+       VALUES (?,?,?,?,?,?)
+       ON CONFLICT(tournament_id, award_type, hole_number)
+       DO UPDATE SET team_id=excluded.team_id, player_name=excluded.player_name, detail=excluded.detail`
+    ).run(req.session.tournamentId, award_type, req.session.teamId, player_name, hole_number, detail||'');
+    broadcast('award_updated', {});
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -641,6 +658,43 @@ app.delete('/api/admin/award/:id', requireAdmin, (req, res) => {
   try {
     db.prepare('DELETE FROM awards WHERE id=?').run(req.params.id);
     broadcast('award_updated', {});
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Courses ──────────────────────────────────────────────────────────────────
+
+app.get('/api/admin/courses', requireAdmin, (req, res) => {
+  try {
+    const courses = db.prepare('SELECT * FROM courses ORDER BY name ASC').all();
+    res.json({ courses });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/admin/course', requireAdmin, (req, res) => {
+  const { name, slope_rating, location, notes } = req.body;
+  if (!name) return res.status(400).json({ error: 'Banenavn er påkrevd' });
+  try {
+    const result = db.prepare(
+      'INSERT INTO courses (name, slope_rating, location, notes) VALUES (?,?,?,?)'
+    ).run(name, parseInt(slope_rating)||113, location||'', notes||'');
+    res.json({ success: true, id: result.lastInsertRowid });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/admin/course/:id', requireAdmin, (req, res) => {
+  const { name, slope_rating, location, notes } = req.body;
+  if (!name) return res.status(400).json({ error: 'Banenavn er påkrevd' });
+  try {
+    db.prepare('UPDATE courses SET name=?, slope_rating=?, location=?, notes=? WHERE id=?')
+      .run(name, parseInt(slope_rating)||113, location||'', notes||'', req.params.id);
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/admin/course/:id', requireAdmin, (req, res) => {
+  try {
+    db.prepare('DELETE FROM courses WHERE id=?').run(req.params.id);
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });

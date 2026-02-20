@@ -397,8 +397,8 @@ function renderCurrentHole() {
   const ctpClaim = claimsData[h.hole_number + '_closest_to_pin'];
 
   const competitionBanners = [
-    hasLd  ? '<div class="competition-banner">🏌️ Konkurranse: Lengste Drive på dette hullet!</div>' : '',
-    hasCtp ? '<div class="competition-banner">🎯 Konkurranse: Nærmest Flagget på dette hullet!</div>' : ''
+    hasLd  ? '<div class="competition-banner">🏌️ Utvalgt hull — <strong>Longest Drive</strong> konkurranse! Meld inn ditt beste slag nedenfor.</div>' : '',
+    hasCtp ? '<div class="competition-banner">🎯 Utvalgt hull — <strong>Closest to Pin</strong> konkurranse! Meld inn din avstand nedenfor.</div>' : ''
   ].join('');
 
   const ldSection = hasLd ? `
@@ -456,7 +456,7 @@ function renderCurrentHole() {
       <button class="stepper-btn" onclick="changeScore(${h.hole_number},-1)" ${blocked ? 'disabled' : ''}>−</button>
       <input class="stepper-val ${hasScore ? 'saved' : ''}" type="number" min="1" max="20"
         id="score-${h.hole_number}"
-        value="${hasScore ? saved.score : ''}"
+        value="${hasScore ? saved.score : (blocked ? '' : h.par)}"
         placeholder="${blocked ? '—' : h.par}"
         ${blocked ? 'disabled' : ''}
         onchange="submitScore(${h.hole_number})">
@@ -556,7 +556,7 @@ function finishRound() {
           <tr>
             <th style="padding:6px 10px;color:var(--gold-light);text-align:center">Hull</th>
             <th style="padding:6px 10px;color:var(--gold-light);text-align:center">Par</th>
-            <th style="padding:6px 10px;color:var(--gold-light);text-align:center">Poeng</th>
+            <th style="padding:6px 10px;color:var(--gold-light);text-align:center">Slag</th>
             <th style="padding:6px 10px;color:var(--gold-light);text-align:center">+/−</th>
           </tr>
         </thead>
