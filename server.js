@@ -83,6 +83,15 @@ const requireTeam = (req, res, next) =>
 const requireAdmin = (req, res, next) =>
   req.session.isAdmin ? next() : res.status(401).json({ error: 'Admininnlogging påkrevd' });
 
+// ── Platform health checks ──────────────────────────────────────────────────
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok' });
+});
+
+app.get('/ready', (req, res) => {
+  res.status(200).json({ status: 'ready' });
+});
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function getActiveTournament() {
   return db.prepare(
@@ -92,18 +101,30 @@ function getActiveTournament() {
 
 function normalizePhotoPath(photoPath = '') {
   if (!photoPath || typeof photoPath !== 'string') return '';
-  const p = photoPath.trim();
-  if (!p) return '';
 
-  if (/^(https?:)?\/\//i.test(p) || p.startsWith('data:') || p.startsWith('blob:')) return p;
-  if (p.startsWith('/uploads/')) return p;
-  if (p.startsWith('uploads/')) return `/${p}`;
-  if (p.startsWith('/public/uploads/')) return p.replace('/public', '');
-  if (p.startsWith('public/uploads/')) return `/${p.replace(/^public\//, '')}`;
+  let normalized = photoPath.trim();
+  if (!normalized) return '';
 
-  // Legacy paths sometimes stored only as filenames.
-  if (!p.includes('/')) return `/uploads/${p}`;
-  return p.startsWith('/') ? p : `/${p}`;
+  // Keep external/media URIs untouched.
+  if (/^(https?:)?\/\//i.test(normalized) || normalized.startsWith('data:') || normalized.startsWith('blob:')) {
+    return normalized;
+  }
+
+  // Normalize legacy Windows and relative paths.
+  normalized = normalized.replace(/\\+/g, '/').replace(/^\.\//, '');
+
+  // Accept both /public/uploads/* and public/uploads/* by mapping to /uploads/*.
+  normalized = normalized.replace(/^\/?public\//, '/');
+
+  // Collapse any accidental duplicate uploads prefix.
+  normalized = normalized.replace(/^\/?uploads\/uploads\//, '/uploads/');
+
+  if (normalized.startsWith('/uploads/')) return normalized;
+  if (normalized.startsWith('uploads/')) return `/${normalized}`;
+
+  // Legacy values may be a bare filename, or include other app-local folders.
+  if (!normalized.includes('/')) return `/uploads/${normalized}`;
+  return normalized.startsWith('/') ? normalized : `/${normalized}`;
 }
 
 function ensureDir(dirPath) {
@@ -678,14 +699,16 @@ app.get('/api/gallery', (req, res) => {
       ).all(tournamentId);
       galleryPhotos.forEach(g => {
         if (String(g.caption || '').startsWith('score:')) return;
+        const photoPath = normalizePhotoPath(g.photo_path);
+        if (!photoPath) return;
         items.push({
-        photo_ref: `gallery:${g.id}`,
-        hole_number: null,
-        photo_path: normalizePhotoPath(g.photo_path),
-        team_name: g.caption || '',
-        submitted_at: g.uploaded_at,
-        source: 'gallery'
-      });
+          photo_ref: `gallery:${g.id}`,
+          hole_number: null,
+          photo_path: photoPath,
+          team_name: g.caption || '',
+          submitted_at: g.uploaded_at,
+          source: 'gallery'
+        });
       });
 
       const teams = db.prepare('SELECT id,team_name FROM teams WHERE tournament_id=?').all(tournamentId);
@@ -700,14 +723,18 @@ app.get('/api/gallery', (req, res) => {
          AND photo_path IS NOT NULL AND photo_path != ''
          ORDER BY submitted_at DESC`
       ).all(...teamIds);
-      scores.forEach(s => items.push({
-        photo_ref: `score:${s.id}`,
-        hole_number: s.hole_number,
-        photo_path: normalizePhotoPath(s.photo_path),
-        team_name: teamsMap[s.team_id]?.team_name || '',
-        submitted_at: s.submitted_at,
-        source: 'player'
-      }));
+      scores.forEach(s => {
+        const photoPath = normalizePhotoPath(s.photo_path);
+        if (!photoPath) return;
+        items.push({
+          photo_ref: `score:${s.id}`,
+          hole_number: s.hole_number,
+          photo_path: photoPath,
+          team_name: teamsMap[s.team_id]?.team_name || '',
+          submitted_at: s.submitted_at,
+          source: 'player'
+        });
+      });
 
       return items;
     };
@@ -1108,7 +1135,7 @@ app.get('/api/instagram-qr', (req, res) => {
   app.get(`/${p}`, (req, res) => res.sendFile(path.join(__dirname, `public/${p}.html`)));
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`
   ╔══════════════════════════════════════╗
   ║   LORGEN INVITATIONAL                ║
@@ -1116,3 +1143,14 @@ app.listen(PORT, () => {
   ╚══════════════════════════════════════╝
   `);
 });
+
+function shutdown(signal) {
+  console.log(`Mottok ${signal}. Stopper server...`);
+  server.close(() => {
+    console.log('Server stoppet.');
+    process.exit(0);
+  });
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
