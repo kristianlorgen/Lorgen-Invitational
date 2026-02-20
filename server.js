@@ -78,6 +78,22 @@ function getActiveTournament() {
   ).get();
 }
 
+function normalizePhotoPath(photoPath = '') {
+  if (!photoPath || typeof photoPath !== 'string') return '';
+  const p = photoPath.trim();
+  if (!p) return '';
+
+  if (/^(https?:)?\/\//i.test(p) || p.startsWith('data:') || p.startsWith('blob:')) return p;
+  if (p.startsWith('/uploads/')) return p;
+  if (p.startsWith('uploads/')) return `/${p}`;
+  if (p.startsWith('/public/uploads/')) return p.replace('/public', '');
+  if (p.startsWith('public/uploads/')) return `/${p.replace(/^public\//, '')}`;
+
+  // Legacy paths sometimes stored only as filenames.
+  if (!p.includes('/')) return `/uploads/${p}`;
+  return p.startsWith('/') ? p : `/${p}`;
+}
+
 function buildScoreboard(tournament) {
   const teams     = db.prepare('SELECT * FROM teams WHERE tournament_id=?').all(tournament.id);
   const holes     = db.prepare('SELECT * FROM holes WHERE tournament_id=? ORDER BY hole_number').all(tournament.id);
@@ -124,7 +140,7 @@ function buildScoreboard(tournament) {
     teamScores.forEach(s => {
       const h = holes.find(h => h.hole_number === s.hole_number);
       if (h) { total += s.score; par += h.par; done++; }
-      holeScores[s.hole_number] = { score: s.score, photo: s.photo_path };
+      holeScores[s.hole_number] = { score: s.score, photo: normalizePhotoPath(s.photo_path) };
     });
     const hcpIndex = ((team.player1_handicap || 0) + (team.player2_handicap || 0)) * 0.75;
     const courseHcp = Math.round(hcpIndex * slopeRating / 113);
@@ -255,7 +271,8 @@ app.get('/api/team/scorecard', requireTeam, (req, res) => {
     const team       = db.prepare('SELECT * FROM teams WHERE id=?').get(req.session.teamId);
     const tournament = db.prepare('SELECT id,name,slope_rating FROM tournaments WHERE id=?').get(req.session.tournamentId);
     const holes      = db.prepare('SELECT * FROM holes WHERE tournament_id=? ORDER BY hole_number').all(req.session.tournamentId);
-    const scores     = db.prepare('SELECT * FROM scores WHERE team_id=?').all(req.session.teamId);
+    const scoresRaw  = db.prepare('SELECT * FROM scores WHERE team_id=?').all(req.session.teamId);
+    const scores     = scoresRaw.map(s => ({ ...s, photo_path: normalizePhotoPath(s.photo_path) }));
     const claims     = db.prepare('SELECT * FROM award_claims WHERE tournament_id=? AND team_id=?').all(req.session.tournamentId, req.session.teamId);
     res.json({ team: { ...team, locked: team.locked || 0 }, tournament, holes, scores, claims });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -533,7 +550,7 @@ app.get('/api/admin/tournament/:id/photos', requireAdmin, (req, res) => {
     const teamsMap = {};
     teams.forEach(t => teamsMap[t.id] = t);
     const photos = scores.map(s => ({
-      id: s.id, hole_number: s.hole_number, photo_path: s.photo_path, submitted_at: s.submitted_at,
+      id: s.id, hole_number: s.hole_number, photo_path: normalizePhotoPath(s.photo_path), submitted_at: s.submitted_at,
       team_name:      teamsMap[s.team_id]?.team_name,
       player1:        teamsMap[s.team_id]?.player1,
       player2:        teamsMap[s.team_id]?.player2,
@@ -627,7 +644,7 @@ app.get('/api/gallery', (req, res) => {
     galleryPhotos.forEach(g => photos.push({
       photo_ref: `gallery:${g.id}`,
       hole_number: null,
-      photo_path: g.photo_path,
+      photo_path: normalizePhotoPath(g.photo_path),
       team_name: g.caption || '',
       submitted_at: g.uploaded_at,
       source: 'gallery'
@@ -648,7 +665,7 @@ app.get('/api/gallery', (req, res) => {
       scores.forEach(s => photos.push({
         photo_ref: `score:${s.id}`,
         hole_number: s.hole_number,
-        photo_path: s.photo_path,
+        photo_path: normalizePhotoPath(s.photo_path),
         team_name: teamsMap[s.team_id]?.team_name || '',
         submitted_at: s.submitted_at,
         source: 'player'
@@ -705,9 +722,10 @@ app.post('/api/gallery/vote', (req, res) => {
 
 app.get('/api/admin/tournament/:id/gallery', requireAdmin, (req, res) => {
   try {
-    const photos = db.prepare(
+    const photosRaw = db.prepare(
       'SELECT * FROM gallery_photos WHERE tournament_id=? ORDER BY uploaded_at DESC'
     ).all(req.params.id);
+    const photos = photosRaw.map(p => ({ ...p, photo_path: normalizePhotoPath(p.photo_path) }));
     res.json({ photos });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
