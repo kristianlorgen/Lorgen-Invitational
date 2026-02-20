@@ -797,11 +797,6 @@ function getLatestTournamentWithPublishedPhotos() {
   const latestWithPhotos = db.prepare(
     `SELECT x.tournament_id FROM (
        SELECT gp.tournament_id, gp.uploaded_at AS ts FROM gallery_photos gp WHERE gp.is_published=1
-       UNION ALL
-       SELECT tm.tournament_id, s.submitted_at AS ts
-       FROM scores s
-       JOIN teams tm ON tm.id=s.team_id
-       WHERE s.photo_path IS NOT NULL AND s.photo_path != '' AND s.is_published=1
      ) x
      ORDER BY x.ts DESC
      LIMIT 1`
@@ -846,11 +841,17 @@ app.get('/api/gallery', (req, res) => {
     if (!t) t = db.prepare(`SELECT * FROM tournaments WHERE status='completed' ORDER BY date DESC LIMIT 1`).get();
     const collectPhotosForTournament = (tournamentId) => {
       const items = [];
+      const scoreIdsFromGallery = new Set();
 
       const galleryPhotos = db.prepare(
         `SELECT id, photo_path, caption, uploaded_at FROM gallery_photos WHERE tournament_id=? AND is_published=1 ORDER BY uploaded_at DESC`
       ).all(tournamentId);
       galleryPhotos.forEach(g => {
+        const scoreMatch = String(g.caption || '').match(/^score:(\d+)$/);
+        if (scoreMatch) {
+          scoreIdsFromGallery.add(Number(scoreMatch[1]));
+          return;
+        }
         if (String(g.caption || '').startsWith('score:')) return;
         const photoPath = normalizePhotoPath(g.photo_path);
         if (!photoPath) return;
@@ -864,31 +865,54 @@ app.get('/api/gallery', (req, res) => {
         });
       });
 
-      const teams = db.prepare('SELECT id,team_name FROM teams WHERE tournament_id=?').all(tournamentId);
-      if (!teams.length) return items;
-
-      const teamIds = teams.map(tm => tm.id);
-      const teamsMap = {};
-      teams.forEach(tm => teamsMap[tm.id] = tm);
       const scores = db.prepare(
-        `SELECT s.id, s.team_id, s.hole_number, s.photo_path, s.submitted_at FROM scores
-         WHERE team_id IN (${teamIds.map(()=>'?').join(',')})
+        `SELECT s.id, s.team_id, s.hole_number, s.photo_path, s.submitted_at, t.team_name
+         FROM scores s
+         JOIN teams t ON t.id=s.team_id
+         WHERE t.tournament_id=?
          AND is_published=1
          AND photo_path IS NOT NULL AND photo_path != ''
          ORDER BY submitted_at DESC`
-      ).all(...teamIds);
+      ).all(tournamentId);
       scores.forEach(s => {
+        scoreIdsFromGallery.delete(Number(s.id));
         const photoPath = normalizePhotoPath(s.photo_path);
         if (!photoPath) return;
         items.push({
           photo_ref: `score:${s.id}`,
           hole_number: s.hole_number,
           photo_path: photoPath,
-          team_name: teamsMap[s.team_id]?.team_name || '',
+          team_name: s.team_name || '',
           submitted_at: s.submitted_at,
           source: 'player'
         });
       });
+
+      // Fallback: include score-linked gallery entries when score rows are gone,
+      // so older photos do not disappear after team resets/imports.
+      if (scoreIdsFromGallery.size) {
+        const missingScoreRefs = Array.from(scoreIdsFromGallery);
+        const placeholders = db.prepare(
+          `SELECT caption, photo_path, uploaded_at FROM gallery_photos
+           WHERE tournament_id=? AND is_published=1
+           AND caption IN (${missingScoreRefs.map(() => '?').join(',')})`
+        ).all(tournamentId, ...missingScoreRefs.map(id => `score:${id}`));
+
+        placeholders.forEach(p => {
+          const photoPath = normalizePhotoPath(p.photo_path);
+          if (!photoPath) return;
+          const scoreId = Number(String(p.caption || '').split(':')[1]);
+          if (!Number.isFinite(scoreId)) return;
+          items.push({
+            photo_ref: `score:${scoreId}`,
+            hole_number: null,
+            photo_path: photoPath,
+            team_name: 'Lagbilde',
+            submitted_at: p.uploaded_at,
+            source: 'player'
+          });
+        });
+      }
 
       return items;
     };
