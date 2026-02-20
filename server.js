@@ -146,7 +146,7 @@ app.get('/api/scoreboard', (req, res) => {
 
 app.get('/api/legacy', (req, res) => {
   try {
-    const legacy = db.prepare('SELECT * FROM legacy ORDER BY year DESC').all();
+    const legacy = db.prepare('SELECT id,year,winner_team,player1,player2,score,score_to_par,course,notes,winner_photo,winner_photo_focus FROM legacy ORDER BY year DESC').all();
     res.json({ legacy });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -223,7 +223,7 @@ app.get('/api/team/scorecard', requireTeam, (req, res) => {
     const holes  = db.prepare('SELECT * FROM holes WHERE tournament_id=? ORDER BY hole_number').all(req.session.tournamentId);
     const scores = db.prepare('SELECT * FROM scores WHERE team_id=?').all(req.session.teamId);
     const claims = db.prepare('SELECT * FROM award_claims WHERE tournament_id=? AND team_id=?').all(req.session.tournamentId, req.session.teamId);
-    res.json({ team, holes, scores, claims });
+    res.json({ team: { ...team, locked: team.locked || 0 }, holes, scores, claims });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -235,6 +235,8 @@ app.post('/api/team/submit-score', requireTeam, (req, res) => {
   if (isNaN(scoreNum) || scoreNum < 1 || scoreNum > 20)
     return res.status(400).json({ error: 'Poengsum må være mellom 1 og 20' });
   try {
+    const teamLock = db.prepare('SELECT locked FROM teams WHERE id=?').get(req.session.teamId);
+    if (teamLock?.locked) return res.status(403).json({ error: 'Resultatkort er låst. Kontakt turnerings-administrator for å endre.' });
     const hole = db.prepare('SELECT * FROM holes WHERE tournament_id=? AND hole_number=?')
       .get(req.session.tournamentId, hole_number);
     if (!hole) return res.status(404).json({ error: 'Hull ikke funnet' });
@@ -395,6 +397,14 @@ app.delete('/api/admin/team/:id', requireAdmin, (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+app.put('/api/admin/team/:id/lock', requireAdmin, (req, res) => {
+  try {
+    const locked = req.body.locked ? 1 : 0;
+    db.prepare('UPDATE teams SET locked=? WHERE id=?').run(locked, req.params.id);
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/admin/tournament/:id/holes', requireAdmin, (req, res) => {
   try {
     const holes = db.prepare('SELECT * FROM holes WHERE tournament_id=? ORDER BY hole_number').all(req.params.id);
@@ -514,6 +524,14 @@ app.post('/api/team/claim-award', requireTeam, (req, res) => {
        ON CONFLICT(tournament_id, team_id, hole_number, award_type)
        DO UPDATE SET player_name=excluded.player_name, detail=excluded.detail, claimed_at=CURRENT_TIMESTAMP`
     ).run(req.session.tournamentId, req.session.teamId, hole_number, award_type, player_name, detail||'');
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Team lock scorecard ───────────────────────────────────────────────────────
+app.post('/api/team/lock-scorecard', requireTeam, (req, res) => {
+  try {
+    db.prepare('UPDATE teams SET locked=1 WHERE id=?').run(req.session.teamId);
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -684,6 +702,14 @@ app.post('/api/admin/legacy/:id/photo', requireAdmin, (req, res) => {
   });
 });
 
+app.put('/api/admin/legacy/:id/photo-focus', requireAdmin, (req, res) => {
+  try {
+    const focus = req.body.focus || '50% 50%';
+    db.prepare('UPDATE legacy SET winner_photo_focus=? WHERE id=?').run(focus, req.params.id);
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.delete('/api/admin/legacy/:id', requireAdmin, (req, res) => {
   try {
     db.prepare('DELETE FROM legacy WHERE id=?').run(req.params.id);
@@ -711,10 +737,21 @@ app.get('/api/coin-back', (req, res) => {
   if (fs.existsSync(configPath)) {
     try {
       const data = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-      return res.json({ photo_path: data.photo_path || null });
+      return res.json({ photo_path: data.photo_path || null, focal_point: data.focal_point || null });
     } catch(_) {}
   }
-  res.json({ photo_path: null });
+  res.json({ photo_path: null, focal_point: null });
+});
+
+app.put('/api/admin/coin-back/focus', requireAdmin, (req, res) => {
+  const configPath = path.join(__dirname, 'uploads', 'coin-back.json');
+  try {
+    let data = {};
+    if (fs.existsSync(configPath)) data = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    data.focal_point = req.body.focal_point || '50% 50%';
+    fs.writeFileSync(configPath, JSON.stringify(data));
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/admin/coin-back', requireAdmin, (req, res) => {

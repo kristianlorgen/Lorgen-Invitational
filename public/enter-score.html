@@ -194,6 +194,11 @@
     </div>
   </section>
 
+  <!-- Låst-banner -->
+  <div id="lockedBanner" class="d-none" style="background:#dc2626;padding:10px 16px;text-align:center;font-size:.82rem;font-weight:600;color:white;display:flex;align-items:center;justify-content:center;gap:8px;position:sticky;top:var(--nav-height);z-index:90">
+    <i class="fas fa-lock"></i> Resultatkort låst — kontakt admin for å gjøre endringer
+  </div>
+
   <!-- Oppsummeringsbar (festet til bunn) -->
   <div class="summary-bar">
     <div class="container">
@@ -215,6 +220,32 @@
           <div class="summary-value" id="summaryHoles">0/18</div>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Rundeoppsummering modal ────────────────────────────────────────────── -->
+<div id="summaryModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:2000;align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto">
+  <div style="background:var(--white);border-radius:var(--radius-xl);padding:28px;max-width:480px;width:100%;margin:auto;box-shadow:0 24px 48px rgba(0,0,0,.3)">
+    <div style="text-align:center;margin-bottom:20px">
+      <div style="font-size:2.8rem;margin-bottom:8px">⛳</div>
+      <h2 style="font-family:var(--font-heading);font-size:1.5rem;color:var(--dark);margin-bottom:4px">Runden er fullført!</h2>
+      <p id="summaryTeamLabel" style="color:var(--text-muted);font-size:.85rem"></p>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px" id="summaryStats"></div>
+    <div id="summaryBreakdown" style="margin-bottom:20px"></div>
+    <div id="summaryHoleTable" style="margin-bottom:20px"></div>
+    <div style="background:rgba(201,168,76,.08);border:1px solid rgba(201,168,76,.3);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:18px;font-size:.78rem;color:var(--gold-dark);text-align:center">
+      <i class="fas fa-lock" style="margin-right:6px"></i>
+      Etter låsing kan kun admin endre poengene dine
+    </div>
+    <div style="display:flex;gap:12px">
+      <button onclick="closeSummary()" class="btn btn--outline" style="flex:1;justify-content:center;color:var(--text-muted)">
+        <i class="fas fa-arrow-left"></i> Gå tilbake
+      </button>
+      <button onclick="lockAndClose()" class="btn btn--gold" style="flex:1;justify-content:center" id="summaryLockBtn">
+        <i class="fas fa-lock"></i> Lås inn resultater
+      </button>
     </div>
   </div>
 </div>
@@ -298,6 +329,7 @@ async function loadScorecard() {
   if (d.claims) d.claims.forEach(c => { claimsData[c.hole_number + '_' + c.award_type] = c; });
   renderAll();
   loadPosition();
+  if (teamData.locked) showLockedState();
 }
 
 function renderAll() {
@@ -446,11 +478,20 @@ function renderCurrentHole() {
 
   // Update prev/next button states
   document.getElementById('prevBtn').disabled = currentHoleIndex === 0;
-  document.getElementById('nextBtn').disabled = currentHoleIndex === holesData.length - 1;
-  if (currentHoleIndex === holesData.length - 1) {
-    document.getElementById('nextBtn').innerHTML = '<i class="fas fa-check"></i> Ferdig';
+  const nextBtn = document.getElementById('nextBtn');
+  const isLastHole = currentHoleIndex === holesData.length - 1;
+  if (teamData && teamData.locked) {
+    nextBtn.disabled = true;
+    nextBtn.innerHTML = '<i class="fas fa-lock"></i> Låst';
+    nextBtn.onclick = null;
+  } else if (isLastHole) {
+    nextBtn.disabled = false;
+    nextBtn.innerHTML = '<i class="fas fa-flag-checkered"></i> Ferdig';
+    nextBtn.onclick = finishRound;
   } else {
-    document.getElementById('nextBtn').innerHTML = 'Neste <i class="fas fa-arrow-right"></i>';
+    nextBtn.disabled = false;
+    nextBtn.innerHTML = 'Neste <i class="fas fa-arrow-right"></i>';
+    nextBtn.onclick = nextHole;
   }
 }
 
@@ -475,7 +516,103 @@ function changeScore(holeNum, delta) {
   submitScore(holeNum);
 }
 
+function finishRound() {
+  let totalScore = 0, totalPar = 0, holesCompleted = 0;
+  let eagles = 0, birdies = 0, pars = 0, bogeys = 0, doubles = 0;
+  const holeDetails = [];
+  holesData.forEach(h => {
+    const s = scoresData[h.hole_number];
+    if (s && s.score > 0) {
+      totalScore += s.score; totalPar += h.par; holesCompleted++;
+      const diff = s.score - h.par;
+      if (diff <= -2) eagles++; else if (diff === -1) birdies++;
+      else if (diff === 0) pars++; else if (diff === 1) bogeys++; else doubles++;
+      holeDetails.push({ hole_number: h.hole_number, par: h.par, score: s.score, diff });
+    }
+  });
+  const toPar = holesCompleted > 0 ? totalScore - totalPar : null;
+  document.getElementById('summaryTeamLabel').textContent = teamData.team_name + ' — ' + teamData.player1 + ' & ' + teamData.player2;
+  document.getElementById('summaryStats').innerHTML = [
+    { label: 'Totalt', value: totalScore || '—' },
+    { label: 'vs Par', value: toPar !== null ? (toPar > 0 ? '+'+toPar : toPar === 0 ? 'E' : toPar) : '—' },
+    { label: 'Hull', value: holesCompleted + '/18' }
+  ].map(s => `<div style="text-align:center;background:var(--gold-pale);border-radius:var(--radius);padding:14px 8px">
+    <div style="font-size:.6rem;text-transform:uppercase;letter-spacing:.12em;color:var(--gold-dark);font-weight:700;margin-bottom:4px">${s.label}</div>
+    <div style="font-family:var(--font-heading);font-size:1.4rem;color:var(--dark)">${s.value}</div>
+  </div>`).join('');
+  document.getElementById('summaryBreakdown').innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;text-align:center">
+      ${[['Eagle+',eagles,'chip-eagle'],['Birdie',birdies,'chip-birdie'],['Par',pars,'chip-par'],['Bogey',bogeys,'chip-bogey'],['Dobbelt+',doubles,'chip-double']].map(([label,count,cls]) =>
+        `<div style="background:var(--off-white);border-radius:var(--radius-sm);padding:8px 4px">
+          <div class="score-chip ${cls}" style="width:28px;height:28px;margin:0 auto 4px;font-size:.75rem">${count}</div>
+          <div style="font-size:.6rem;color:var(--text-muted)">${label}</div>
+        </div>`).join('')}
+    </div>`;
+  const sorted = [...holeDetails].sort((a,b) => a.hole_number - b.hole_number);
+  document.getElementById('summaryHoleTable').innerHTML = `
+    <div style="max-height:200px;overflow-y:auto;border:1px solid var(--gold-border);border-radius:var(--radius-sm)">
+      <table style="width:100%;border-collapse:collapse;font-size:.8rem">
+        <thead style="position:sticky;top:0;background:var(--dark)">
+          <tr>
+            <th style="padding:6px 10px;color:var(--gold-light);text-align:center">Hull</th>
+            <th style="padding:6px 10px;color:var(--gold-light);text-align:center">Par</th>
+            <th style="padding:6px 10px;color:var(--gold-light);text-align:center">Poeng</th>
+            <th style="padding:6px 10px;color:var(--gold-light);text-align:center">+/−</th>
+          </tr>
+        </thead>
+        <tbody>${sorted.map(h => {
+          const ds = h.diff > 0 ? '+'+h.diff : h.diff === 0 ? 'E' : String(h.diff);
+          const dc = h.diff < 0 ? '#059669' : h.diff > 0 ? '#dc2626' : 'var(--text-muted)';
+          return `<tr style="border-bottom:1px solid var(--gold-border)">
+            <td style="padding:6px 10px;text-align:center;font-weight:600">${h.hole_number}</td>
+            <td style="padding:6px 10px;text-align:center;color:var(--text-muted)">${h.par}</td>
+            <td style="padding:6px 10px;text-align:center;font-weight:700">${h.score}</td>
+            <td style="padding:6px 10px;text-align:center;color:${dc};font-weight:600">${ds}</td>
+          </tr>`;
+        }).join('')}
+        <tr style="background:var(--gold-pale);font-weight:700">
+          <td style="padding:8px 10px;text-align:center" colspan="2">Totalt</td>
+          <td style="padding:8px 10px;text-align:center">${totalScore}</td>
+          <td style="padding:8px 10px;text-align:center;color:${toPar < 0 ? '#059669' : toPar > 0 ? '#dc2626' : 'var(--text-muted)'}">${toPar > 0 ? '+'+toPar : toPar === 0 ? 'E' : toPar}</td>
+        </tr></tbody>
+      </table>
+    </div>`;
+  if (holesCompleted < holesData.length) {
+    document.getElementById('summaryLockBtn').innerHTML = `<i class="fas fa-lock"></i> Lås inn (${holesCompleted}/18 hull)`;
+  } else {
+    document.getElementById('summaryLockBtn').innerHTML = '<i class="fas fa-lock"></i> Lås inn resultater';
+  }
+  document.getElementById('summaryModal').style.display = 'flex';
+}
+
+function closeSummary() {
+  document.getElementById('summaryModal').style.display = 'none';
+}
+
+async function lockAndClose() {
+  const btn = document.getElementById('summaryLockBtn');
+  btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Låser...';
+  try {
+    const r = await fetch('/api/team/lock-scorecard', { method: 'POST' });
+    const d = await r.json();
+    if (d.success) {
+      teamData.locked = 1;
+      closeSummary(); showLockedState();
+      showToast('Resultatkort låst! Bra spilt! 🏆', 'success');
+    } else { showToast(d.error || 'Kunne ikke låse resultatkort', 'error'); }
+  } catch(e) { showToast('Tilkoblingsfeil', 'error'); }
+  btn.disabled = false; btn.innerHTML = '<i class="fas fa-lock"></i> Lås inn resultater';
+}
+
+function showLockedState() {
+  const banner = document.getElementById('lockedBanner');
+  banner.classList.remove('d-none');
+  banner.style.display = 'flex';
+  renderDots(); renderCurrentHole();
+}
+
 async function submitScore(holeNum) {
+  if (teamData && teamData.locked) { showToast('Resultatkort er låst', 'error'); return; }
   const input = document.getElementById('score-' + holeNum);
   const score = parseInt(input.value);
   if (!score || score < 1) return;

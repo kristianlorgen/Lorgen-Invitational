@@ -175,8 +175,8 @@ async function loadLegacy() {
         ${c.winner_photo ? `
           <div style="position:relative;z-index:1;margin:-4px -4px 16px;border-radius:12px 12px 0 0;overflow:hidden">
             <img src="${c.winner_photo}" alt="Vinnere ${c.year}"
-              style="width:100%;height:160px;object-fit:cover;display:block;opacity:.85">
-            <div style="position:absolute;inset:0;background:linear-gradient(to bottom,transparent 40%,rgba(13,27,42,.9))"></div>
+              style="width:100%;height:220px;object-fit:cover;display:block;opacity:.9;object-position:${c.winner_photo_focus||'50% 50%'}">
+            <div style="position:absolute;inset:0;background:linear-gradient(to bottom,transparent 50%,rgba(13,27,42,.85))"></div>
           </div>` : ''}
         <div class="trophy-year">${c.year}</div>
         <div class="trophy-icon">${i === 0 ? '🥇' : i === 1 ? '🥈' : '🏆'}</div>
