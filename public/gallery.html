@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="nb">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dagens Glimtskudd — Lorgen Invitational</title>
+  <meta name="description" content="Se alle bilder fra dagens runde og stem på ditt favorittbilde.">
+  <link rel="icon" type="image/png" href="/images/logo.png">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    .gallery-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 20px;
+    }
+    .gallery-card {
+      background: var(--white);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--gold-border);
+      overflow: hidden;
+      box-shadow: var(--shadow-sm);
+      transition: transform .2s, box-shadow .2s;
+    }
+    .gallery-card:hover { transform: translateY(-3px); box-shadow: var(--shadow); }
+    .gallery-card img {
+      width: 100%; height: 220px; object-fit: cover; display: block;
+      cursor: pointer;
+    }
+    .gallery-card-body {
+      padding: 14px 16px;
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    }
+    .gallery-card-info { flex: 1; min-width: 0; }
+    .gallery-card-team { font-weight: 600; font-size: .9rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .gallery-card-sub { font-size: .75rem; color: var(--text-muted); margin-top: 2px; }
+    .vote-btn {
+      display: flex; align-items: center; gap: 6px;
+      padding: 8px 14px; border-radius: var(--radius-pill);
+      border: 2px solid var(--gold-border); background: transparent;
+      color: var(--text-muted); font-size: .82rem; font-weight: 600;
+      cursor: pointer; transition: all .2s; white-space: nowrap;
+      font-family: var(--font-body);
+    }
+    .vote-btn:hover { border-color: var(--gold); color: var(--gold); }
+    .vote-btn.voted {
+      background: var(--gold); border-color: var(--gold);
+      color: var(--dark); box-shadow: var(--shadow-gold);
+    }
+    .vote-btn .vote-count { font-weight: 700; }
+    /* Winner card */
+    .winner-card {
+      border: 2px solid var(--gold);
+      box-shadow: var(--shadow-gold);
+      background: linear-gradient(135deg, var(--white), var(--gold-pale));
+    }
+    .winner-badge {
+      position: absolute; top: 12px; left: 12px;
+      background: var(--gold); color: var(--dark);
+      font-size: .7rem; font-weight: 800; letter-spacing: .1em;
+      padding: 4px 10px; border-radius: var(--radius-pill);
+      text-transform: uppercase; box-shadow: var(--shadow);
+    }
+    .gallery-card-wrap { position: relative; }
+    /* Lightbox */
+    .lightbox {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.9); z-index: 9999;
+      align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    .lightbox.open { display: flex; }
+    .lightbox img { max-width: 90vw; max-height: 88vh; object-fit: contain; border-radius: var(--radius); }
+    .lightbox-close {
+      position: absolute; top: 16px; right: 20px;
+      background: none; border: none; color: white; font-size: 2rem; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Navigasjon ──────────────────────────────────────────────────────────── -->
+<nav class="navbar" id="navbar">
+  <div class="container">
+    <a href="/" class="navbar-brand">
+      <img src="/images/logo.png" alt="Lorgen Invitational" class="navbar-logo">
+    </a>
+    <ul class="navbar-nav">
+      <li><a href="/" class="nav-link">Hjem</a></li>
+      <li><a href="/gameday" class="nav-link">Spilledag</a></li>
+      <li><a href="/scoreboard" class="nav-link">Live Resultater</a></li>
+      <li><a href="/gallery" class="nav-link active">Glimtskudd</a></li>
+      <li><a href="/legacy" class="nav-link">Historikk</a></li>
+      <li><a href="/enter-score" class="nav-link nav-link--cta">Registrer Poeng</a></li>
+    </ul>
+    <button class="navbar-toggle" id="navToggle" aria-label="Meny">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+</nav>
+<div class="navbar-mobile" id="mobileMenu">
+  <a href="/" class="nav-link">Hjem</a>
+  <a href="/gameday" class="nav-link">Spilledag</a>
+  <a href="/scoreboard" class="nav-link">Live Resultater</a>
+  <a href="/gallery" class="nav-link active">Glimtskudd</a>
+  <a href="/legacy" class="nav-link">Historikk</a>
+  <a href="/enter-score" class="nav-link">Registrer Poeng</a>
+  <a href="/admin" class="nav-link" style="color:rgba(255,255,255,.35);font-size:.78rem">Admin</a>
+</div>
+
+<!-- ── Hurtignavigasjon ───────────────────────────────────────────────────── -->
+<div class="quick-nav" id="quickNav">
+  <button class="quick-nav-btn" onclick="toggleQuickNav()" aria-label="Sidenavigasjon">
+    <i class="fas fa-grip-vertical"></i>
+  </button>
+  <div class="quick-nav-panel" id="quickNavPanel">
+    <a href="/" class="quick-nav-link"><i class="fas fa-home"></i> Hjem</a>
+    <a href="/gameday" class="quick-nav-link"><i class="fas fa-calendar-day"></i> Spilledag</a>
+    <a href="/scoreboard" class="quick-nav-link"><i class="fas fa-flag"></i> Live Resultater</a>
+    <a href="/gallery" class="quick-nav-link active"><i class="fas fa-camera"></i> Glimtskudd</a>
+    <a href="/legacy" class="quick-nav-link"><i class="fas fa-trophy"></i> Historikk</a>
+    <a href="/enter-score" class="quick-nav-link"><i class="fas fa-golf-ball"></i> Registrer Poeng</a>
+  </div>
+</div>
+
+<!-- ── Sidehode ──────────────────────────────────────────────────────────── -->
+<div class="page-hero">
+  <div class="container">
+    <div class="page-hero-tag"><i class="fas fa-camera"></i> &nbsp; Bildealbum</div>
+    <h1 class="page-hero-title">Dagens <span>Glimtskudd</span></h1>
+    <p class="page-hero-sub">Stem på ditt favorittbilde fra dagens runde — flest stemmer vinner blinkskudd-tittelen</p>
+  </div>
+</div>
+
+<!-- ── Blinkskudd (vinner) ───────────────────────────────────────────────── -->
+<section class="section section--sm" style="background:var(--gold-pale);border-bottom:1px solid var(--gold-border)" id="winnerSection">
+  <div class="container">
+    <div id="winnerContent"></div>
+  </div>
+</section>
+
+<!-- ── Alle bilder ───────────────────────────────────────────────────────── -->
+<section class="section" style="background:var(--off-white)">
+  <div class="container">
+    <div class="section-header">
+      <span class="section-tag">Galleriet</span>
+      <h2 class="section-title">Alle <span>Bilder</span></h2>
+      <p class="section-subtitle" id="photoCount">Laster bilder...</p>
+    </div>
+
+    <div id="emptyState" class="d-none" style="text-align:center;padding:60px 20px">
+      <div style="font-size:3rem;margin-bottom:16px">📸</div>
+      <h3 style="font-family:var(--font-heading);color:var(--text);margin-bottom:8px">Ingen bilder ennå</h3>
+      <p style="color:var(--text-muted)">Bilder dukker opp her etter hvert som spillere laster opp fra hullene.</p>
+    </div>
+
+    <div class="gallery-grid" id="galleryGrid"></div>
+  </div>
+</section>
+
+<!-- ── Lysboks ───────────────────────────────────────────────────────────── -->
+<div class="lightbox" id="lightbox" onclick="closeLightbox()">
+  <button class="lightbox-close" onclick="closeLightbox()"><i class="fas fa-times"></i></button>
+  <img id="lightboxImg" src="" alt="">
+</div>
+
+<!-- ── Bunntekst ─────────────────────────────────────────────────────────── -->
+<footer class="footer">
+  <div class="container">
+    <div class="footer-inner">
+      <div>
+        <img src="/images/logo.png" alt="Lorgen Invitational" class="footer-logo">
+        <p class="footer-tagline">Power · Precision · Party</p>
+      </div>
+      <div>
+        <div class="footer-heading">Navigasjon</div>
+        <div class="footer-links">
+          <a href="/">Hjem</a>
+          <a href="/gameday">Spilledag</a>
+          <a href="/scoreboard">Live Resultattavle</a>
+          <a href="/gallery">Glimtskudd</a>
+          <a href="/legacy">Historikk</a>
+        </div>
+      </div>
+      <div>
+        <div class="footer-heading">Sosiale Medier</div>
+        <div class="footer-links">
+          <a href="https://www.facebook.com/groups/1695163647799062/" target="_blank" rel="noopener">
+            <i class="fab fa-facebook" style="margin-right:6px;color:var(--gold)"></i>Facebook-gruppe
+          </a>
+          <a href="https://www.instagram.com/lorgeninvitational" target="_blank" rel="noopener">
+            <i class="fab fa-instagram" style="margin-right:6px;color:var(--gold)"></i>Instagram
+          </a>
+        </div>
+        <div style="margin-top:16px">
+          <img src="/api/instagram-qr" alt="Instagram QR-kode" class="instagram-qr">
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>&copy; <span id="footerYear"></span> Lorgen Invitational. Alle rettigheter reservert.</span>
+      <span>Power · Precision · Party</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+document.getElementById('footerYear').textContent = new Date().getFullYear();
+window.addEventListener('scroll', () => {
+  document.getElementById('navbar').classList.toggle('scrolled', window.scrollY > 40);
+});
+document.getElementById('navToggle').addEventListener('click', () => {
+  document.getElementById('mobileMenu').classList.toggle('open');
+});
+
+function toggleQuickNav() {
+  document.getElementById('quickNavPanel').classList.toggle('open');
+}
+document.addEventListener('click', e => {
+  if (!document.getElementById('quickNav').contains(e.target)) {
+    document.getElementById('quickNavPanel').classList.remove('open');
+  }
+});
+
+let photos = [];
+
+function openLightbox(src) {
+  document.getElementById('lightboxImg').src = src;
+  document.getElementById('lightbox').classList.add('open');
+}
+function closeLightbox() {
+  document.getElementById('lightbox').classList.remove('open');
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
+
+async function vote(photoRef, btn) {
+  try {
+    const r = await fetch('/api/gallery/vote', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ photo_ref: photoRef })
+    });
+    const d = await r.json();
+    if (d.error) return;
+    // Refresh after vote
+    await loadGallery();
+  } catch(_) {}
+}
+
+function renderWinner(photos) {
+  const section = document.getElementById('winnerSection');
+  const content = document.getElementById('winnerContent');
+  const topVoted = photos.find(p => p.votes > 0);
+  if (!topVoted) {
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = '';
+  content.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+      <span style="font-size:1.4rem">🏆</span>
+      <div>
+        <div style="font-size:.72rem;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--gold-dark)">Blinkskudd</div>
+        <div style="font-family:var(--font-heading);font-size:1.4rem;font-weight:700;color:var(--dark)">Dagens favoritt</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap">
+      <img src="${topVoted.photo_path}" alt="Blinkskudd"
+        onclick="openLightbox('${topVoted.photo_path}')"
+        style="width:280px;max-width:100%;height:200px;object-fit:cover;border-radius:var(--radius-lg);
+               border:2px solid var(--gold);box-shadow:var(--shadow-gold);cursor:pointer">
+      <div style="flex:1;min-width:200px">
+        <div style="font-size:1.1rem;font-weight:700;color:var(--dark);margin-bottom:6px">${topVoted.team_name || 'Ukjent lag'}</div>
+        ${topVoted.hole_number ? `<div style="font-size:.85rem;color:var(--text-muted);margin-bottom:12px"><i class="fas fa-flag" style="color:var(--gold);margin-right:6px"></i>Hull ${topVoted.hole_number}</div>` : ''}
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:2rem;font-weight:800;font-family:var(--font-heading);color:var(--gold)">${topVoted.votes}</span>
+          <span style="font-size:.85rem;color:var(--text-muted)">stem${topVoted.votes !== 1 ? 'mer' : ''}</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderGallery(photosArr) {
+  const grid = document.getElementById('galleryGrid');
+  const empty = document.getElementById('emptyState');
+  const count = document.getElementById('photoCount');
+
+  if (!photosArr || photosArr.length === 0) {
+    empty.classList.remove('d-none');
+    grid.innerHTML = '';
+    count.textContent = '';
+    return;
+  }
+  empty.classList.add('d-none');
+  count.textContent = `${photosArr.length} bilde${photosArr.length !== 1 ? 'r' : ''} — oppdateres automatisk`;
+
+  grid.innerHTML = photosArr.map((p, idx) => {
+    const isWinner = idx === 0 && p.votes > 0;
+    const sub = p.hole_number ? `Hull ${p.hole_number}` : (p.source === 'gallery' ? 'Arrangørbilde' : '');
+    return `
+    <div class="gallery-card-wrap">
+      ${isWinner ? '<div class="winner-badge">⭐ Blinkskudd</div>' : ''}
+      <div class="gallery-card${isWinner ? ' winner-card' : ''}">
+        <img src="${p.photo_path}" alt="${p.team_name || 'Bilde'}"
+          onclick="openLightbox('${p.photo_path}')"
+          loading="lazy">
+        <div class="gallery-card-body">
+          <div class="gallery-card-info">
+            <div class="gallery-card-team">${p.team_name || 'Ukjent lag'}</div>
+            ${sub ? `<div class="gallery-card-sub"><i class="fas fa-flag" style="color:var(--gold);margin-right:4px"></i>${sub}</div>` : ''}
+          </div>
+          <button class="vote-btn${p.voted ? ' voted' : ''}"
+            onclick="vote('${p.photo_ref}', this)">
+            <i class="fas fa-heart"></i>
+            <span class="vote-count">${p.votes}</span>
+          </button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function loadGallery() {
+  try {
+    const r = await fetch('/api/gallery');
+    const d = await r.json();
+    photos = d.photos || [];
+    renderWinner(photos);
+    renderGallery(photos);
+  } catch(_) {}
+}
+
+loadGallery();
+setInterval(loadGallery, 30000);
+</script>
+</body>
+</html>
