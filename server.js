@@ -703,9 +703,56 @@ function getVoterIp(req) {
   return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
 }
 
+function getLatestTournamentWithPublishedPhotos() {
+  const latestWithPhotos = db.prepare(
+    `SELECT x.tournament_id FROM (
+       SELECT gp.tournament_id, gp.uploaded_at AS ts FROM gallery_photos gp WHERE gp.is_published=1
+       UNION ALL
+       SELECT tm.tournament_id, s.submitted_at AS ts
+       FROM scores s
+       JOIN teams tm ON tm.id=s.team_id
+       WHERE s.photo_path IS NOT NULL AND s.photo_path != '' AND s.is_published=1
+     ) x
+     ORDER BY x.ts DESC
+     LIMIT 1`
+  ).get();
+
+  if (!latestWithPhotos?.tournament_id) return null;
+  return db.prepare('SELECT * FROM tournaments WHERE id=?').get(latestWithPhotos.tournament_id) || null;
+}
+
+function getTournamentForPhotoRef(photoRef) {
+  if (!photoRef || typeof photoRef !== 'string') return null;
+
+  if (photoRef.startsWith('gallery:')) {
+    const id = Number(photoRef.split(':')[1]);
+    if (!Number.isFinite(id)) return null;
+    const row = db.prepare('SELECT tournament_id FROM gallery_photos WHERE id=?').get(id);
+    if (!row?.tournament_id) return null;
+    return db.prepare('SELECT * FROM tournaments WHERE id=?').get(row.tournament_id) || null;
+  }
+
+  if (photoRef.startsWith('score:')) {
+    const id = Number(photoRef.split(':')[1]);
+    if (!Number.isFinite(id)) return null;
+    const row = db.prepare(
+      `SELECT tm.tournament_id FROM scores s
+       JOIN teams tm ON tm.id=s.team_id
+       WHERE s.id=?`
+    ).get(id);
+    if (!row?.tournament_id) return null;
+    return db.prepare('SELECT * FROM tournaments WHERE id=?').get(row.tournament_id) || null;
+  }
+
+  return null;
+}
+
 app.get('/api/gallery', (req, res) => {
   try {
-    let t = getActiveTournament();
+    // Show the most recently updated published gallery first, so users always
+    // see the same photos as in admin regardless of tournament status.
+    let t = getLatestTournamentWithPublishedPhotos();
+    if (!t) t = getActiveTournament();
     if (!t) t = db.prepare(`SELECT * FROM tournaments WHERE status='completed' ORDER BY date DESC LIMIT 1`).get();
     const collectPhotosForTournament = (tournamentId) => {
       const items = [];
@@ -756,42 +803,12 @@ app.get('/api/gallery', (req, res) => {
       return items;
     };
 
-    if (!t) {
-      const latestWithPhotos = db.prepare(
-        `SELECT x.tournament_id FROM (
-           SELECT gp.tournament_id, gp.uploaded_at AS ts FROM gallery_photos gp WHERE gp.is_published=1
-           UNION ALL
-           SELECT tm.tournament_id, s.submitted_at AS ts
-           FROM scores s
-           JOIN teams tm ON tm.id=s.team_id
-           WHERE s.photo_path IS NOT NULL AND s.photo_path != '' AND s.is_published=1
-         ) x
-         ORDER BY x.ts DESC
-         LIMIT 1`
-      ).get();
-      if (latestWithPhotos?.tournament_id) {
-        t = db.prepare('SELECT * FROM tournaments WHERE id=?').get(latestWithPhotos.tournament_id);
-      }
-    }
-
     if (!t) return res.json({ photos: [], tournament: null });
 
     let photos = collectPhotosForTournament(t.id);
     if (!photos.length) {
-      const latestWithPhotos = db.prepare(
-        `SELECT x.tournament_id FROM (
-           SELECT gp.tournament_id, gp.uploaded_at AS ts FROM gallery_photos gp WHERE gp.is_published=1
-           UNION ALL
-           SELECT tm.tournament_id, s.submitted_at AS ts
-           FROM scores s
-           JOIN teams tm ON tm.id=s.team_id
-           WHERE s.photo_path IS NOT NULL AND s.photo_path != '' AND s.is_published=1
-         ) x
-         ORDER BY x.ts DESC
-         LIMIT 1`
-      ).get();
-      if (latestWithPhotos?.tournament_id && latestWithPhotos.tournament_id !== t.id) {
-        const fallbackTournament = db.prepare('SELECT * FROM tournaments WHERE id=?').get(latestWithPhotos.tournament_id);
+      const fallbackTournament = getLatestTournamentWithPublishedPhotos();
+      if (fallbackTournament && fallbackTournament.id !== t.id) {
         if (fallbackTournament) {
           const fallbackPhotos = collectPhotosForTournament(fallbackTournament.id);
           if (fallbackPhotos.length) {
@@ -831,7 +848,10 @@ app.post('/api/gallery/vote', (req, res) => {
   const { photo_ref } = req.body;
   if (!photo_ref) return res.status(400).json({ error: 'photo_ref er påkrevd' });
   try {
-    let t = getActiveTournament();
+    // Always store votes on the tournament that owns the selected image.
+    let t = getTournamentForPhotoRef(photo_ref);
+    if (!t) t = getLatestTournamentWithPublishedPhotos();
+    if (!t) t = getActiveTournament();
     if (!t) t = db.prepare(`SELECT * FROM tournaments WHERE status='completed' ORDER BY date DESC LIMIT 1`).get();
     if (!t) return res.status(404).json({ error: 'Ingen aktiv turnering' });
     const voterIp = getVoterIp(req);
