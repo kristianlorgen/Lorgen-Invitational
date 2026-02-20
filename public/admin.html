@@ -526,6 +526,24 @@
           </div>
         </div>
 
+        <div class="card" style="margin-bottom:24px">
+          <div class="card-header"><strong>Last opp eget Glimtskudd-bilde</strong></div>
+          <div class="card-body" style="display:grid;grid-template-columns:2fr 1fr auto;gap:12px;align-items:end">
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Bilde</label>
+              <input class="form-input" type="file" id="adminGlimtskuddFile" accept="image/*">
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Bildetekst (valgfritt)</label>
+              <input class="form-input" id="adminGlimtskuddCaption" placeholder="f.eks. Solnedgang på hull 18">
+            </div>
+            <button onclick="uploadAdminGlimtskudd()" class="btn btn--gold btn--sm" style="justify-content:center"><i class="fas fa-upload"></i> Last opp</button>
+          </div>
+          <div class="card-footer" style="font-size:.8rem;color:var(--text-muted)">
+            Bildene lagres i <code>/uploads/glimtskudd</code> og vises i Dagens Glimtskudd.
+          </div>
+        </div>
+
         <div class="card">
           <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
             <strong>Opplastede bilder</strong>
@@ -1302,6 +1320,43 @@ async function deleteScore(id) {
 }
 
 // ── Bilder ────────────────────────────────────────────────────────────────────
+async function uploadAdminGlimtskudd() {
+  const tid = document.getElementById('photosTournamentSelect').value;
+  if (!tid) {
+    showToast('Velg en turnering før du laster opp bilde', 'error');
+    return;
+  }
+  const fileInput = document.getElementById('adminGlimtskuddFile');
+  const file = fileInput.files[0];
+  if (!file) {
+    showToast('Velg et bilde først', 'error');
+    return;
+  }
+
+  const fd = new FormData();
+  fd.append('photo', file);
+  fd.append('caption', document.getElementById('adminGlimtskuddCaption').value || '');
+
+  try {
+    await fetch('/api/admin/tournament/' + tid + '/gallery', {
+      method: 'POST',
+      credentials: 'same-origin',
+      body: fd
+    }).then(async r => {
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || 'Kunne ikke laste opp bilde');
+      return data;
+    });
+
+    fileInput.value = '';
+    document.getElementById('adminGlimtskuddCaption').value = '';
+    showToast('Glimtskudd-bilde lastet opp');
+    await loadPhotos();
+  } catch(e) {
+    showToast(e.message, 'error');
+  }
+}
+
 async function loadPhotos() {
   const tid = document.getElementById('photosTournamentSelect').value;
   const grid = document.getElementById('photosGrid');
@@ -1313,13 +1368,21 @@ async function loadPhotos() {
   }
   grid.innerHTML = '<p style="color:var(--text-muted);grid-column:1/-1">Laster bilder...</p>';
   try {
-    const d = await api('/api/admin/tournament/'+tid+'/photos');
-    countEl.textContent = d.photos.length + ' bilde' + (d.photos.length===1?'':'r');
-    if (!d.photos.length) {
+    const [scoreData, galleryData] = await Promise.all([
+      api('/api/admin/tournament/' + tid + '/photos'),
+      api('/api/admin/tournament/' + tid + '/gallery')
+    ]);
+
+    const scorePhotos = scoreData.photos || [];
+    const galleryPhotos = (galleryData.photos || []).filter(p => !String(p.caption || '').startsWith('score:'));
+    countEl.textContent = `${scorePhotos.length + galleryPhotos.length} bilde${(scorePhotos.length + galleryPhotos.length)===1?'':'r'} · ${scorePhotos.length} lag · ${galleryPhotos.length} admin`;
+
+    if (!scorePhotos.length && !galleryPhotos.length) {
       grid.innerHTML = '<p style="color:var(--text-muted);grid-column:1/-1">Ingen bilder lastet opp ennå.</p>';
       return;
     }
-    grid.innerHTML = d.photos.map(p => `
+
+    const scoreCards = scorePhotos.map(p => `
       <div class="photo-card">
         <a href="${p.photo_path}" target="_blank">
           <img src="${p.photo_path}" alt="Hull ${p.hole_number}" loading="lazy">
@@ -1332,12 +1395,43 @@ async function loadPhotos() {
             <input type="checkbox" ${p.is_published ? 'checked' : ''} onchange="togglePhotoPublish(${p.id}, this.checked)" style="accent-color:var(--gold)">
             Publiser i Dagens Glimtskudd
           </label>
-          <button onclick="deletePhoto(${p.id})" class="btn btn--danger btn--sm" style="margin-top:8px;width:100%;justify-content:center">
-            <i class="fas fa-trash"></i> Slett bilde
-          </button>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <a href="/api/admin/photo/${p.id}/download" class="btn btn--sm" style="flex:1;justify-content:center;background:var(--dark);color:var(--gold-light);border:none">
+              <i class="fas fa-download"></i> Last ned
+            </a>
+            <button onclick="deletePhoto(${p.id})" class="btn btn--danger btn--sm" style="flex:1;justify-content:center">
+              <i class="fas fa-trash"></i> Slett
+            </button>
+          </div>
         </div>
-      </div>`).join('');
-  } catch(e) { showToast('Kunne ikke laste bilder: '+e.message,'error'); }
+      </div>`);
+
+    const galleryCards = galleryPhotos.map(p => `
+      <div class="photo-card">
+        <a href="${p.photo_path}" target="_blank">
+          <img src="${p.photo_path}" alt="Admin-opplastet bilde" loading="lazy">
+        </a>
+        <div class="photo-card-body">
+          <strong>Admin-opplastet Glimtskudd</strong>
+          <span>${p.caption || 'Uten bildetekst'}</span>
+          <span style="display:block;margin-top:4px">${new Date(p.uploaded_at).toLocaleString('nb-NO')}</span>
+          <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:.8rem;color:var(--dark);font-weight:600">
+            <input type="checkbox" ${p.is_published ? 'checked' : ''} onchange="toggleGalleryPhotoPublish(${p.id}, this.checked)" style="accent-color:var(--gold)">
+            Publiser i Dagens Glimtskudd
+          </label>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <a href="/api/admin/gallery/${p.id}/download" class="btn btn--sm" style="flex:1;justify-content:center;background:var(--dark);color:var(--gold-light);border:none">
+              <i class="fas fa-download"></i> Last ned
+            </a>
+            <button onclick="deleteGalleryPhoto(${p.id})" class="btn btn--danger btn--sm" style="flex:1;justify-content:center">
+              <i class="fas fa-trash"></i> Slett
+            </button>
+          </div>
+        </div>
+      </div>`);
+
+    grid.innerHTML = [...galleryCards, ...scoreCards].join('');
+  } catch(e) { showToast('Kunne ikke laste bilder: ' + e.message, 'error'); }
 }
 
 async function togglePhotoPublish(id, isPublished) {
@@ -1358,6 +1452,28 @@ async function deletePhoto(id) {
   try {
     await api('/api/admin/photo/' + id, { method: 'DELETE' });
     showToast('Bilde slettet');
+    await loadPhotos();
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+async function toggleGalleryPhotoPublish(id, isPublished) {
+  try {
+    await api('/api/admin/gallery/' + id + '/publish', {
+      method: 'PUT',
+      body: JSON.stringify({ is_published: isPublished })
+    });
+    showToast(isPublished ? 'Admin-bildet er publisert i Dagens Glimtskudd' : 'Admin-bildet er skjult fra Dagens Glimtskudd');
+  } catch(e) {
+    showToast(e.message, 'error');
+    await loadPhotos();
+  }
+}
+
+async function deleteGalleryPhoto(id) {
+  if (!confirm('Slett dette admin-opplastede bildet? Handlingen kan ikke angres.')) return;
+  try {
+    await api('/api/admin/gallery/' + id, { method: 'DELETE' });
+    showToast('Admin-bilde slettet');
     await loadPhotos();
   } catch(e) { showToast(e.message, 'error'); }
 }

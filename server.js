@@ -25,6 +25,7 @@ function isAllowedImageUpload(file = {}) {
 
 // Ensure required directories exist
 if (!fs.existsSync('uploads')) fs.mkdirSync('uploads', { recursive: true });
+if (!fs.existsSync('./uploads/glimtskudd')) fs.mkdirSync('./uploads/glimtskudd', { recursive: true });
 if (!fs.existsSync('./data/sessions')) fs.mkdirSync('./data/sessions', { recursive: true });
 
 // ── SSE live-update clients ──────────────────────────────────────────────────
@@ -44,6 +45,20 @@ const storage = multer.diskStorage({
 });
 const upload = multer({
   storage,
+  limits: { fileSize: 15 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (isAllowedImageUpload(file)) return cb(null, true);
+    cb(new Error('Kun bilder er tillatt'));
+  }
+});
+
+const galleryStorage = multer.diskStorage({
+  destination: './uploads/glimtskudd/',
+  filename: (req, file, cb) =>
+    cb(null, `glimt-${Date.now()}-${Math.round(Math.random() * 1e6)}${path.extname(file.originalname)}`)
+});
+const galleryUpload = multer({
+  storage: galleryStorage,
   limits: { fileSize: 15 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (isAllowedImageUpload(file)) return cb(null, true);
@@ -696,7 +711,7 @@ app.get('/api/gallery', (req, res) => {
       const items = [];
 
       const galleryPhotos = db.prepare(
-        `SELECT id, photo_path, caption, uploaded_at FROM gallery_photos WHERE tournament_id=? ORDER BY uploaded_at DESC`
+        `SELECT id, photo_path, caption, uploaded_at FROM gallery_photos WHERE tournament_id=? AND is_published=1 ORDER BY uploaded_at DESC`
       ).all(tournamentId);
       galleryPhotos.forEach(g => {
         if (String(g.caption || '').startsWith('score:')) return;
@@ -744,12 +759,12 @@ app.get('/api/gallery', (req, res) => {
     if (!t) {
       const latestWithPhotos = db.prepare(
         `SELECT x.tournament_id FROM (
-           SELECT gp.tournament_id, gp.uploaded_at AS ts FROM gallery_photos gp
+           SELECT gp.tournament_id, gp.uploaded_at AS ts FROM gallery_photos gp WHERE gp.is_published=1
            UNION ALL
            SELECT tm.tournament_id, s.submitted_at AS ts
            FROM scores s
            JOIN teams tm ON tm.id=s.team_id
-           WHERE s.photo_path IS NOT NULL AND s.photo_path != ''
+           WHERE s.photo_path IS NOT NULL AND s.photo_path != '' AND s.is_published=1
          ) x
          ORDER BY x.ts DESC
          LIMIT 1`
@@ -765,12 +780,12 @@ app.get('/api/gallery', (req, res) => {
     if (!photos.length) {
       const latestWithPhotos = db.prepare(
         `SELECT x.tournament_id FROM (
-           SELECT gp.tournament_id, gp.uploaded_at AS ts FROM gallery_photos gp
+           SELECT gp.tournament_id, gp.uploaded_at AS ts FROM gallery_photos gp WHERE gp.is_published=1
            UNION ALL
            SELECT tm.tournament_id, s.submitted_at AS ts
            FROM scores s
            JOIN teams tm ON tm.id=s.team_id
-           WHERE s.photo_path IS NOT NULL AND s.photo_path != ''
+           WHERE s.photo_path IS NOT NULL AND s.photo_path != '' AND s.is_published=1
          ) x
          ORDER BY x.ts DESC
          LIMIT 1`
@@ -845,15 +860,47 @@ app.get('/api/admin/tournament/:id/gallery', requireAdmin, (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/admin/tournament/:id/gallery', requireAdmin, upload.single('photo'), (req, res) => {
+app.post('/api/admin/tournament/:id/gallery', requireAdmin, galleryUpload.single('photo'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Ingen fil lastet opp' });
   try {
-    const photoPath = `/uploads/${req.file.filename}`;
+    const photoPath = `/uploads/glimtskudd/${req.file.filename}`;
     const caption = req.body.caption || '';
     const result = db.prepare(
       'INSERT INTO gallery_photos (tournament_id, photo_path, caption) VALUES (?,?,?)'
     ).run(req.params.id, photoPath, caption);
     res.json({ success: true, id: result.lastInsertRowid, photo_path: photoPath });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/admin/gallery/:id/publish', requireAdmin, (req, res) => {
+  try {
+    const isPublished = req.body?.is_published ? 1 : 0;
+    db.prepare('UPDATE gallery_photos SET is_published=? WHERE id=?').run(isPublished, req.params.id);
+    res.json({ success: true, is_published: !!isPublished });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/admin/gallery/:id/download', requireAdmin, (req, res) => {
+  try {
+    const photo = db.prepare('SELECT photo_path FROM gallery_photos WHERE id=?').get(req.params.id);
+    if (!photo?.photo_path) return res.status(404).json({ error: 'Bilde ikke funnet' });
+    const normalized = normalizePhotoPath(photo.photo_path);
+    if (!normalized.startsWith('/uploads/')) return res.status(400).json({ error: 'Kan ikke laste ned eksternt bilde' });
+    const filePath = path.join(__dirname, normalized.replace(/^\//, ''));
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Filen finnes ikke på server' });
+    return res.download(filePath, path.basename(filePath));
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/admin/photo/:id/download', requireAdmin, (req, res) => {
+  try {
+    const score = db.prepare('SELECT photo_path FROM scores WHERE id=?').get(req.params.id);
+    if (!score?.photo_path) return res.status(404).json({ error: 'Bilde ikke funnet' });
+    const normalized = normalizePhotoPath(score.photo_path);
+    if (!normalized.startsWith('/uploads/')) return res.status(400).json({ error: 'Kan ikke laste ned eksternt bilde' });
+    const filePath = path.join(__dirname, normalized.replace(/^\//, ''));
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Filen finnes ikke på server' });
+    return res.download(filePath, path.basename(filePath));
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
