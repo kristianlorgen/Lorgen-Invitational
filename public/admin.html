@@ -512,7 +512,7 @@
       <!-- ── BILDER ─────────────────────────────────────────────────────────── -->
       <div class="admin-panel" id="panel-photos">
         <div class="admin-panel-title">Bilder</div>
-        <div class="admin-panel-sub">Alle opplastede bilder fra fotoutfordringer</div>
+        <div class="admin-panel-sub">Velg hvilke bilder som skal publiseres i Dagens Glimtskudd</div>
 
         <div class="card" style="margin-bottom:24px">
           <div class="card-body" style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end">
@@ -1328,12 +1328,29 @@ async function loadPhotos() {
           <strong>${p.team_name} — Hull ${p.hole_number}</strong>
           <span>${p.player1} &amp; ${p.player2}</span>
           <span style="display:block;margin-top:4px">${new Date(p.submitted_at).toLocaleString('nb-NO')}</span>
+          <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:.8rem;color:var(--dark);font-weight:600">
+            <input type="checkbox" ${p.is_published ? 'checked' : ''} onchange="togglePhotoPublish(${p.id}, this.checked)" style="accent-color:var(--gold)">
+            Publiser i Dagens Glimtskudd
+          </label>
           <button onclick="deletePhoto(${p.id})" class="btn btn--danger btn--sm" style="margin-top:8px;width:100%;justify-content:center">
             <i class="fas fa-trash"></i> Slett bilde
           </button>
         </div>
       </div>`).join('');
   } catch(e) { showToast('Kunne ikke laste bilder: '+e.message,'error'); }
+}
+
+async function togglePhotoPublish(id, isPublished) {
+  try {
+    await api('/api/admin/photo/' + id + '/publish', {
+      method: 'PUT',
+      body: JSON.stringify({ is_published: isPublished })
+    });
+    showToast(isPublished ? 'Bildet er publisert i Dagens Glimtskudd' : 'Bildet er skjult fra Dagens Glimtskudd');
+  } catch(e) {
+    showToast(e.message, 'error');
+    await loadPhotos();
+  }
 }
 
 async function deletePhoto(id) {
