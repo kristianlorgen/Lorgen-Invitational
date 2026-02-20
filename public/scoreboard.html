@@ -332,18 +332,25 @@ function renderAwards(awards) {
   }
   empty.classList.add('d-none');
   const typeLabels = {
-    'longest_drive':  { label: 'Longest Drive',    icon: '🏌️', desc: 'Utvalgt hull — Longest Drive konkurranse' },
-    'closest_to_pin': { label: 'Nærmest Flagget',  icon: '🎯', desc: 'Utvalgt hull — Closest to Pin konkurranse' }
+    'longest_drive':  { label: 'Longest Drive',   icon: '🏌️' },
+    'closest_to_pin': { label: 'Nærmest Flagget', icon: '🎯' }
   };
-  grid.innerHTML = awards.map(a => {
-    const info = typeLabels[a.award_type] || { label: a.award_type, icon: '🏆', desc: '' };
+  // Sort: longest_drive first, then closest_to_pin
+  const sorted = [...awards].sort((a,b) => {
+    const order = { longest_drive: 0, closest_to_pin: 1 };
+    return (order[a.award_type] ?? 9) - (order[b.award_type] ?? 9);
+  });
+  grid.innerHTML = sorted.map(a => {
+    const info = typeLabels[a.award_type] || { label: a.award_type, icon: '🏆' };
+    const detailVal = parseFloat(a.detail);
+    const detailStr = !isNaN(detailVal) && a.detail ? `${a.detail} m` : (a.detail || '');
     return `
       <div class="award-card">
         <span class="award-icon">${info.icon}</span>
-        <div class="award-label">${info.desc || info.label}${a.hole_number ? ' — Hull ' + a.hole_number : ''}</div>
+        <div class="award-label">${info.label}${a.hole_number ? ' — Hull ' + a.hole_number : ''}</div>
         <div class="award-team">${a.player_name || a.team_name || 'TBD'}</div>
         ${a.team_name && a.player_name ? `<div class="award-players">${a.team_name}</div>` : ''}
-        ${a.detail ? `<div class="award-detail">${a.detail}</div>` : ''}
+        ${detailStr ? `<div class="award-detail">${detailStr}</div>` : ''}
       </div>`;
   }).join('');
 }

@@ -334,9 +334,14 @@
         </div>
 
         <div class="card" id="holesConfig">
-          <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
+          <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
             <strong>Hullkonfigurasjon</strong>
-            <button onclick="saveHoles()" class="btn btn--gold btn--sm"><i class="fas fa-floppy-disk"></i> Lagre alle</button>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button onclick="saveToCourse()" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)" title="Lagre nåværende oppsett tilbake til valgt bane-mal">
+                <i class="fas fa-save"></i> Lagre til bane
+              </button>
+              <button onclick="saveHoles()" class="btn btn--gold btn--sm"><i class="fas fa-floppy-disk"></i> Lagre til turnering</button>
+            </div>
           </div>
           <div class="card-body">
             <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:20px">
@@ -1099,8 +1104,33 @@ async function saveHoles() {
   }));
   try {
     await api('/api/admin/tournament/'+tid+'/holes',{method:'POST',body:JSON.stringify({holes})});
-    showToast('Hullkonfigurasjon lagret!');
+    showToast('Hullkonfigurasjon lagret til turnering!');
     await loadHoles();
+  } catch(e) { showToast(e.message,'error'); }
+}
+
+async function saveToCourse() {
+  const courseId = document.getElementById('importCourseSelect').value;
+  if (!courseId) {
+    showToast('Velg en bane fra nedtrekkslisten «Importer hull-mal» øverst', 'error');
+    return;
+  }
+  if (!holesData || holesData.length === 0) {
+    showToast('Ingen hull å lagre — velg en turnering og last inn hull først', 'error');
+    return;
+  }
+  const courseName = document.getElementById('importCourseSelect').selectedOptions[0]?.text || 'valgt bane';
+  if (!confirm(`Lagre nåværende hulloppset (par, foto, LD, NF) tilbake til bane-malen «${courseName}»?`)) return;
+  const holes = holesData.map(h => ({
+    hole_number: h.hole_number,
+    par: parseInt(document.getElementById('h-par-'+h.hole_number).value),
+    requires_photo: document.getElementById('h-photo-'+h.hole_number).checked,
+    is_longest_drive: document.getElementById('h-ld-'+h.hole_number).checked,
+    is_closest_to_pin: document.getElementById('h-ctp-'+h.hole_number).checked
+  }));
+  try {
+    await api('/api/admin/course/'+courseId+'/holes', {method:'POST', body:JSON.stringify({holes})});
+    showToast('Hulloppset lagret til bane-malen!');
   } catch(e) { showToast(e.message,'error'); }
 }
 
