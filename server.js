@@ -11,8 +11,9 @@ const app  = express();
 const PORT = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'LorgenAdmin2025';
 
-// Ensure uploads directory exists
+// Ensure required directories exist
 if (!fs.existsSync('uploads')) fs.mkdirSync('uploads', { recursive: true });
+if (!fs.existsSync('./data/sessions')) fs.mkdirSync('./data/sessions', { recursive: true });
 
 // ── SSE live-update clients ──────────────────────────────────────────────────
 const sseClients = new Map();
@@ -49,8 +50,14 @@ app.use(express.static('public', {
     }
   }
 }));
+let sessionStore;
+try {
+  sessionStore = new FileStore({ path: './data/sessions', ttl: 86400, retries: 0, logFn: () => {} });
+} catch(_) {
+  sessionStore = undefined; // falls back to MemoryStore
+}
 app.use(session({
-  store: new FileStore({ path: './data/sessions', ttl: 86400, retries: 1, logFn: () => {} }),
+  ...(sessionStore ? { store: sessionStore } : {}),
   secret: process.env.SESSION_SECRET || 'lorgen-inv-secret',
   resave: false,
   saveUninitialized: false,
@@ -119,7 +126,7 @@ function buildScoreboard(tournament) {
       if (h) { total += s.score; par += h.par; done++; }
       holeScores[s.hole_number] = { score: s.score, photo: s.photo_path };
     });
-    const hcpIndex = ((team.player1_handicap || 0) + (team.player2_handicap || 0)) * 0.5;
+    const hcpIndex = ((team.player1_handicap || 0) + (team.player2_handicap || 0)) * 0.75;
     const courseHcp = Math.round(hcpIndex * slopeRating / 113);
     const netScore = total > 0 ? total - courseHcp : 0;
     const netToPar = total > 0 ? netScore - par : 0;
@@ -601,6 +608,10 @@ app.post('/api/team/lock-scorecard', requireTeam, (req, res) => {
 
 // ── Public photo gallery ──────────────────────────────────────────────────────
 
+function getVoterIp(req) {
+  return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
+}
+
 app.get('/api/gallery', (req, res) => {
   try {
     let t = db.prepare(`SELECT * FROM tournaments WHERE status='active' ORDER BY date DESC LIMIT 1`).get();
@@ -609,11 +620,12 @@ app.get('/api/gallery', (req, res) => {
 
     const photos = [];
 
-    // Admin-uploaded gallery photos (always included)
+    // Admin-uploaded gallery photos
     const galleryPhotos = db.prepare(
-      `SELECT photo_path, caption, uploaded_at FROM gallery_photos WHERE tournament_id=? ORDER BY uploaded_at DESC`
+      `SELECT id, photo_path, caption, uploaded_at FROM gallery_photos WHERE tournament_id=? ORDER BY uploaded_at DESC`
     ).all(t.id);
     galleryPhotos.forEach(g => photos.push({
+      photo_ref: `gallery:${g.id}`,
       hole_number: null,
       photo_path: g.photo_path,
       team_name: g.caption || '',
@@ -621,19 +633,20 @@ app.get('/api/gallery', (req, res) => {
       source: 'gallery'
     }));
 
-    // Player-uploaded hole photos (alle hull med bilde, ikke bare fotoutfordring)
+    // Player-uploaded hole photos
     const teams = db.prepare('SELECT id,team_name FROM teams WHERE tournament_id=?').all(t.id);
     if (teams.length) {
       const teamIds = teams.map(tm => tm.id);
       const teamsMap = {};
       teams.forEach(tm => teamsMap[tm.id] = tm);
       const scores = db.prepare(
-        `SELECT s.*, s.team_id FROM scores
+        `SELECT s.id, s.team_id, s.hole_number, s.photo_path, s.submitted_at FROM scores
          WHERE team_id IN (${teamIds.map(()=>'?').join(',')})
          AND photo_path IS NOT NULL AND photo_path != ''
          ORDER BY submitted_at DESC`
       ).all(...teamIds);
       scores.forEach(s => photos.push({
+        photo_ref: `score:${s.id}`,
         hole_number: s.hole_number,
         photo_path: s.photo_path,
         team_name: teamsMap[s.team_id]?.team_name || '',
@@ -642,9 +655,49 @@ app.get('/api/gallery', (req, res) => {
       }));
     }
 
-    // Sort all photos by newest first
-    photos.sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at));
+    // Add vote counts and voter status
+    const voterIp = getVoterIp(req);
+    const voteCounts = db.prepare(
+      `SELECT photo_ref, COUNT(*) as count FROM photo_votes WHERE tournament_id=? GROUP BY photo_ref`
+    ).all(t.id);
+    const myVotes = db.prepare(
+      `SELECT photo_ref FROM photo_votes WHERE tournament_id=? AND voter_ip=?`
+    ).all(t.id, voterIp);
+    const voteMap = {};
+    voteCounts.forEach(v => voteMap[v.photo_ref] = v.count);
+    const myVoteSet = new Set(myVotes.map(v => v.photo_ref));
+
+    photos.forEach(p => {
+      p.votes = voteMap[p.photo_ref] || 0;
+      p.voted = myVoteSet.has(p.photo_ref);
+    });
+
+    // Sort by most votes first, then newest
+    photos.sort((a, b) => (b.votes - a.votes) || (new Date(b.submitted_at) - new Date(a.submitted_at)));
     res.json({ photos, tournament: t });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Vote on photo ─────────────────────────────────────────────────────────────
+
+app.post('/api/gallery/vote', (req, res) => {
+  const { photo_ref } = req.body;
+  if (!photo_ref) return res.status(400).json({ error: 'photo_ref er påkrevd' });
+  try {
+    let t = db.prepare(`SELECT * FROM tournaments WHERE status='active' ORDER BY date DESC LIMIT 1`).get();
+    if (!t) t = db.prepare(`SELECT * FROM tournaments WHERE status='completed' ORDER BY date DESC LIMIT 1`).get();
+    if (!t) return res.status(404).json({ error: 'Ingen aktiv turnering' });
+    const voterIp = getVoterIp(req);
+    // Toggle vote
+    const existing = db.prepare('SELECT id FROM photo_votes WHERE tournament_id=? AND photo_ref=? AND voter_ip=?')
+      .get(t.id, photo_ref, voterIp);
+    if (existing) {
+      db.prepare('DELETE FROM photo_votes WHERE id=?').run(existing.id);
+      return res.json({ voted: false });
+    }
+    db.prepare('INSERT INTO photo_votes (tournament_id, photo_ref, voter_ip) VALUES (?,?,?)')
+      .run(t.id, photo_ref, voterIp);
+    res.json({ voted: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -931,8 +984,22 @@ app.post('/api/admin/coin-back', requireAdmin, (req, res) => {
   });
 });
 
+// ── Instagram QR code ─────────────────────────────────────────────────────────
+app.get('/api/instagram-qr', (req, res) => {
+  try {
+    const QRCode = require('qrcode');
+    const url = 'https://www.instagram.com/lorgeninvitational';
+    QRCode.toBuffer(url, { type: 'png', width: 200, margin: 1, color: { dark: '#0D1B2A', light: '#FFFFFF' } }, (err, buf) => {
+      if (err) return res.status(500).end();
+      res.set('Content-Type', 'image/png');
+      res.set('Cache-Control', 'public, max-age=86400');
+      res.send(buf);
+    });
+  } catch(e) { res.status(500).end(); }
+});
+
 // ── Clean URL routing ────────────────────────────────────────────────────────
-['gameday', 'scoreboard', 'legacy', 'enter-score', 'admin'].forEach(p => {
+['gameday', 'scoreboard', 'legacy', 'enter-score', 'admin', 'gallery'].forEach(p => {
   app.get(`/${p}`, (req, res) => res.sendFile(path.join(__dirname, `public/${p}.html`)));
 });
 

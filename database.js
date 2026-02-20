@@ -121,6 +121,15 @@ db.exec(`
     uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (tournament_id) REFERENCES tournaments(id)
   );
+
+  CREATE TABLE IF NOT EXISTS photo_votes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tournament_id INTEGER NOT NULL,
+    photo_ref TEXT NOT NULL,
+    voter_ip TEXT NOT NULL,
+    voted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(tournament_id, photo_ref, voter_ip)
+  );
 `);
 
 // Migrate existing databases
@@ -136,5 +145,13 @@ try { db.exec(`ALTER TABLE teams ADD COLUMN player1_handicap REAL DEFAULT 0`); }
 try { db.exec(`ALTER TABLE teams ADD COLUMN player2_handicap REAL DEFAULT 0`); } catch(_) {}
 try { db.exec(`ALTER TABLE holes ADD COLUMN stroke_index INTEGER DEFAULT 0`); } catch(_) {}
 try { db.exec(`ALTER TABLE course_holes ADD COLUMN stroke_index INTEGER DEFAULT 0`); } catch(_) {}
+try { db.exec(`CREATE TABLE IF NOT EXISTS photo_votes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tournament_id INTEGER NOT NULL,
+  photo_ref TEXT NOT NULL,
+  voter_ip TEXT NOT NULL,
+  voted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(tournament_id, photo_ref, voter_ip)
+)`); } catch(_) {}
 
 module.exports = db;

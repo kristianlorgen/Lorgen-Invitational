@@ -11,24 +11,6 @@
   <style>
     .leaderboard-row-1 { background: linear-gradient(90deg, rgba(201,168,76,.08), transparent) !important; }
     .leaderboard-row-1 td:first-child { border-left: 3px solid var(--gold); }
-
-    /* Kamerarull */
-    .photo-reel {
-      display: flex; gap: 10px; overflow: hidden; position: relative;
-    }
-    .photo-reel-item {
-      flex: 0 0 auto; width: 160px; border-radius: var(--radius);
-      overflow: hidden; border: 1px solid rgba(201,168,76,.25);
-      transition: opacity .5s;
-    }
-    .photo-reel-item img {
-      width: 100%; height: 120px; object-fit: cover; display: block;
-    }
-    .photo-reel-caption {
-      padding: 6px 8px; background: rgba(0,0,0,.45);
-      font-size: .68rem; color: rgba(255,255,255,.8);
-    }
-    .photo-reel-caption strong { display: block; color: var(--gold-light); }
   </style>
 </head>
 <body>
@@ -43,6 +25,7 @@
       <li><a href="/" class="nav-link">Hjem</a></li>
       <li><a href="/gameday" class="nav-link">Spilledag</a></li>
       <li><a href="/scoreboard" class="nav-link active">Live Resultater</a></li>
+      <li><a href="/gallery" class="nav-link">Glimtskudd</a></li>
       <li><a href="/legacy" class="nav-link">Historikk</a></li>
       <li><a href="/enter-score" class="nav-link nav-link--cta">Registrer Poeng</a></li>
     </ul>
@@ -55,9 +38,25 @@
   <a href="/" class="nav-link">Hjem</a>
   <a href="/gameday" class="nav-link">Spilledag</a>
   <a href="/scoreboard" class="nav-link active">Live Resultater</a>
+  <a href="/gallery" class="nav-link">Glimtskudd</a>
   <a href="/legacy" class="nav-link">Historikk</a>
   <a href="/enter-score" class="nav-link">Registrer Poeng</a>
   <a href="/admin" class="nav-link" style="color:rgba(255,255,255,.35);font-size:.78rem">Admin</a>
+</div>
+
+<!-- ── Hurtignavigasjon ───────────────────────────────────────────────────── -->
+<div class="quick-nav" id="quickNav">
+  <button class="quick-nav-btn" onclick="toggleQuickNav()" aria-label="Sidenavigasjon">
+    <i class="fas fa-grip-vertical"></i>
+  </button>
+  <div class="quick-nav-panel" id="quickNavPanel">
+    <a href="/" class="quick-nav-link"><i class="fas fa-home"></i> Hjem</a>
+    <a href="/gameday" class="quick-nav-link"><i class="fas fa-calendar-day"></i> Spilledag</a>
+    <a href="/scoreboard" class="quick-nav-link active"><i class="fas fa-flag"></i> Live Resultater</a>
+    <a href="/gallery" class="quick-nav-link"><i class="fas fa-camera"></i> Glimtskudd</a>
+    <a href="/legacy" class="quick-nav-link"><i class="fas fa-trophy"></i> Historikk</a>
+    <a href="/enter-score" class="quick-nav-link"><i class="fas fa-golf-ball"></i> Registrer Poeng</a>
+  </div>
 </div>
 
 <!-- ── Side-hero ──────────────────────────────────────────────────────────── -->
@@ -83,16 +82,6 @@
   <a href="/legacy" class="btn btn--gold"><i class="fas fa-trophy"></i> Se tidligere mestere</a>
 </div>
 
-<!-- ── Kamerarull ──────────────────────────────────────────────────────────── -->
-<div id="photoReelWrap" style="background:var(--dark);padding:16px 0;border-bottom:1px solid rgba(201,168,76,.15);display:none">
-  <div class="container">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-      <i class="fas fa-camera" style="color:var(--gold);font-size:.85rem"></i>
-      <span style="font-size:.7rem;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--gold)">Kamerarull fra banen</span>
-    </div>
-    <div class="photo-reel" id="photoReel"></div>
-  </div>
-</div>
 
 <!-- ── Ledertavle ─────────────────────────────────────────────────────────── -->
 <section class="section" style="background:var(--white)" id="sbMain">
@@ -186,6 +175,7 @@
           <a href="/">Hjem</a>
           <a href="/gameday">Spilledag</a>
           <a href="/scoreboard">Live Resultattavle</a>
+          <a href="/gallery">Glimtskudd</a>
           <a href="/legacy">Historikk</a>
         </div>
       </div>
@@ -194,6 +184,20 @@
         <div class="footer-links">
           <a href="/enter-score">Registrer Poeng</a>
           <a href="/admin">Administrasjonspanel</a>
+        </div>
+      </div>
+      <div>
+        <div class="footer-heading">Sosiale Medier</div>
+        <div class="footer-links">
+          <a href="https://www.facebook.com/groups/1695163647799062/" target="_blank" rel="noopener">
+            <i class="fab fa-facebook" style="margin-right:6px;color:var(--gold)"></i>Facebook-gruppe
+          </a>
+          <a href="https://www.instagram.com/lorgeninvitational" target="_blank" rel="noopener">
+            <i class="fab fa-instagram" style="margin-right:6px;color:var(--gold)"></i>Instagram
+          </a>
+        </div>
+        <div style="margin-top:16px">
+          <img src="/api/instagram-qr" alt="Instagram QR-kode" class="instagram-qr">
         </div>
       </div>
     </div>
@@ -211,6 +215,14 @@ window.addEventListener('scroll', () => {
 });
 document.getElementById('navToggle').addEventListener('click', () => {
   document.getElementById('mobileMenu').classList.toggle('open');
+});
+function toggleQuickNav() {
+  document.getElementById('quickNavPanel').classList.toggle('open');
+}
+document.addEventListener('click', e => {
+  if (!document.getElementById('quickNav').contains(e.target)) {
+    document.getElementById('quickNavPanel').classList.remove('open');
+  }
 });
 
 let holes = [];
@@ -457,7 +469,6 @@ function connectSSE() {
       const data = JSON.parse(e.data);
       if (data.type === 'score_updated' || data.type === 'award_updated') {
         loadScoreboard();
-        if (data.type === 'score_updated') loadPhotoReel();
       }
     } catch (_) {}
   };
@@ -466,78 +477,10 @@ function connectSSE() {
   };
 }
 
-// ── Kamerarull ────────────────────────────────────────────────────────────────
-let reelPhotos = [];
-let reelOffset = 0;
-let reelTimer = null;
-
-async function loadPhotoReel() {
-  try {
-    const r = await fetch('/api/gallery');
-    const d = await r.json();
-    const wrap = document.getElementById('photoReelWrap');
-    const reel = document.getElementById('photoReel');
-
-    if (!d.photos || d.photos.length === 0) {
-      // Show placeholder strip during active tournament so users know the section exists
-      if (d.tournament && (d.tournament.status === 'active' || d.tournament.status === 'completed')) {
-        wrap.style.display = 'block';
-        reel.innerHTML = `<div style="color:rgba(255,255,255,.35);font-size:.78rem;padding:16px 0;display:flex;align-items:center;gap:8px">
-          <i class="fas fa-camera-retro"></i>
-          Bilder fra banen dukker opp her når spillere laster opp fra hullet 📸
-        </div>`;
-        if (reelTimer) { clearInterval(reelTimer); reelTimer = null; }
-      } else {
-        wrap.style.display = 'none';
-      }
-      return;
-    }
-
-    reelPhotos = d.photos;
-    wrap.style.display = 'block';
-    renderReel();
-    if (reelTimer) clearInterval(reelTimer);
-    if (reelPhotos.length > 4) {
-      reelTimer = setInterval(advanceReel, 3500);
-    }
-  } catch(_) {}
-}
-
-function renderReel() {
-  const track = document.getElementById('photoReel');
-  // Show a sliding window of up to 8 photos starting at reelOffset
-  const visible = [];
-  for (let i = 0; i < Math.min(8, reelPhotos.length); i++) {
-    visible.push(reelPhotos[(reelOffset + i) % reelPhotos.length]);
-  }
-  track.innerHTML = visible.map(p => {
-    const label = p.hole_number ? `Hull ${p.hole_number}` : (p.team_name || 'Bilde');
-    const sub   = p.hole_number ? (p.team_name || '') : '';
-    return `
-    <div class="photo-reel-item">
-      <a href="${p.photo_path}" target="_blank">
-        <img src="${p.photo_path}" alt="${label}" loading="lazy">
-      </a>
-      <div class="photo-reel-caption">
-        <strong>${label}</strong>
-        ${sub}
-      </div>
-    </div>`;
-  }).join('');
-}
-
-function advanceReel() {
-  reelOffset = (reelOffset + 1) % reelPhotos.length;
-  renderReel();
-}
-
 loadScoreboard();
-loadPhotoReel();
 connectSSE();
 // Reserveoppdatering hvert 60. sekund
 setInterval(loadScoreboard, 60000);
-// Oppdater kamerarullen hvert 15. sekund (nye bilder kan komme inn)
-setInterval(loadPhotoReel, 15000);
 </script>
 </body>
 </html>
