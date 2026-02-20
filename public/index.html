@@ -24,6 +24,23 @@
       <li><a href="/legacy" class="nav-link">Historikk</a></li>
       <li><a href="/enter-score" class="nav-link nav-link--cta">Registrer Poeng</a></li>
     </ul>
+
+    <!-- ── Hurtignavigasjon ───────────────────────────────────────────────────── -->
+    <div class="quick-nav" id="quickNav">
+      <button class="quick-nav-btn" onclick="toggleQuickNav()" aria-label="Sidenavigasjon">
+        <i class="fas fa-grip-vertical"></i>
+      </button>
+      <div class="quick-nav-panel" id="quickNavPanel">
+        <a href="/" class="quick-nav-link active">
+          <i class="fas fa-home"></i> Hjem</a>
+        <a href="/gameday" class="quick-nav-link"><i class="fas fa-calendar-day"></i> Spilledag</a>
+        <a href="/scoreboard" class="quick-nav-link"><i class="fas fa-flag"></i> Live Resultater</a>
+        <a href="/gallery" class="quick-nav-link"><i class="fas fa-camera"></i> Glimtskudd</a>
+        <a href="/legacy" class="quick-nav-link"><i class="fas fa-trophy"></i> Historikk</a>
+        <a href="/enter-score" class="quick-nav-link"><i class="fas fa-golf-ball"></i> Registrer Poeng</a>
+        <a href="/admin" class="quick-nav-link" style="color:rgba(255,255,255,.45)"><i class="fas fa-lock"></i> Admin</a>
+      </div>
+    </div>
     <button class="navbar-toggle" id="navToggle" aria-label="Meny">
       <span></span><span></span><span></span>
     </button>
@@ -37,22 +54,6 @@
   <a href="/legacy" class="nav-link">Historikk</a>
   <a href="/enter-score" class="nav-link">Registrer Poeng</a>
   <a href="/admin" class="nav-link" style="color:rgba(255,255,255,.35);font-size:.78rem">Admin</a>
-</div>
-
-<!-- ── Hurtignavigasjon ───────────────────────────────────────────────────── -->
-<div class="quick-nav" id="quickNav">
-  <button class="quick-nav-btn" onclick="toggleQuickNav()" aria-label="Sidenavigasjon">
-    <i class="fas fa-grip-vertical"></i>
-  </button>
-  <div class="quick-nav-panel" id="quickNavPanel">
-    <a href="/" class="quick-nav-link active">
-      <i class="fas fa-home"></i> Hjem</a>
-    <a href="/gameday" class="quick-nav-link"><i class="fas fa-calendar-day"></i> Spilledag</a>
-    <a href="/scoreboard" class="quick-nav-link"><i class="fas fa-flag"></i> Live Resultater</a>
-    <a href="/gallery" class="quick-nav-link"><i class="fas fa-camera"></i> Glimtskudd</a>
-    <a href="/legacy" class="quick-nav-link"><i class="fas fa-trophy"></i> Historikk</a>
-    <a href="/enter-score" class="quick-nav-link"><i class="fas fa-golf-ball"></i> Registrer Poeng</a>
-  </div>
 </div>
 
 <!-- Hero -->

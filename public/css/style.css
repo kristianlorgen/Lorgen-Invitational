@@ -93,7 +93,7 @@ input, select, textarea { font-family: inherit; }
   height: 100%;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
 }
 .navbar-brand { display: flex; align-items: center; gap: 10px; }
 .navbar-logo {
@@ -112,6 +112,7 @@ input, select, textarea { font-family: inherit; }
   display: flex;
   align-items: center;
   gap: 4px;
+  margin-left: auto;
 }
 .nav-link {
   color: rgba(255,255,255,.8);
@@ -155,6 +156,7 @@ input, select, textarea { font-family: inherit; }
   background: none;
   border: none;
   padding: 4px;
+  margin-left: auto;
 }
 .navbar-toggle span {
   display: block;
@@ -1143,10 +1145,9 @@ input, select, textarea { font-family: inherit; }
 
 /* ── Hurtignavigasjon (quick-nav) ────────────────────────────────────────────── */
 .quick-nav {
-  position: fixed;
-  top: 80px;
-  right: 16px;
-  z-index: 1100;
+  position: relative;
+  z-index: 1001;
+  margin-left: 12px;
 }
 .quick-nav-btn {
   width: 42px; height: 42px;
@@ -1187,3 +1188,7 @@ input, select, textarea { font-family: inherit; }
 .quick-nav-link i { width: 16px; color: var(--gold); text-align: center; }
 .quick-nav-link:hover { background: rgba(201,168,76,.1); color: var(--gold-light); }
 .quick-nav-link.active { background: rgba(201,168,76,.15); color: var(--gold); font-weight: 600; }
+
+@media (max-width: 768px) {
+  .quick-nav { display: none; }
+}
