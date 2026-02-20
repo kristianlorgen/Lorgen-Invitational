@@ -251,7 +251,7 @@ async function vote(photoRef, btn) {
 function renderWinner(photos) {
   const section = document.getElementById('winnerSection');
   const content = document.getElementById('winnerContent');
-  const topVoted = photos.find(p => p.votes > 0);
+  const topVoted = photos[0];
   if (!topVoted) {
     section.style.display = 'none';
     return;
@@ -277,6 +277,7 @@ function renderWinner(photos) {
           <span style="font-size:2rem;font-weight:800;font-family:var(--font-heading);color:var(--gold)">${topVoted.votes}</span>
           <span style="font-size:.85rem;color:var(--text-muted)">stem${topVoted.votes !== 1 ? 'mer' : ''}</span>
         </div>
+        ${topVoted.votes === 0 ? `<div style="font-size:.8rem;color:var(--text-muted);margin-top:8px">Ingen stemmer enda — første bilde vises som foreløpig blinkskudd.</div>` : ''}
       </div>
     </div>`;
 }
