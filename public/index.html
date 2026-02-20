@@ -339,7 +339,9 @@ async function loadChampion() {
           [c.score, c.score_to_par ? '(' + c.score_to_par + ')' : ''].filter(Boolean).join(' ');
       }
       if (c.winner_photo) {
-        document.getElementById('champPhoto').src = c.winner_photo;
+        const img = document.getElementById('champPhoto');
+        img.src = c.winner_photo;
+        img.style.objectPosition = c.winner_photo_focus || '50% 30%';
         document.getElementById('champPhotoWrap').style.display = 'block';
       }
     }

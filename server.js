@@ -228,11 +228,12 @@ app.get('/api/auth/status', (req, res) => {
 
 app.get('/api/team/scorecard', requireTeam, (req, res) => {
   try {
-    const team   = db.prepare('SELECT * FROM teams WHERE id=?').get(req.session.teamId);
-    const holes  = db.prepare('SELECT * FROM holes WHERE tournament_id=? ORDER BY hole_number').all(req.session.tournamentId);
-    const scores = db.prepare('SELECT * FROM scores WHERE team_id=?').all(req.session.teamId);
-    const claims = db.prepare('SELECT * FROM award_claims WHERE tournament_id=? AND team_id=?').all(req.session.tournamentId, req.session.teamId);
-    res.json({ team: { ...team, locked: team.locked || 0 }, holes, scores, claims });
+    const team       = db.prepare('SELECT * FROM teams WHERE id=?').get(req.session.teamId);
+    const tournament = db.prepare('SELECT id,name,slope_rating FROM tournaments WHERE id=?').get(req.session.tournamentId);
+    const holes      = db.prepare('SELECT * FROM holes WHERE tournament_id=? ORDER BY hole_number').all(req.session.tournamentId);
+    const scores     = db.prepare('SELECT * FROM scores WHERE team_id=?').all(req.session.teamId);
+    const claims     = db.prepare('SELECT * FROM award_claims WHERE tournament_id=? AND team_id=?').all(req.session.tournamentId, req.session.teamId);
+    res.json({ team: { ...team, locked: team.locked || 0 }, tournament, holes, scores, claims });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -560,27 +561,49 @@ app.get('/api/gallery', (req, res) => {
     let t = db.prepare(`SELECT * FROM tournaments WHERE status='active' ORDER BY date DESC LIMIT 1`).get();
     if (!t) t = db.prepare(`SELECT * FROM tournaments WHERE status='completed' ORDER BY date DESC LIMIT 1`).get();
     if (!t) return res.json({ photos: [], tournament: null });
-    const teams = db.prepare('SELECT id,team_name FROM teams WHERE tournament_id=?').all(t.id);
-    if (!teams.length) return res.json({ photos: [], tournament: t });
-    const teamIds = teams.map(tm => tm.id);
-    const teamsMap = {};
-    teams.forEach(tm => teamsMap[tm.id] = tm);
-    const photoHoles = db.prepare('SELECT hole_number FROM holes WHERE tournament_id=? AND requires_photo=1 ORDER BY hole_number').all(t.id);
-    if (!photoHoles.length) return res.json({ photos: [], tournament: t });
-    const holeNums = photoHoles.map(h => h.hole_number);
-    const scores = db.prepare(
-      `SELECT s.*, s.team_id FROM scores
-       WHERE team_id IN (${teamIds.map(()=>'?').join(',')})
-       AND hole_number IN (${holeNums.map(()=>'?').join(',')})
-       AND photo_path IS NOT NULL AND photo_path != ''
-       ORDER BY submitted_at DESC`
-    ).all(...teamIds, ...holeNums);
-    const photos = scores.map(s => ({
-      hole_number: s.hole_number,
-      photo_path: s.photo_path,
-      team_name: teamsMap[s.team_id]?.team_name || '',
-      submitted_at: s.submitted_at
+
+    const photos = [];
+
+    // Admin-uploaded gallery photos (always included)
+    const galleryPhotos = db.prepare(
+      `SELECT photo_path, caption, uploaded_at FROM gallery_photos WHERE tournament_id=? ORDER BY uploaded_at DESC`
+    ).all(t.id);
+    galleryPhotos.forEach(g => photos.push({
+      hole_number: null,
+      photo_path: g.photo_path,
+      team_name: g.caption || '',
+      submitted_at: g.uploaded_at,
+      source: 'gallery'
     }));
+
+    // Player-uploaded hole photos (from fotoutfordring holes)
+    const teams = db.prepare('SELECT id,team_name FROM teams WHERE tournament_id=?').all(t.id);
+    if (teams.length) {
+      const teamIds = teams.map(tm => tm.id);
+      const teamsMap = {};
+      teams.forEach(tm => teamsMap[tm.id] = tm);
+      const photoHoles = db.prepare('SELECT hole_number FROM holes WHERE tournament_id=? AND requires_photo=1 ORDER BY hole_number').all(t.id);
+      if (photoHoles.length) {
+        const holeNums = photoHoles.map(h => h.hole_number);
+        const scores = db.prepare(
+          `SELECT s.*, s.team_id FROM scores
+           WHERE team_id IN (${teamIds.map(()=>'?').join(',')})
+           AND hole_number IN (${holeNums.map(()=>'?').join(',')})
+           AND photo_path IS NOT NULL AND photo_path != ''
+           ORDER BY submitted_at DESC`
+        ).all(...teamIds, ...holeNums);
+        scores.forEach(s => photos.push({
+          hole_number: s.hole_number,
+          photo_path: s.photo_path,
+          team_name: teamsMap[s.team_id]?.team_name || '',
+          submitted_at: s.submitted_at,
+          source: 'player'
+        }));
+      }
+    }
+
+    // Sort all photos by newest first
+    photos.sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at));
     res.json({ photos, tournament: t });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -694,7 +717,43 @@ app.put('/api/admin/course/:id', requireAdmin, (req, res) => {
 
 app.delete('/api/admin/course/:id', requireAdmin, (req, res) => {
   try {
+    db.prepare('DELETE FROM course_holes WHERE course_id=?').run(req.params.id);
     db.prepare('DELETE FROM courses WHERE id=?').run(req.params.id);
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/admin/course/:id/holes', requireAdmin, (req, res) => {
+  try {
+    let holes = db.prepare('SELECT * FROM course_holes WHERE course_id=? ORDER BY hole_number').all(req.params.id);
+    // If no template saved yet, return default 18 holes
+    if (!holes.length) {
+      holes = Array.from({ length: 18 }, (_, i) => ({
+        course_id: parseInt(req.params.id), hole_number: i + 1,
+        par: 4, requires_photo: 0, is_longest_drive: 0, is_closest_to_pin: 0
+      }));
+    }
+    res.json({ holes });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/admin/course/:id/holes', requireAdmin, (req, res) => {
+  const { holes } = req.body;
+  const courseId = req.params.id;
+  try {
+    const upsert = db.prepare(
+      `INSERT INTO course_holes (course_id, hole_number, par, requires_photo, is_longest_drive, is_closest_to_pin)
+       VALUES (?,?,?,?,?,?)
+       ON CONFLICT(course_id, hole_number) DO UPDATE SET
+         par=excluded.par, requires_photo=excluded.requires_photo,
+         is_longest_drive=excluded.is_longest_drive, is_closest_to_pin=excluded.is_closest_to_pin`
+    );
+    const saveAll = db.transaction(() => {
+      for (const h of holes) {
+        upsert.run(courseId, h.hole_number, h.par, h.requires_photo ? 1 : 0, h.is_longest_drive ? 1 : 0, h.is_closest_to_pin ? 1 : 0);
+      }
+    });
+    saveAll();
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });

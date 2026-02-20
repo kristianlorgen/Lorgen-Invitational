@@ -440,16 +440,20 @@ function renderReel() {
   for (let i = 0; i < Math.min(8, reelPhotos.length); i++) {
     visible.push(reelPhotos[(reelOffset + i) % reelPhotos.length]);
   }
-  track.innerHTML = visible.map(p => `
+  track.innerHTML = visible.map(p => {
+    const label = p.hole_number ? `Hull ${p.hole_number}` : (p.team_name || 'Bilde');
+    const sub   = p.hole_number ? (p.team_name || '') : '';
+    return `
     <div class="photo-reel-item">
       <a href="${p.photo_path}" target="_blank">
-        <img src="${p.photo_path}" alt="Hull ${p.hole_number}" loading="lazy">
+        <img src="${p.photo_path}" alt="${label}" loading="lazy">
       </a>
       <div class="photo-reel-caption">
-        <strong>Hull ${p.hole_number}</strong>
-        ${p.team_name || ''}
+        <strong>${label}</strong>
+        ${sub}
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function advanceReel() {

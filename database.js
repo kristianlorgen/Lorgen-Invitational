@@ -101,6 +101,18 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS course_holes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    course_id INTEGER NOT NULL,
+    hole_number INTEGER NOT NULL,
+    par INTEGER NOT NULL DEFAULT 4,
+    requires_photo INTEGER DEFAULT 0,
+    is_longest_drive INTEGER DEFAULT 0,
+    is_closest_to_pin INTEGER DEFAULT 0,
+    FOREIGN KEY (course_id) REFERENCES courses(id),
+    UNIQUE(course_id, hole_number)
+  );
+
   CREATE TABLE IF NOT EXISTS gallery_photos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     tournament_id INTEGER NOT NULL,
