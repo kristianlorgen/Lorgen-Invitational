@@ -11,6 +11,18 @@ const app  = express();
 const PORT = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'LorgenAdmin2025';
 
+const allowedImageExtensions = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.heic', '.heif', '.avif']);
+
+function isAllowedImageUpload(file = {}) {
+  const mime = String(file.mimetype || '').toLowerCase();
+  const ext = path.extname(String(file.originalname || '')).toLowerCase();
+  const hasAllowedExt = allowedImageExtensions.has(ext);
+  if (mime.startsWith('image/')) return true;
+  // Mobile browsers/camera apps may label valid image files as octet-stream.
+  if ((mime === 'application/octet-stream' || mime === '') && hasAllowedExt) return true;
+  return false;
+}
+
 // Ensure required directories exist
 if (!fs.existsSync('uploads')) fs.mkdirSync('uploads', { recursive: true });
 if (!fs.existsSync('./data/sessions')) fs.mkdirSync('./data/sessions', { recursive: true });
@@ -34,7 +46,7 @@ const upload = multer({
   storage,
   limits: { fileSize: 15 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) return cb(null, true);
+    if (isAllowedImageUpload(file)) return cb(null, true);
     cb(new Error('Kun bilder er tillatt'));
   }
 });
@@ -324,7 +336,7 @@ app.post('/api/team/upload-photo/:hole', requireTeam, (req, res) => {
       }),
       limits: { fileSize: 15 * 1024 * 1024 },
       fileFilter: (req, file, cb) => {
-        if (file.mimetype.startsWith('image/')) return cb(null, true);
+        if (isAllowedImageUpload(file)) return cb(null, true);
         cb(new Error('Kun bilder er tillatt'));
       }
     }).single('photo');
@@ -960,7 +972,7 @@ app.post('/api/admin/legacy/:id/photo', requireAdmin, (req, res) => {
     }),
     limits: { fileSize: 15 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
-      if (file.mimetype.startsWith('image/')) return cb(null, true);
+      if (isAllowedImageUpload(file)) return cb(null, true);
       cb(new Error('Kun bilder er tillatt'));
     }
   }).single('photo');
@@ -1035,7 +1047,7 @@ app.post('/api/admin/coin-back', requireAdmin, (req, res) => {
     }),
     limits: { fileSize: 10 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
-      if (file.mimetype.startsWith('image/')) return cb(null, true);
+      if (isAllowedImageUpload(file)) return cb(null, true);
       cb(new Error('Kun bilder er tillatt'));
     }
   }).single('photo');
