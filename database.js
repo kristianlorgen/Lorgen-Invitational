@@ -100,6 +100,15 @@ db.exec(`
     notes TEXT DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS gallery_photos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tournament_id INTEGER NOT NULL,
+    photo_path TEXT NOT NULL,
+    caption TEXT DEFAULT '',
+    uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tournament_id) REFERENCES tournaments(id)
+  );
 `);
 
 // Migrate existing databases
