@@ -106,6 +106,28 @@ function normalizePhotoPath(photoPath = '') {
   return p.startsWith('/') ? p : `/${p}`;
 }
 
+function ensureDir(dirPath) {
+  if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
+}
+
+function syncScorePhotoToGallery({ tournamentId, scoreId, photoPath }) {
+  const existing = db.prepare(
+    `SELECT id FROM gallery_photos
+     WHERE tournament_id=? AND caption=?
+     LIMIT 1`
+  ).get(tournamentId, `score:${scoreId}`);
+
+  if (existing) {
+    db.prepare('UPDATE gallery_photos SET photo_path=?, uploaded_at=CURRENT_TIMESTAMP WHERE id=?')
+      .run(photoPath, existing.id);
+    return;
+  }
+
+  db.prepare(
+    'INSERT INTO gallery_photos (tournament_id, photo_path, caption) VALUES (?,?,?)'
+  ).run(tournamentId, photoPath, `score:${scoreId}`);
+}
+
 function buildScoreboard(tournament) {
   const teams     = db.prepare('SELECT * FROM teams WHERE tournament_id=?').all(tournament.id);
   const holes     = db.prepare('SELECT * FROM holes WHERE tournament_id=? ORDER BY hole_number').all(tournament.id);
@@ -327,8 +349,8 @@ app.post('/api/team/upload-photo/:hole', requireTeam, (req, res) => {
   try {
     const hole = db.prepare('SELECT * FROM holes WHERE tournament_id=? AND hole_number=?').get(tid, holeNum);
     if (!hole) return res.status(404).json({ error: 'Hull ikke funnet' });
-    const uploadDir = hole.requires_photo ? `./uploads/t${tid}/h${holeNum}` : './uploads';
-    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+    const uploadDir = `./uploads/admin/t${tid}/scoreboard/h${holeNum}`;
+    ensureDir(uploadDir);
     const dynamicUpload = multer({
       storage: multer.diskStorage({
         destination: uploadDir,
@@ -343,15 +365,18 @@ app.post('/api/team/upload-photo/:hole', requireTeam, (req, res) => {
     dynamicUpload(req, res, err => {
       if (err) return res.status(400).json({ error: err.message });
       if (!req.file) return res.status(400).json({ error: 'Ingen fil lastet opp' });
-      const photoPath = hole.requires_photo
-        ? `/uploads/t${tid}/h${holeNum}/${req.file.filename}`
-        : `/uploads/${req.file.filename}`;
+      const photoPath = `/uploads/admin/t${tid}/scoreboard/h${holeNum}/${req.file.filename}`;
       const existing = db.prepare('SELECT id FROM scores WHERE team_id=? AND hole_number=?').get(req.session.teamId, holeNum);
+      let scoreId;
       if (existing) {
         db.prepare('UPDATE scores SET photo_path=? WHERE id=?').run(photoPath, existing.id);
+        scoreId = existing.id;
       } else {
-        db.prepare('INSERT INTO scores (team_id, hole_number, score, photo_path) VALUES (?,?,0,?)').run(req.session.teamId, holeNum, photoPath);
+        const created = db.prepare('INSERT INTO scores (team_id, hole_number, score, photo_path) VALUES (?,?,0,?)')
+          .run(req.session.teamId, holeNum, photoPath);
+        scoreId = Number(created.lastInsertRowid);
       }
+      syncScorePhotoToGallery({ tournamentId: tid, scoreId, photoPath });
       broadcast('score_updated', { tournament_id: tid });
       res.json({ success: true, photo_path: photoPath });
     });
@@ -651,14 +676,17 @@ app.get('/api/gallery', (req, res) => {
       const galleryPhotos = db.prepare(
         `SELECT id, photo_path, caption, uploaded_at FROM gallery_photos WHERE tournament_id=? ORDER BY uploaded_at DESC`
       ).all(tournamentId);
-      galleryPhotos.forEach(g => items.push({
+      galleryPhotos.forEach(g => {
+        if (String(g.caption || '').startsWith('score:')) return;
+        items.push({
         photo_ref: `gallery:${g.id}`,
         hole_number: null,
         photo_path: normalizePhotoPath(g.photo_path),
         team_name: g.caption || '',
         submitted_at: g.uploaded_at,
         source: 'gallery'
-      }));
+      });
+      });
 
       const teams = db.prepare('SELECT id,team_name FROM teams WHERE tournament_id=?').all(tournamentId);
       if (!teams.length) return items;
@@ -1009,6 +1037,7 @@ app.delete('/api/admin/photo/:id', requireAdmin, (req, res) => {
       if (fs.existsSync(filePath)) { try { fs.unlinkSync(filePath); } catch(_) {} }
     }
     db.prepare('UPDATE scores SET photo_path=NULL WHERE id=?').run(req.params.id);
+    db.prepare('DELETE FROM gallery_photos WHERE caption=?').run(`score:${req.params.id}`);
     broadcast('score_updated', {});
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
