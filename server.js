@@ -390,10 +390,10 @@ app.post('/api/team/upload-photo/:hole', requireTeam, (req, res) => {
       const existing = db.prepare('SELECT id FROM scores WHERE team_id=? AND hole_number=?').get(req.session.teamId, holeNum);
       let scoreId;
       if (existing) {
-        db.prepare('UPDATE scores SET photo_path=? WHERE id=?').run(photoPath, existing.id);
+        db.prepare('UPDATE scores SET photo_path=?, is_published=1 WHERE id=?').run(photoPath, existing.id);
         scoreId = existing.id;
       } else {
-        const created = db.prepare('INSERT INTO scores (team_id, hole_number, score, photo_path) VALUES (?,?,0,?)')
+        const created = db.prepare('INSERT INTO scores (team_id, hole_number, score, photo_path, is_published) VALUES (?,?,0,?,1)')
           .run(req.session.teamId, holeNum, photoPath);
         scoreId = Number(created.lastInsertRowid);
       }
@@ -609,6 +609,7 @@ app.get('/api/admin/tournament/:id/photos', requireAdmin, (req, res) => {
     teams.forEach(t => teamsMap[t.id] = t);
     const photos = scores.map(s => ({
       id: s.id, hole_number: s.hole_number, photo_path: normalizePhotoPath(s.photo_path), submitted_at: s.submitted_at,
+      is_published: !!s.is_published,
       team_name:      teamsMap[s.team_id]?.team_name,
       player1:        teamsMap[s.team_id]?.player1,
       player2:        teamsMap[s.team_id]?.player2,
@@ -720,6 +721,7 @@ app.get('/api/gallery', (req, res) => {
       const scores = db.prepare(
         `SELECT s.id, s.team_id, s.hole_number, s.photo_path, s.submitted_at FROM scores
          WHERE team_id IN (${teamIds.map(()=>'?').join(',')})
+         AND is_published=1
          AND photo_path IS NOT NULL AND photo_path != ''
          ORDER BY submitted_at DESC`
       ).all(...teamIds);
@@ -1067,6 +1069,14 @@ app.delete('/api/admin/photo/:id', requireAdmin, (req, res) => {
     db.prepare('DELETE FROM gallery_photos WHERE caption=?').run(`score:${req.params.id}`);
     broadcast('score_updated', {});
     res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/admin/photo/:id/publish', requireAdmin, (req, res) => {
+  try {
+    const isPublished = req.body?.is_published ? 1 : 0;
+    db.prepare('UPDATE scores SET is_published=? WHERE id=?').run(isPublished, req.params.id);
+    res.json({ success: true, is_published: !!isPublished });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
