@@ -11,8 +11,9 @@ const app  = express();
 const PORT = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'LorgenAdmin2025';
 
-// Ensure uploads directory exists
+// Ensure required directories exist
 if (!fs.existsSync('uploads')) fs.mkdirSync('uploads', { recursive: true });
+if (!fs.existsSync('./data/sessions')) fs.mkdirSync('./data/sessions', { recursive: true });
 
 // ── SSE live-update clients ──────────────────────────────────────────────────
 const sseClients = new Map();
@@ -49,8 +50,14 @@ app.use(express.static('public', {
     }
   }
 }));
+let sessionStore;
+try {
+  sessionStore = new FileStore({ path: './data/sessions', ttl: 86400, retries: 0, logFn: () => {} });
+} catch(_) {
+  sessionStore = undefined; // falls back to MemoryStore
+}
 app.use(session({
-  store: new FileStore({ path: './data/sessions', ttl: 86400, retries: 1, logFn: () => {} }),
+  ...(sessionStore ? { store: sessionStore } : {}),
   secret: process.env.SESSION_SECRET || 'lorgen-inv-secret',
   resave: false,
   saveUninitialized: false,
