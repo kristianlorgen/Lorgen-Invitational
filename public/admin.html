@@ -221,6 +221,7 @@
               <div class="form-group"><label class="form-label">Navn</label><input class="form-input" id="editTName"></div>
               <div class="form-group"><label class="form-label">Dato</label><input class="form-input" id="editTDate" type="date"></div>
               <div class="form-group"><label class="form-label">Bane</label><input class="form-input" id="editTCourse"></div>
+              <div class="form-group"><label class="form-label">Slope Rating</label><input class="form-input" id="editTSlope" type="number" min="55" max="155" value="113"></div>
               <div class="form-group" style="grid-column:1/-1"><label class="form-label">Beskrivelse</label><textarea class="form-input form-textarea" id="editTDesc" style="min-height:60px"></textarea></div>
             </div>
             <div style="margin-top:16px;display:flex;gap:10px">
@@ -259,6 +260,8 @@
                 <input class="form-input" id="newPin" type="text" maxlength="4" pattern="[0-9]{4}" placeholder="1234" inputmode="numeric">
                 <div class="form-hint">Unik innenfor denne turneringen</div>
               </div>
+              <div class="form-group"><label class="form-label">Hcp Spiller 1</label><input class="form-input" id="newHcp1" type="number" step="0.1" min="0" max="54" placeholder="0.0"></div>
+              <div class="form-group"><label class="form-label">Hcp Spiller 2</label><input class="form-input" id="newHcp2" type="number" step="0.1" min="0" max="54" placeholder="0.0"></div>
             </div>
             <div style="margin-top:16px;display:flex;gap:10px">
               <button onclick="addTeam()" class="btn btn--gold btn--sm"><i class="fas fa-plus"></i> Legg til lag</button>
@@ -286,6 +289,8 @@
               <div class="form-group"><label class="form-label">Spiller 1</label><input class="form-input" id="editTeamP1"></div>
               <div class="form-group"><label class="form-label">Spiller 2</label><input class="form-input" id="editTeamP2"></div>
               <div class="form-group"><label class="form-label">PIN (4 siffer)</label><input class="form-input" id="editTeamPin" type="text" maxlength="4" inputmode="numeric"></div>
+              <div class="form-group"><label class="form-label">Hcp Spiller 1</label><input class="form-input" id="editTeamHcp1" type="number" step="0.1" min="0" max="54" placeholder="0.0"></div>
+              <div class="form-group"><label class="form-label">Hcp Spiller 2</label><input class="form-input" id="editTeamHcp2" type="number" step="0.1" min="0" max="54" placeholder="0.0"></div>
             </div>
             <div style="margin-top:16px;display:flex;gap:10px">
               <button onclick="saveTeamEdit()" class="btn btn--gold btn--sm"><i class="fas fa-floppy-disk"></i> Lagre</button>
@@ -365,6 +370,58 @@
               <label class="form-label">Spilledag-tekst</label>
               <textarea class="form-input form-textarea" id="gamedayInfo" rows="12"
                 placeholder="f.eks.&#10;08:00 — Oppmøte og registrering&#10;08:30 — Frokost&#10;10:00 — Tee-off&#10;15:00 — Overrekkelse av premier"></textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── BANER ─────────────────────────────────────────────────────────── -->
+      <div class="admin-panel" id="panel-courses">
+        <div class="admin-panel-title">Baner</div>
+        <div class="admin-panel-sub">Lagre golfbaner med slope-rating for gjenbruk i turneringer</div>
+
+        <div class="card" style="margin-bottom:24px">
+          <div class="card-header"><strong>Legg til bane</strong></div>
+          <div class="card-body">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px">
+              <div class="form-group"><label class="form-label">Banenavn</label><input class="form-input" id="cName" placeholder="f.eks. Bogstad Golfklubb"></div>
+              <div class="form-group">
+                <label class="form-label">Slope Rating</label>
+                <input class="form-input" id="cSlope" type="number" min="55" max="155" value="113" placeholder="113">
+                <div class="form-hint">Standard er 113</div>
+              </div>
+              <div class="form-group"><label class="form-label">Sted (valgfritt)</label><input class="form-input" id="cLocation" placeholder="f.eks. Oslo"></div>
+              <div class="form-group"><label class="form-label">Notater (valgfritt)</label><input class="form-input" id="cNotes" placeholder="Valgfrie notater"></div>
+            </div>
+            <div style="margin-top:16px">
+              <button onclick="addCourse()" class="btn btn--gold btn--sm"><i class="fas fa-plus"></i> Legg til bane</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><strong>Lagrede baner</strong></div>
+          <div style="overflow-x:auto">
+            <table class="data-table">
+              <thead><tr><th>Banenavn</th><th>Slope</th><th>Sted</th><th>Notater</th><th>Handlinger</th></tr></thead>
+              <tbody id="coursesTable"><tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-muted)">Laster...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <!-- Inline edit form -->
+        <div class="card d-none" id="editCourseCard" style="margin-top:16px;border:2px solid var(--gold-border)">
+          <div class="card-header"><strong>Rediger bane</strong></div>
+          <div class="card-body">
+            <input type="hidden" id="editCourseId">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px">
+              <div class="form-group"><label class="form-label">Banenavn</label><input class="form-input" id="editCName"></div>
+              <div class="form-group"><label class="form-label">Slope Rating</label><input class="form-input" id="editCSlope" type="number" min="55" max="155"></div>
+              <div class="form-group"><label class="form-label">Sted</label><input class="form-input" id="editCLocation"></div>
+              <div class="form-group"><label class="form-label">Notater</label><input class="form-input" id="editCNotes"></div>
+            </div>
+            <div style="margin-top:16px;display:flex;gap:10px">
+              <button onclick="saveCourseEdit()" class="btn btn--gold btn--sm"><i class="fas fa-floppy-disk"></i> Lagre</button>
+              <button onclick="cancelCourseEdit()" class="btn btn--outline btn--sm" style="color:var(--text-muted)"><i class="fas fa-times"></i> Avbryt</button>
             </div>
           </div>
         </div>
@@ -678,7 +735,8 @@ function showPanel(id) {
   });
   // Auto-trigger data loading for panels with a tournament select
   const loaders = { holes: loadHoles, teams: loadTeams, scores: loadScores,
-                    photos: loadPhotos, awards: loadAwards, gameday: loadGameday };
+                    photos: loadPhotos, awards: loadAwards, gameday: loadGameday,
+                    courses: loadCourses };
   if (loaders[id]) loaders[id]();
 }
 
@@ -690,6 +748,7 @@ async function initAdmin() {
   await loadDashboard();
   await loadLegacy();
   loadCoinBack();
+  loadCourses();
 }
 
 // ── Turneringer ───────────────────────────────────────────────────────────────
@@ -749,12 +808,14 @@ function renderTournamentsTable() {
 async function createTournament() {
   const year=document.getElementById('tYear').value, name=document.getElementById('tName').value,
         date=document.getElementById('tDate').value, course=document.getElementById('tCourse').value,
-        description=document.getElementById('tDesc').value;
+        description=document.getElementById('tDesc').value,
+        slope_rating=document.getElementById('tSlope').value||113;
   if (!year||!name||!date) { showToast('År, navn og dato er påkrevd','error'); return; }
   try {
-    await api('/api/admin/tournament',{method:'POST',body:JSON.stringify({year,name,date,course,description})});
+    await api('/api/admin/tournament',{method:'POST',body:JSON.stringify({year,name,date,course,description,slope_rating})});
     showToast('Turnering opprettet!');
     ['tYear','tName','tDate','tCourse','tDesc'].forEach(id=>document.getElementById(id).value='');
+    document.getElementById('tSlope').value='113';
     await loadTournaments(); await loadDashboard();
   } catch(e) { showToast(e.message,'error'); }
 }
@@ -778,6 +839,7 @@ function editTournament(id) {
   document.getElementById('editTName').value = t.name;
   document.getElementById('editTDate').value = t.date;
   document.getElementById('editTCourse').value = t.course || '';
+  document.getElementById('editTSlope').value = t.slope_rating || 113;
   document.getElementById('editTDesc').value = t.description || '';
   document.getElementById('editTournamentCard').classList.remove('d-none');
   document.getElementById('editTournamentCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -789,11 +851,12 @@ async function saveTournamentEdit() {
   const name = document.getElementById('editTName').value;
   const date = document.getElementById('editTDate').value;
   const course = document.getElementById('editTCourse').value;
+  const slope_rating = document.getElementById('editTSlope').value || 113;
   const description = document.getElementById('editTDesc').value;
   const status = document.getElementById('editTStatus').value;
   if (!year || !name || !date) { showToast('År, navn og dato er påkrevd', 'error'); return; }
   try {
-    await api('/api/admin/tournament/' + id, { method: 'PUT', body: JSON.stringify({ year, name, date, course, description, status }) });
+    await api('/api/admin/tournament/' + id, { method: 'PUT', body: JSON.stringify({ year, name, date, course, slope_rating, description, status }) });
     showToast('Turnering oppdatert!');
     document.getElementById('editTournamentCard').classList.add('d-none');
     await loadTournaments(); await loadDashboard();
@@ -872,18 +935,22 @@ async function loadTeams() {
   document.getElementById('teamCount').textContent = `(${d.teams.length} lag)`;
   document.getElementById('teamsTable').innerHTML = !d.teams.length
     ? '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen lag ennå. Legg til ett ovenfor.</td></tr>'
-    : d.teams.map((t,i) => `
+    : d.teams.map((t,i) => {
+        const hcp1 = t.player1_handicap || 0, hcp2 = t.player2_handicap || 0;
+        const hcpStr = (hcp1||hcp2) ? ` <span style="font-size:.75rem;color:var(--text-muted)">(Hcp: ${hcp1}/${hcp2})</span>` : '';
+        return `
         <tr>
           <td>${i+1}</td>
           <td><strong>${t.team_name}</strong></td>
-          <td>${t.player1}</td>
+          <td>${t.player1}${hcpStr ? '<br>' + hcpStr.replace('Hcp: ','Hcp '+hcp1+'/') : ''}</td>
           <td>${t.player2}</td>
           <td><code style="background:var(--gold-pale);padding:2px 8px;border-radius:4px;font-weight:700;color:var(--gold-dark)">${t.pin_code}</code></td>
           <td style="display:flex;gap:6px">
-            <button onclick="editTeam(${t.id},${JSON.stringify(t.team_name)},${JSON.stringify(t.player1)},${JSON.stringify(t.player2)},${JSON.stringify(t.pin_code)})" class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)" title="Rediger"><i class="fas fa-pen"></i></button>
+            <button onclick='editTeam(${t.id},${JSON.stringify(t.team_name)},${JSON.stringify(t.player1)},${JSON.stringify(t.player2)},${JSON.stringify(t.pin_code)},${hcp1},${hcp2})' class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)" title="Rediger"><i class="fas fa-pen"></i></button>
             <button onclick="deleteTeam(${t.id},${JSON.stringify(t.team_name)})" class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
           </td>
-        </tr>`).join('');
+        </tr>`;
+      }).join('');
 }
 
 async function addTeam() {
@@ -892,23 +959,27 @@ async function addTeam() {
   const team_name=document.getElementById('newTeamName').value,
         player1=document.getElementById('newPlayer1').value,
         player2=document.getElementById('newPlayer2').value,
-        pin_code=document.getElementById('newPin').value;
+        pin_code=document.getElementById('newPin').value,
+        player1_handicap=document.getElementById('newHcp1').value||0,
+        player2_handicap=document.getElementById('newHcp2').value||0;
   if (!team_name||!player1||!player2||!pin_code) { showToast('Alle felt er påkrevd','error'); return; }
   if (!/^\d{4}$/.test(pin_code)) { showToast('PIN må være nøyaktig 4 siffer','error'); return; }
   try {
-    await api('/api/admin/team',{method:'POST',body:JSON.stringify({tournament_id:tid,team_name,player1,player2,pin_code})});
+    await api('/api/admin/team',{method:'POST',body:JSON.stringify({tournament_id:tid,team_name,player1,player2,pin_code,player1_handicap,player2_handicap})});
     showToast('Lag lagt til!');
-    ['newTeamName','newPlayer1','newPlayer2','newPin'].forEach(id=>document.getElementById(id).value='');
+    ['newTeamName','newPlayer1','newPlayer2','newPin','newHcp1','newHcp2'].forEach(id=>document.getElementById(id).value='');
     await loadTeams(); await loadDashboard(); loadAwardTeams();
   } catch(e) { showToast(e.message,'error'); }
 }
 
-function editTeam(id, team_name, player1, player2, pin_code) {
+function editTeam(id, team_name, player1, player2, pin_code, hcp1=0, hcp2=0) {
   document.getElementById('editTeamId').value = id;
   document.getElementById('editTeamName').value = team_name;
   document.getElementById('editTeamP1').value = player1;
   document.getElementById('editTeamP2').value = player2;
   document.getElementById('editTeamPin').value = pin_code;
+  document.getElementById('editTeamHcp1').value = hcp1 || '';
+  document.getElementById('editTeamHcp2').value = hcp2 || '';
   document.getElementById('editTeamCard').classList.remove('d-none');
   document.getElementById('editTeamCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
@@ -919,10 +990,12 @@ async function saveTeamEdit() {
   const player1 = document.getElementById('editTeamP1').value;
   const player2 = document.getElementById('editTeamP2').value;
   const pin_code = document.getElementById('editTeamPin').value;
+  const player1_handicap = document.getElementById('editTeamHcp1').value || 0;
+  const player2_handicap = document.getElementById('editTeamHcp2').value || 0;
   if (!team_name || !player1 || !player2 || !pin_code) { showToast('Alle felt er påkrevd', 'error'); return; }
   if (!/^\d{4}$/.test(pin_code)) { showToast('PIN må være nøyaktig 4 siffer', 'error'); return; }
   try {
-    await api('/api/admin/team/' + id, { method: 'PUT', body: JSON.stringify({ team_name, player1, player2, pin_code }) });
+    await api('/api/admin/team/' + id, { method: 'PUT', body: JSON.stringify({ team_name, player1, player2, pin_code, player1_handicap, player2_handicap }) });
     showToast('Lag oppdatert!');
     document.getElementById('editTeamCard').classList.add('d-none');
     await loadTeams();
@@ -1471,6 +1544,92 @@ async function saveFocusPicker() {
 
 function openLegacyFocusPicker(id, imgSrc, currentFocus) {
   openFocusPicker(imgSrc, id, currentFocus);
+}
+
+// ── Baner (courses) ───────────────────────────────────────────────────────────
+let _allCourses = [];
+
+async function loadCourses() {
+  try {
+    const d = await api('/api/admin/courses');
+    _allCourses = d.courses;
+    renderCoursesTable();
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+function renderCoursesTable() {
+  const tbody = document.getElementById('coursesTable');
+  if (!tbody) return;
+  if (!_allCourses.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen baner lagret ennå. Legg til en ovenfor.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = _allCourses.map(c => `
+    <tr>
+      <td><strong>${c.name}</strong></td>
+      <td style="text-align:center"><strong>${c.slope_rating}</strong></td>
+      <td>${c.location || '—'}</td>
+      <td>${c.notes || '—'}</td>
+      <td style="display:flex;gap:6px">
+        <button onclick="editCourse(${c.id})" class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)" title="Rediger"><i class="fas fa-pen"></i></button>
+        <button onclick="deleteCourse(${c.id},${JSON.stringify(c.name)})" class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
+      </td>
+    </tr>`).join('');
+}
+
+async function addCourse() {
+  const name = document.getElementById('cName').value;
+  const slope_rating = document.getElementById('cSlope').value || 113;
+  const location = document.getElementById('cLocation').value;
+  const notes = document.getElementById('cNotes').value;
+  if (!name) { showToast('Banenavn er påkrevd', 'error'); return; }
+  try {
+    await api('/api/admin/course', { method: 'POST', body: JSON.stringify({ name, slope_rating, location, notes }) });
+    showToast('Bane lagt til!');
+    ['cName','cLocation','cNotes'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('cSlope').value = '113';
+    await loadCourses();
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+function editCourse(id) {
+  const c = _allCourses.find(x => x.id === id);
+  if (!c) return;
+  document.getElementById('editCourseId').value = c.id;
+  document.getElementById('editCName').value = c.name;
+  document.getElementById('editCSlope').value = c.slope_rating;
+  document.getElementById('editCLocation').value = c.location || '';
+  document.getElementById('editCNotes').value = c.notes || '';
+  document.getElementById('editCourseCard').classList.remove('d-none');
+  document.getElementById('editCourseCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+async function saveCourseEdit() {
+  const id = document.getElementById('editCourseId').value;
+  const name = document.getElementById('editCName').value;
+  const slope_rating = document.getElementById('editCSlope').value || 113;
+  const location = document.getElementById('editCLocation').value;
+  const notes = document.getElementById('editCNotes').value;
+  if (!name) { showToast('Banenavn er påkrevd', 'error'); return; }
+  try {
+    await api('/api/admin/course/' + id, { method: 'PUT', body: JSON.stringify({ name, slope_rating, location, notes }) });
+    showToast('Bane oppdatert!');
+    document.getElementById('editCourseCard').classList.add('d-none');
+    await loadCourses();
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+function cancelCourseEdit() {
+  document.getElementById('editCourseCard').classList.add('d-none');
+}
+
+async function deleteCourse(id, name) {
+  if (!confirm(`Slett banen «${name}»?`)) return;
+  try {
+    await api('/api/admin/course/' + id, { method: 'DELETE' });
+    showToast('Bane slettet');
+    await loadCourses();
+  } catch(e) { showToast(e.message, 'error'); }
 }
 </script>
 </body>

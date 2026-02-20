@@ -249,15 +249,30 @@ function renderLeaderboard() {
     tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text-muted)">Ingen poeng ennå — sjekk tilbake snart!</td></tr>';
     return;
   }
+  const hasHandicaps = scoreboard.some(t => (t.player1_handicap || 0) + (t.player2_handicap || 0) > 0);
+  // Update header dynamically when handicaps are active
+  const thead = document.querySelector('#leaderboardTable thead tr');
+  if (thead) {
+    thead.innerHTML = `
+      <th style="width:56px;text-align:center">Pos</th>
+      <th>Lag</th>
+      <th style="text-align:center">Totalt</th>
+      <th style="text-align:center">+/−</th>
+      ${hasHandicaps ? '<th style="text-align:center">Netto</th>' : ''}
+      <th style="text-align:center">Slag</th>
+      <th style="text-align:center">Hull</th>`;
+  }
+  const cols = hasHandicaps ? 7 : 6;
   tbody.innerHTML = scoreboard.map((t, i) => `
     <tr class="${i === 0 && t.holes_completed > 0 ? 'leaderboard-row-1' : ''}">
       <td style="text-align:center">${posBadge(i)}</td>
       <td class="team-name-cell">
         <div class="team">${t.team_name}</div>
-        <div class="players">${t.player1} &amp; ${t.player2}</div>
+        <div class="players">${t.player1} &amp; ${t.player2}${hasHandicaps && t.handicap ? ` <span style="color:var(--gold-dark);font-size:.72rem">(Hcp ${t.handicap})</span>` : ''}</div>
       </td>
       <td style="text-align:center;font-weight:600">${t.holes_completed > 0 ? t.total_score : '–'}</td>
-      <td style="text-align:center">${formatToPar(t.to_par, t.holes_completed)}</td>
+      <td style="text-align:center">${formatToPar(hasHandicaps ? t.net_to_par : t.to_par, t.holes_completed)}</td>
+      ${hasHandicaps ? `<td style="text-align:center;font-weight:600;color:var(--gold-dark)">${t.holes_completed > 0 ? t.net_score : '–'}</td>` : ''}
       <td style="text-align:center;color:var(--text-muted);font-size:.85rem">${t.total_score || '–'}</td>
       <td style="text-align:center;color:var(--text-muted);font-size:.85rem">${t.holes_completed}/18</td>
     </tr>`).join('');
