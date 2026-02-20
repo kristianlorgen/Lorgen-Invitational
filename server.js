@@ -452,11 +452,11 @@ app.post('/api/admin/tournament/:id/holes', requireAdmin, (req, res) => {
   const tid = req.params.id;
   try {
     const update = db.prepare(
-      'UPDATE holes SET par=?, requires_photo=?, is_longest_drive=?, is_closest_to_pin=? WHERE tournament_id=? AND hole_number=?'
+      'UPDATE holes SET par=?, requires_photo=?, is_longest_drive=?, is_closest_to_pin=?, stroke_index=? WHERE tournament_id=? AND hole_number=?'
     );
     const updateAll = db.transaction(() => {
       for (const h of holes) {
-        update.run(h.par, h.requires_photo ? 1 : 0, h.is_longest_drive ? 1 : 0, h.is_closest_to_pin ? 1 : 0, tid, h.hole_number);
+        update.run(h.par, h.requires_photo ? 1 : 0, h.is_longest_drive ? 1 : 0, h.is_closest_to_pin ? 1 : 0, h.stroke_index || 0, tid, h.hole_number);
         if (h.requires_photo) {
           const dir = `./uploads/t${tid}/h${h.hole_number}`;
           if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -782,15 +782,16 @@ app.post('/api/admin/course/:id/holes', requireAdmin, (req, res) => {
   const courseId = req.params.id;
   try {
     const upsert = db.prepare(
-      `INSERT INTO course_holes (course_id, hole_number, par, requires_photo, is_longest_drive, is_closest_to_pin)
-       VALUES (?,?,?,?,?,?)
+      `INSERT INTO course_holes (course_id, hole_number, par, requires_photo, is_longest_drive, is_closest_to_pin, stroke_index)
+       VALUES (?,?,?,?,?,?,?)
        ON CONFLICT(course_id, hole_number) DO UPDATE SET
          par=excluded.par, requires_photo=excluded.requires_photo,
-         is_longest_drive=excluded.is_longest_drive, is_closest_to_pin=excluded.is_closest_to_pin`
+         is_longest_drive=excluded.is_longest_drive, is_closest_to_pin=excluded.is_closest_to_pin,
+         stroke_index=excluded.stroke_index`
     );
     const saveAll = db.transaction(() => {
       for (const h of holes) {
-        upsert.run(courseId, h.hole_number, h.par, h.requires_photo ? 1 : 0, h.is_longest_drive ? 1 : 0, h.is_closest_to_pin ? 1 : 0);
+        upsert.run(courseId, h.hole_number, h.par, h.requires_photo ? 1 : 0, h.is_longest_drive ? 1 : 0, h.is_closest_to_pin ? 1 : 0, h.stroke_index || 0);
       }
     });
     saveAll();
