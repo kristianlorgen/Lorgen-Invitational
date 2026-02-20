@@ -614,7 +614,7 @@ function getVoterIp(req) {
 
 app.get('/api/gallery', (req, res) => {
   try {
-    let t = db.prepare(`SELECT * FROM tournaments WHERE status='active' ORDER BY date DESC LIMIT 1`).get();
+    let t = getActiveTournament();
     if (!t) t = db.prepare(`SELECT * FROM tournaments WHERE status='completed' ORDER BY date DESC LIMIT 1`).get();
     if (!t) return res.json({ photos: [], tournament: null });
 
@@ -684,7 +684,7 @@ app.post('/api/gallery/vote', (req, res) => {
   const { photo_ref } = req.body;
   if (!photo_ref) return res.status(400).json({ error: 'photo_ref er påkrevd' });
   try {
-    let t = db.prepare(`SELECT * FROM tournaments WHERE status='active' ORDER BY date DESC LIMIT 1`).get();
+    let t = getActiveTournament();
     if (!t) t = db.prepare(`SELECT * FROM tournaments WHERE status='completed' ORDER BY date DESC LIMIT 1`).get();
     if (!t) return res.status(404).json({ error: 'Ingen aktiv turnering' });
     const voterIp = getVoterIp(req);
