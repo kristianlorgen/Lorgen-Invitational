@@ -346,8 +346,9 @@
           <div class="card-body">
             <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:20px">
               <i class="fas fa-info-circle" style="color:var(--gold)"></i>
-              Sett par og huk av: <strong>📸 Foto</strong> krever bildeopplasting (oppretter automatisk mappe),
+              Sett par, <strong>SI</strong> (slagindeks 1–18, lavest = vanskeligst) og huk av: <strong>📸 Foto</strong> krever bildeopplasting,
               <strong>🏌️ LD</strong> = Lengste Drive-hull, <strong>🎯 NF</strong> = Nærmest Flagget-hull.
+              SI brukes til å beregne handikap-slag per hull i scoreboard (lag med høy nok handicap får −1 slag på hull der SI ≤ lagets handicap).
             </p>
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:12px" id="holesGrid"></div>
             <div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--gold-border);display:flex;gap:12px;flex-wrap:wrap">
@@ -1077,6 +1078,10 @@ function renderHolesGrid() {
         <option ${h.par===4?'selected':''}>4</option>
         <option ${h.par===5?'selected':''}>5</option>
       </select>
+      <div style="font-size:.72rem;color:var(--text-muted);margin-top:8px;margin-bottom:4px" title="Slagindeks 1–18. Hull med lavest SI er vanskeligst og gir handikap-slag først.">SI</div>
+      <input type="number" id="h-si-${h.hole_number}" value="${h.stroke_index||0}" min="0" max="18"
+        style="width:100%;padding:4px;border:1px solid var(--gold-border);border-radius:4px;text-align:center;font-size:.82rem"
+        title="Slagindeks (0 = ikke satt)">
       <label style="display:flex;align-items:center;justify-content:center;gap:4px;margin-top:10px;font-size:.72rem;color:var(--text-muted);cursor:pointer">
         <input type="checkbox" id="h-photo-${h.hole_number}" ${h.requires_photo?'checked':''} style="accent-color:var(--gold)">
         📸 Foto
@@ -1098,6 +1103,7 @@ async function saveHoles() {
   const holes = holesData.map(h => ({
     hole_number: h.hole_number,
     par: parseInt(document.getElementById('h-par-'+h.hole_number).value),
+    stroke_index: parseInt(document.getElementById('h-si-'+h.hole_number).value) || 0,
     requires_photo: document.getElementById('h-photo-'+h.hole_number).checked,
     is_longest_drive: document.getElementById('h-ld-'+h.hole_number).checked,
     is_closest_to_pin: document.getElementById('h-ctp-'+h.hole_number).checked
@@ -1120,10 +1126,11 @@ async function saveToCourse() {
     return;
   }
   const courseName = document.getElementById('importCourseSelect').selectedOptions[0]?.text || 'valgt bane';
-  if (!confirm(`Lagre nåværende hulloppset (par, foto, LD, NF) tilbake til bane-malen «${courseName}»?`)) return;
+  if (!confirm(`Lagre nåværende hulloppset (par, SI, foto, LD, NF) tilbake til bane-malen «${courseName}»?`)) return;
   const holes = holesData.map(h => ({
     hole_number: h.hole_number,
     par: parseInt(document.getElementById('h-par-'+h.hole_number).value),
+    stroke_index: parseInt(document.getElementById('h-si-'+h.hole_number).value) || 0,
     requires_photo: document.getElementById('h-photo-'+h.hole_number).checked,
     is_longest_drive: document.getElementById('h-ld-'+h.hole_number).checked,
     is_closest_to_pin: document.getElementById('h-ctp-'+h.hole_number).checked
