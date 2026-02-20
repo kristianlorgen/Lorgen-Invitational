@@ -523,6 +523,7 @@
               </select>
             </div>
             <button onclick="loadPhotos()" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-rotate-right"></i> Oppdater</button>
+            <button onclick="rebuildPhotoDatabase()" class="btn btn--dark btn--sm" style="justify-content:center"><i class="fas fa-database"></i> Bygg bildedatabase på nytt</button>
           </div>
         </div>
 
@@ -1353,6 +1354,24 @@ async function uploadAdminGlimtskudd() {
     showToast('Glimtskudd-bilde lastet opp');
     await loadPhotos();
   } catch(e) {
+    showToast(e.message, 'error');
+  }
+}
+
+
+async function rebuildPhotoDatabase() {
+  const tid = document.getElementById('photosTournamentSelect').value;
+  if (!tid) {
+    showToast('Velg en turnering først', 'error');
+    return;
+  }
+  if (!confirm('Bygge bildedatabasen på nytt for valgt turnering? Dette kan ta noen sekunder.')) return;
+
+  try {
+    const result = await api('/api/admin/tournament/' + tid + '/rebuild-photo-db', { method: 'POST' });
+    showToast(`Bildedatabase oppdatert (${result.normalized_scores + result.normalized_gallery + result.synced_score_captions} endringer)`);
+    await loadPhotos();
+  } catch (e) {
     showToast(e.message, 'error');
   }
 }

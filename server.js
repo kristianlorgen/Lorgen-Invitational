@@ -164,6 +164,84 @@ function syncScorePhotoToGallery({ tournamentId, scoreId, photoPath }) {
   ).run(tournamentId, photoPath, `score:${scoreId}`);
 }
 
+function rebuildPhotoDatabase(tournamentId = null) {
+  const whereTournament = tournamentId ? 'WHERE tm.tournament_id=?' : '';
+  const scoreRows = db.prepare(
+    `SELECT s.id, s.team_id, tm.tournament_id, s.photo_path, s.is_published
+     FROM scores s
+     JOIN teams tm ON tm.id=s.team_id
+     ${whereTournament}`
+  ).all(...(tournamentId ? [tournamentId] : []));
+
+  let normalizedScores = 0;
+  let normalizedGallery = 0;
+  let normalizedLegacy = 0;
+  let syncedScoreCaptions = 0;
+
+  scoreRows.forEach(s => {
+    const normalized = normalizePhotoPath(s.photo_path);
+    const shouldPublish = s.is_published ? 1 : 0;
+
+    if ((s.photo_path || '') !== normalized || s.is_published !== shouldPublish) {
+      db.prepare('UPDATE scores SET photo_path=?, is_published=? WHERE id=?').run(normalized || null, shouldPublish, s.id);
+      normalizedScores++;
+    }
+
+    if (!normalized) {
+      db.prepare('DELETE FROM gallery_photos WHERE tournament_id=? AND caption=?').run(s.tournament_id, `score:${s.id}`);
+      return;
+    }
+
+    const existing = db.prepare(
+      'SELECT id, photo_path, is_published FROM gallery_photos WHERE tournament_id=? AND caption=? LIMIT 1'
+    ).get(s.tournament_id, `score:${s.id}`);
+
+    if (existing) {
+      const normalizedExisting = normalizePhotoPath(existing.photo_path);
+      if (normalizedExisting !== normalized || Number(existing.is_published || 0) !== shouldPublish) {
+        db.prepare(
+          'UPDATE gallery_photos SET photo_path=?, is_published=?, uploaded_at=CURRENT_TIMESTAMP WHERE id=?'
+        ).run(normalized, shouldPublish, existing.id);
+        syncedScoreCaptions++;
+      }
+      return;
+    }
+
+    db.prepare(
+      'INSERT INTO gallery_photos (tournament_id, photo_path, caption, is_published) VALUES (?,?,?,?)'
+    ).run(s.tournament_id, normalized, `score:${s.id}`, shouldPublish);
+    syncedScoreCaptions++;
+  });
+
+  const galleryRows = db.prepare(
+    `SELECT id, photo_path, is_published FROM gallery_photos ${tournamentId ? 'WHERE tournament_id=?' : ''}`
+  ).all(...(tournamentId ? [tournamentId] : []));
+  galleryRows.forEach(p => {
+    const normalized = normalizePhotoPath(p.photo_path);
+    const shouldPublish = p.is_published ? 1 : 0;
+    if ((p.photo_path || '') !== normalized || p.is_published !== shouldPublish) {
+      db.prepare('UPDATE gallery_photos SET photo_path=?, is_published=? WHERE id=?').run(normalized || null, shouldPublish, p.id);
+      normalizedGallery++;
+    }
+  });
+
+  const legacyRows = db.prepare('SELECT id, winner_photo FROM legacy').all();
+  legacyRows.forEach(row => {
+    const normalized = normalizePhotoPath(row.winner_photo);
+    if ((row.winner_photo || '') !== normalized) {
+      db.prepare('UPDATE legacy SET winner_photo=? WHERE id=?').run(normalized || null, row.id);
+      normalizedLegacy++;
+    }
+  });
+
+  return {
+    normalized_scores: normalizedScores,
+    normalized_gallery: normalizedGallery,
+    normalized_legacy: normalizedLegacy,
+    synced_score_captions: syncedScoreCaptions
+  };
+}
+
 function buildScoreboard(tournament) {
   const teams     = db.prepare('SELECT * FROM teams WHERE tournament_id=?').all(tournament.id);
   const holes     = db.prepare('SELECT * FROM holes WHERE tournament_id=? ORDER BY hole_number').all(tournament.id);
@@ -632,6 +710,18 @@ app.get('/api/admin/tournament/:id/photos', requireAdmin, (req, res) => {
       requires_photo: holesMap[s.hole_number]?.requires_photo
     }));
     res.json({ photos });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/admin/tournament/:id/rebuild-photo-db', requireAdmin, (req, res) => {
+  try {
+    const tournamentId = Number(req.params.id);
+    if (!Number.isFinite(tournamentId)) return res.status(400).json({ error: 'Ugyldig turnerings-ID' });
+    const tournament = db.prepare('SELECT id FROM tournaments WHERE id=?').get(tournamentId);
+    if (!tournament) return res.status(404).json({ error: 'Turnering ikke funnet' });
+
+    const result = rebuildPhotoDatabase(tournamentId);
+    res.json({ success: true, ...result });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
