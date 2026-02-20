@@ -406,7 +406,7 @@ async function loadGallery() {
       <div style="border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow-sm);border:1px solid var(--gold-border)">
         <a href="${p.photo_path}" target="_blank">
           <img src="${p.photo_path}" alt="Hull ${p.hole_number}" loading="lazy"
-            style="width:100%;aspect-ratio:4/3;object-fit:cover;display:block;transition:transform .3s"
+            style="width:100%;aspect-ratio:4/3;object-fit:contain;background:var(--dark);display:block;transition:transform .3s"
             onmouseover="this.style.transform='scale(1.04)'" onmouseout="this.style.transform=''">
         </a>
         <div style="padding:10px 12px;background:var(--white)">
