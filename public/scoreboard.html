@@ -317,15 +317,15 @@ function renderAwards(awards) {
   }
   empty.classList.add('d-none');
   const typeLabels = {
-    'longest_drive':   { label: 'Lengste Drive',   icon: '🏌️' },
-    'closest_to_pin':  { label: 'Nærmest Flagget',  icon: '🎯' }
+    'longest_drive':  { label: 'Longest Drive',    icon: '🏌️', desc: 'Utvalgt hull — Longest Drive konkurranse' },
+    'closest_to_pin': { label: 'Nærmest Flagget',  icon: '🎯', desc: 'Utvalgt hull — Closest to Pin konkurranse' }
   };
   grid.innerHTML = awards.map(a => {
-    const info = typeLabels[a.award_type] || { label: a.award_type, icon: '🏆' };
+    const info = typeLabels[a.award_type] || { label: a.award_type, icon: '🏆', desc: '' };
     return `
       <div class="award-card">
         <span class="award-icon">${info.icon}</span>
-        <div class="award-label">${info.label}${a.hole_number ? ' — Hull ' + a.hole_number : ''}</div>
+        <div class="award-label">${info.desc || info.label}${a.hole_number ? ' — Hull ' + a.hole_number : ''}</div>
         <div class="award-team">${a.player_name || a.team_name || 'TBD'}</div>
         ${a.team_name && a.player_name ? `<div class="award-players">${a.team_name}</div>` : ''}
         ${a.detail ? `<div class="award-detail">${a.detail}</div>` : ''}
@@ -386,6 +386,7 @@ function connectSSE() {
       const data = JSON.parse(e.data);
       if (data.type === 'score_updated' || data.type === 'award_updated') {
         loadScoreboard();
+        if (data.type === 'score_updated') loadPhotoReel();
       }
     } catch (_) {}
   };
@@ -446,8 +447,8 @@ loadPhotoReel();
 connectSSE();
 // Reserveoppdatering hvert 60. sekund
 setInterval(loadScoreboard, 60000);
-// Oppdater kamerarullen hvert 30. sekund (nye bilder kan komme inn)
-setInterval(loadPhotoReel, 30000);
+// Oppdater kamerarullen hvert 15. sekund (nye bilder kan komme inn)
+setInterval(loadPhotoReel, 15000);
 </script>
 </body>
 </html>
