@@ -316,6 +316,23 @@
           </div>
         </div>
 
+        <!-- Import fra lagret bane -->
+        <div class="card" style="margin-bottom:24px;border:1px solid var(--gold-border)">
+          <div class="card-body" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+            <i class="fas fa-file-import" style="color:var(--gold);font-size:1.2rem;flex-shrink:0"></i>
+            <div style="flex:1;min-width:180px">
+              <div style="font-size:.78rem;font-weight:700;color:var(--dark);margin-bottom:4px">Importer hull-mal fra lagret bane</div>
+              <div style="font-size:.72rem;color:var(--text-muted)">Overskriver gjeldende par-verdier og innstillinger</div>
+            </div>
+            <select class="form-select" id="importCourseSelect" style="max-width:220px;margin:0">
+              <option value="">— Velg bane —</option>
+            </select>
+            <button onclick="importCourseHoles()" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border);white-space:nowrap">
+              <i class="fas fa-file-import"></i> Importer
+            </button>
+          </div>
+        </div>
+
         <div class="card" id="holesConfig">
           <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
             <strong>Hullkonfigurasjon</strong>
@@ -423,6 +440,21 @@
               <button onclick="saveCourseEdit()" class="btn btn--gold btn--sm"><i class="fas fa-floppy-disk"></i> Lagre</button>
               <button onclick="cancelCourseEdit()" class="btn btn--outline btn--sm" style="color:var(--text-muted)"><i class="fas fa-times"></i> Avbryt</button>
             </div>
+          </div>
+        </div>
+
+        <!-- Hull-mal for bane -->
+        <div class="card d-none" id="courseHolesCard" style="margin-top:24px">
+          <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
+            <strong id="courseHolesCardTitle">Hull-mal</strong>
+            <button onclick="saveCourseHoles()" class="btn btn--gold btn--sm"><i class="fas fa-floppy-disk"></i> Lagre mal</button>
+          </div>
+          <div class="card-body">
+            <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:16px">
+              <i class="fas fa-info-circle" style="color:var(--gold)"></i>
+              Lagre hull-oppsettet for denne banen. Det kan importeres til neste turnering under «Bane og Hull».
+            </p>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:12px" id="courseHolesGrid"></div>
           </div>
         </div>
       </div>
@@ -1554,6 +1586,12 @@ async function loadCourses() {
     const d = await api('/api/admin/courses');
     _allCourses = d.courses;
     renderCoursesTable();
+    // Populate import selector in Bane og Hull panel
+    const sel = document.getElementById('importCourseSelect');
+    if (sel) {
+      sel.innerHTML = '<option value="">— Velg bane —</option>' +
+        _allCourses.map(c => `<option value="${c.id}">${c.name} (Slope ${c.slope_rating})</option>`).join('');
+    }
   } catch(e) { showToast(e.message, 'error'); }
 }
 
@@ -1571,10 +1609,86 @@ function renderCoursesTable() {
       <td>${c.location || '—'}</td>
       <td>${c.notes || '—'}</td>
       <td style="display:flex;gap:6px">
+        <button onclick="openCourseHoles(${c.id},${JSON.stringify(c.name)})" class="btn btn--sm" style="background:var(--dark);color:var(--gold-light);border:none" title="Hull-mal"><i class="fas fa-golf-ball-tee"></i></button>
         <button onclick="editCourse(${c.id})" class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)" title="Rediger"><i class="fas fa-pen"></i></button>
         <button onclick="deleteCourse(${c.id},${JSON.stringify(c.name)})" class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
       </td>
     </tr>`).join('');
+}
+
+// ── Hull-mal per bane ─────────────────────────────────────────────────────────
+let _courseHolesData = [];
+let _courseHolesId = null;
+
+async function openCourseHoles(courseId, courseName) {
+  _courseHolesId = courseId;
+  document.getElementById('courseHolesCardTitle').textContent = `Hull-mal: ${courseName}`;
+  document.getElementById('courseHolesCard').classList.remove('d-none');
+  document.getElementById('courseHolesCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  try {
+    const d = await api(`/api/admin/course/${courseId}/holes`);
+    _courseHolesData = d.holes;
+    renderCourseHolesGrid();
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+function renderCourseHolesGrid() {
+  document.getElementById('courseHolesGrid').innerHTML = _courseHolesData.map(h => `
+    <div style="background:var(--white);border:1px solid var(--gold-border);border-radius:var(--radius);padding:14px 10px;text-align:center">
+      <div style="font-size:.72rem;font-weight:700;color:var(--text-muted);margin-bottom:8px;letter-spacing:.08em">HULL ${h.hole_number}</div>
+      <div style="font-size:.72rem;color:var(--text-muted);margin-bottom:4px">Par</div>
+      <select id="ch-par-${h.hole_number}" style="width:100%;padding:4px;border:1px solid var(--gold-border);border-radius:4px;text-align:center">
+        <option ${h.par===3?'selected':''}>3</option>
+        <option ${h.par===4?'selected':''}>4</option>
+        <option ${h.par===5?'selected':''}>5</option>
+      </select>
+      <label style="display:flex;align-items:center;justify-content:center;gap:4px;margin-top:10px;font-size:.72rem;color:var(--text-muted);cursor:pointer">
+        <input type="checkbox" id="ch-photo-${h.hole_number}" ${h.requires_photo?'checked':''} style="accent-color:var(--gold)">
+        📸 Foto
+      </label>
+      <label style="display:flex;align-items:center;justify-content:center;gap:4px;margin-top:6px;font-size:.72rem;color:var(--text-muted);cursor:pointer">
+        <input type="checkbox" id="ch-ld-${h.hole_number}" ${h.is_longest_drive?'checked':''} style="accent-color:var(--gold)">
+        🏌️ LD
+      </label>
+      <label style="display:flex;align-items:center;justify-content:center;gap:4px;margin-top:4px;font-size:.72rem;color:var(--text-muted);cursor:pointer">
+        <input type="checkbox" id="ch-ctp-${h.hole_number}" ${h.is_closest_to_pin?'checked':''} style="accent-color:var(--gold)">
+        🎯 NF
+      </label>
+    </div>`).join('');
+}
+
+async function saveCourseHoles() {
+  if (!_courseHolesId || !_courseHolesData.length) return;
+  const holes = _courseHolesData.map(h => ({
+    hole_number: h.hole_number,
+    par: parseInt(document.getElementById('ch-par-' + h.hole_number).value),
+    requires_photo: document.getElementById('ch-photo-' + h.hole_number).checked,
+    is_longest_drive: document.getElementById('ch-ld-' + h.hole_number).checked,
+    is_closest_to_pin: document.getElementById('ch-ctp-' + h.hole_number).checked
+  }));
+  try {
+    await api(`/api/admin/course/${_courseHolesId}/holes`, { method: 'POST', body: JSON.stringify({ holes }) });
+    showToast('Hull-mal lagret!');
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+async function importCourseHoles() {
+  const courseId = document.getElementById('importCourseSelect').value;
+  if (!courseId) { showToast('Velg en bane å importere fra', 'error'); return; }
+  const tid = document.getElementById('holesTournamentSelect').value;
+  if (!tid) { showToast('Velg en turnering først', 'error'); return; }
+  if (!confirm('Overskriv gjeldende hullkonfigurasjon med malen fra valgt bane?')) return;
+  try {
+    const d = await api(`/api/admin/course/${courseId}/holes`);
+    const importedHoles = d.holes;
+    // Apply to current tournament holes
+    await api('/api/admin/tournament/' + tid + '/holes', {
+      method: 'POST',
+      body: JSON.stringify({ holes: importedHoles })
+    });
+    showToast('Hull-mal importert!');
+    await loadHoles();
+  } catch(e) { showToast(e.message, 'error'); }
 }
 
 async function addCourse() {

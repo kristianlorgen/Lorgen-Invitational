@@ -215,6 +215,14 @@
           <div class="summary-label">vs Par</div>
           <div class="summary-value" id="summaryToPar">—</div>
         </div>
+        <div class="summary-item" id="summaryNettoItem" style="display:none">
+          <div class="summary-label">Netto</div>
+          <div class="summary-value" id="summaryNetto" style="color:var(--gold-light)">—</div>
+        </div>
+        <div class="summary-item" id="summaryHcpItem" style="display:none">
+          <div class="summary-label">Hcp</div>
+          <div class="summary-value" id="summaryHcp" style="font-size:.85rem;color:rgba(255,255,255,.5)">—</div>
+        </div>
         <div class="summary-item">
           <div class="summary-label">Hull</div>
           <div class="summary-value" id="summaryHoles">0/18</div>
@@ -285,10 +293,11 @@ function showToast(msg, type = 'success') {
   setTimeout(() => t.remove(), 4000);
 }
 
-let teamData     = null;
-let holesData    = [];
-let scoresData   = {};
-let claimsData   = {};
+let teamData       = null;
+let tournamentData = null;
+let holesData      = [];
+let scoresData     = {};
+let claimsData     = {};
 let pendingPhotoHole = null;
 let currentHoleIndex = 0;
 
@@ -324,12 +333,21 @@ async function doLogout() {
 async function loadScorecard() {
   const r = await fetch('/api/team/scorecard');
   const d = await r.json();
-  teamData = d.team; holesData = d.holes;
+  teamData = d.team; holesData = d.holes; tournamentData = d.tournament || null;
   d.scores.forEach(s => { scoresData[s.hole_number] = s; });
   if (d.claims) d.claims.forEach(c => { claimsData[c.hole_number + '_' + c.award_type] = c; });
   renderAll();
   loadPosition();
   if (teamData.locked) showLockedState();
+}
+
+function getCourseHandicap() {
+  if (!teamData) return 0;
+  const hcp1 = parseFloat(teamData.player1_handicap) || 0;
+  const hcp2 = parseFloat(teamData.player2_handicap) || 0;
+  if (!hcp1 && !hcp2) return 0;
+  const slope = (tournamentData && tournamentData.slope_rating) || 113;
+  return Math.round((hcp1 + hcp2) * 0.5 * slope / 113);
 }
 
 function renderAll() {
@@ -354,6 +372,19 @@ function updateSummary() {
   const toPar = totalScore - totalPar;
   document.getElementById('summaryToPar').textContent =
     holesCompleted > 0 ? (toPar > 0 ? '+' + toPar : toPar === 0 ? 'E' : toPar) : '—';
+
+  // Handicap / netto
+  const courseHcp = getCourseHandicap();
+  if (courseHcp > 0) {
+    const netScore = holesCompleted > 0 ? totalScore - courseHcp : null;
+    document.getElementById('summaryHcpItem').style.display = '';
+    document.getElementById('summaryNettoItem').style.display = '';
+    document.getElementById('summaryHcp').textContent = courseHcp;
+    document.getElementById('summaryNetto').textContent = netScore !== null ? netScore : '—';
+  } else {
+    document.getElementById('summaryHcpItem').style.display = 'none';
+    document.getElementById('summaryNettoItem').style.display = 'none';
+  }
 }
 
 async function loadPosition() {
@@ -531,14 +562,23 @@ function finishRound() {
     }
   });
   const toPar = holesCompleted > 0 ? totalScore - totalPar : null;
+  const courseHcp = getCourseHandicap();
+  const netScore  = (courseHcp > 0 && holesCompleted > 0) ? totalScore - courseHcp : null;
   document.getElementById('summaryTeamLabel').textContent = teamData.team_name + ' — ' + teamData.player1 + ' & ' + teamData.player2;
-  document.getElementById('summaryStats').innerHTML = [
+  const statItems = [
     { label: 'Totalt', value: totalScore || '—' },
     { label: 'vs Par', value: toPar !== null ? (toPar > 0 ? '+'+toPar : toPar === 0 ? 'E' : toPar) : '—' },
+    ...(courseHcp > 0 ? [
+      { label: 'Hcp', value: courseHcp },
+      { label: 'Netto', value: netScore !== null ? netScore : '—', gold: true }
+    ] : []),
     { label: 'Hull', value: holesCompleted + '/18' }
-  ].map(s => `<div style="text-align:center;background:var(--gold-pale);border-radius:var(--radius);padding:14px 8px">
+  ];
+  document.getElementById('summaryStats').style.gridTemplateColumns = `repeat(${statItems.length},1fr)`;
+  document.getElementById('summaryStats').innerHTML = statItems.map(s => `
+  <div style="text-align:center;background:${s.gold ? 'rgba(201,168,76,.18)' : 'var(--gold-pale)'};border-radius:var(--radius);padding:14px 8px;${s.gold ? 'border:1px solid rgba(201,168,76,.4)' : ''}">
     <div style="font-size:.6rem;text-transform:uppercase;letter-spacing:.12em;color:var(--gold-dark);font-weight:700;margin-bottom:4px">${s.label}</div>
-    <div style="font-family:var(--font-heading);font-size:1.4rem;color:var(--dark)">${s.value}</div>
+    <div style="font-family:var(--font-heading);font-size:1.4rem;color:${s.gold ? 'var(--gold-dark)' : 'var(--dark)'}">${s.value}</div>
   </div>`).join('');
   document.getElementById('summaryBreakdown').innerHTML = `
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;text-align:center">
