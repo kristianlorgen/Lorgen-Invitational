@@ -152,6 +152,30 @@
           <button onclick="showPanel('teams')" class="btn btn--dark btn--sm"><i class="fas fa-users"></i> Administrer Lag</button>
           <button onclick="showPanel('holes')" class="btn btn--dark btn--sm"><i class="fas fa-golf-ball-tee"></i> Konfigurer Hull</button>
         </div>
+
+        <!-- Myntrullator bakside -->
+        <div class="card" style="margin-top:24px">
+          <div class="card-header"><strong><i class="fas fa-circle" style="color:var(--gold)"></i> &nbsp;Myntlogo — bakside</strong></div>
+          <div class="card-body">
+            <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:16px">
+              Last opp et bilde som vises på baksiden av den roterende myntlogoen på forsiden.
+            </p>
+            <div style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
+              <div id="coinBackPreviewWrap" style="display:none;flex-shrink:0">
+                <img id="coinBackPreview" src="" alt="Bakside" style="height:90px;width:90px;border-radius:var(--radius);object-fit:cover;border:2px solid var(--gold);display:block">
+              </div>
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <input type="file" id="coinBackInput" accept="image/*" style="display:none" onchange="uploadCoinBack()">
+                <button onclick="document.getElementById('coinBackInput').click()" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)">
+                  <i class="fas fa-upload"></i> Last opp bakside-bilde
+                </button>
+                <button id="coinFocusBtn" onclick="openCoinFocusPicker()" class="btn btn--outline btn--sm" style="display:none;color:var(--gold-dark);border-color:var(--gold-border)">
+                  <i class="fas fa-crosshairs"></i> Velg fokuspunkt
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- ── TURNERINGER ────────────────────────────────────────────────────── -->
@@ -182,6 +206,25 @@
               <thead><tr><th>År</th><th>Navn</th><th>Dato</th><th>Bane</th><th>Status</th><th>Handlinger</th></tr></thead>
               <tbody id="tournamentsTable"><tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Laster...</td></tr></tbody>
             </table>
+          </div>
+        </div>
+        <!-- Inline edit form (hidden) -->
+        <div class="card d-none" id="editTournamentCard" style="margin-top:16px;border:2px solid var(--gold-border)">
+          <div class="card-header"><strong>Rediger turnering</strong></div>
+          <div class="card-body">
+            <input type="hidden" id="editTId">
+            <input type="hidden" id="editTStatus">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px">
+              <div class="form-group"><label class="form-label">År</label><input class="form-input" id="editTYear" type="number"></div>
+              <div class="form-group"><label class="form-label">Navn</label><input class="form-input" id="editTName"></div>
+              <div class="form-group"><label class="form-label">Dato</label><input class="form-input" id="editTDate" type="date"></div>
+              <div class="form-group"><label class="form-label">Bane</label><input class="form-input" id="editTCourse"></div>
+              <div class="form-group" style="grid-column:1/-1"><label class="form-label">Beskrivelse</label><textarea class="form-input form-textarea" id="editTDesc" style="min-height:60px"></textarea></div>
+            </div>
+            <div style="margin-top:16px;display:flex;gap:10px">
+              <button onclick="saveTournamentEdit()" class="btn btn--gold btn--sm"><i class="fas fa-floppy-disk"></i> Lagre</button>
+              <button onclick="cancelTournamentEdit()" class="btn btn--outline btn--sm" style="color:var(--text-muted)"><i class="fas fa-times"></i> Avbryt</button>
+            </div>
           </div>
         </div>
       </div>
@@ -229,6 +272,23 @@
               <thead><tr><th>#</th><th>Lagnavn</th><th>Spiller 1</th><th>Spiller 2</th><th>PIN</th><th>Handlinger</th></tr></thead>
               <tbody id="teamsTable"><tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Velg en turnering ovenfor</td></tr></tbody>
             </table>
+          </div>
+        </div>
+        <!-- Inline team edit form (hidden) -->
+        <div class="card d-none" id="editTeamCard" style="margin-top:16px;border:2px solid var(--gold-border)">
+          <div class="card-header"><strong>Rediger lag</strong></div>
+          <div class="card-body">
+            <input type="hidden" id="editTeamId">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px">
+              <div class="form-group"><label class="form-label">Lagnavn</label><input class="form-input" id="editTeamName"></div>
+              <div class="form-group"><label class="form-label">Spiller 1</label><input class="form-input" id="editTeamP1"></div>
+              <div class="form-group"><label class="form-label">Spiller 2</label><input class="form-input" id="editTeamP2"></div>
+              <div class="form-group"><label class="form-label">PIN (4 siffer)</label><input class="form-input" id="editTeamPin" type="text" maxlength="4" inputmode="numeric"></div>
+            </div>
+            <div style="margin-top:16px;display:flex;gap:10px">
+              <button onclick="saveTeamEdit()" class="btn btn--gold btn--sm"><i class="fas fa-floppy-disk"></i> Lagre</button>
+              <button onclick="cancelTeamEdit()" class="btn btn--outline btn--sm" style="color:var(--text-muted)"><i class="fas fa-times"></i> Avbryt</button>
+            </div>
           </div>
         </div>
       </div>
@@ -311,28 +371,42 @@
       <!-- ── POENG ──────────────────────────────────────────────────────────── -->
       <div class="admin-panel" id="panel-scores">
         <div class="admin-panel-title">Poeng</div>
-        <div class="admin-panel-sub">Se og overstyr innsendte poeng</div>
+        <div class="admin-panel-sub">Se og overstyr innsendte poeng per lag</div>
 
-        <div class="card" style="margin-bottom:24px">
-          <div class="card-body">
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-body" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
             <div class="form-group" style="margin:0">
               <label class="form-label">Velg turnering</label>
               <select class="form-select" id="scoresTournamentSelect" onchange="loadScores()">
                 <option value="">— Velg turnering —</option>
               </select>
             </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Velg lag</label>
+              <select class="form-select" id="scoresTeamSelect" onchange="renderTeamScores()">
+                <option value="">— Velg lag —</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Lag-statuslinje (vises når lag er valgt) -->
+        <div id="scoresTeamStatus" class="card d-none" style="margin-bottom:16px;border:1px solid var(--gold-border)">
+          <div class="card-body" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+            <div id="scoresTeamInfo" style="font-size:.875rem"></div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <button onclick="toggleTeamLock()" class="btn btn--sm" id="scoresLockBtn" style="min-width:110px"></button>
+              <button onclick="loadScores()" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-rotate-right"></i></button>
+            </div>
           </div>
         </div>
 
         <div class="card">
-          <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
-            <strong>Innsendte poeng</strong>
-            <button onclick="loadScores()" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-rotate-right"></i> Oppdater</button>
-          </div>
+          <div class="card-header"><strong id="scoresCardTitle">Innsendte poeng</strong></div>
           <div style="overflow-x:auto">
-            <table class="data-table">
-              <thead><tr><th>Lag</th><th>Spillere</th><th>Hull</th><th>Par</th><th>Poeng</th><th>+/−</th><th>Bilde</th><th>Handlinger</th></tr></thead>
-              <tbody id="scoresTable"><tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted)">Velg en turnering ovenfor</td></tr></tbody>
+            <table class="data-table" id="scoresTable">
+              <thead id="scoresTableHead"><tr><th>Lag</th><th>Hull</th><th>Par</th><th>Poeng</th><th>+/−</th><th>Bilde</th><th>Handlinger</th></tr></thead>
+              <tbody id="scoresTableBody"><tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted)">Velg en turnering og et lag ovenfor</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -486,6 +560,24 @@
   </div><!-- /admin-layout -->
 </div><!-- /adminPanel -->
 
+<!-- ── Fokuspunkt-velger modal ────────────────────────────────────────────── -->
+<div id="focusPickerModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:3000;align-items:center;justify-content:center">
+  <div style="background:var(--white);border-radius:var(--radius-xl);padding:28px;max-width:440px;width:90%;box-shadow:0 24px 48px rgba(0,0,0,.3)">
+    <h3 style="font-family:var(--font-heading);font-size:1.2rem;color:var(--dark);margin-bottom:6px">Velg fokuspunkt</h3>
+    <p style="font-size:.8rem;color:var(--text-muted);margin-bottom:16px">Klikk på bildet for å velge hvilken del som skal være synlig i den runde/kvadratiske visningen.</p>
+    <div style="position:relative;cursor:crosshair;border-radius:var(--radius);overflow:hidden;border:2px solid var(--gold-border);user-select:none" id="focusPickerImgWrap">
+      <img id="focusPickerImg" src="" draggable="false" style="width:100%;height:220px;object-fit:cover;display:block;pointer-events:none">
+      <div id="focusPickerDot" style="position:absolute;width:16px;height:16px;border-radius:50%;background:rgba(255,255,255,.9);border:2px solid var(--gold);box-shadow:0 2px 8px rgba(0,0,0,.4);transform:translate(-50%,-50%);pointer-events:none;left:50%;top:50%"></div>
+      <div style="position:absolute;inset:0" onclick="focusPickerClick(event)"></div>
+    </div>
+    <p style="font-size:.72rem;color:var(--text-muted);margin-top:8px;text-align:center" id="focusPickerCoords">Fokus: 50% × 50%</p>
+    <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end">
+      <button onclick="closeFocusPicker()" class="btn btn--outline btn--sm" style="color:var(--text-muted)"><i class="fas fa-times"></i> Avbryt</button>
+      <button onclick="saveFocusPicker()" class="btn btn--gold btn--sm"><i class="fas fa-crosshairs"></i> Lagre fokus</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ── Hjelpefunksjoner ──────────────────────────────────────────────────────────
 function showToast(msg, type='success') {
@@ -582,6 +674,10 @@ function showPanel(id) {
   document.querySelectorAll('.sidebar-link').forEach(l => {
     if (l.getAttribute('onclick') && l.getAttribute('onclick').includes("'"+id+"'")) l.classList.add('active');
   });
+  // Auto-trigger data loading for panels with a tournament select
+  const loaders = { holes: loadHoles, teams: loadTeams, scores: loadScores,
+                    photos: loadPhotos, awards: loadAwards, gameday: loadGameday };
+  if (loaders[id]) loaders[id]();
 }
 
 // ── Tilstand ──────────────────────────────────────────────────────────────────
@@ -591,6 +687,7 @@ async function initAdmin() {
   await loadTournaments();
   await loadDashboard();
   await loadLegacy();
+  loadCoinBack();
 }
 
 // ── Turneringer ───────────────────────────────────────────────────────────────
@@ -608,12 +705,16 @@ function statusLabel(s) {
 function populateTournamentSelects() {
   const ids = ['teamsTournamentSelect','holesTournamentSelect','scoresTournamentSelect',
                'awardsTournamentSelect','gamedayTournamentSelect','photosTournamentSelect'];
+  // Find the default (active > upcoming) tournament
+  const defaultT = allTournaments.find(t => t.status === 'active') ||
+                   allTournaments.find(t => t.status === 'upcoming');
   ids.forEach(id => {
     const sel = document.getElementById(id);
     const cur = sel.value;
     sel.innerHTML = '<option value="">— Velg turnering —</option>' +
       allTournaments.map(t => `<option value="${t.id}">${t.name} (${t.year}) — ${statusLabel(t.status)}</option>`).join('');
     if (cur) sel.value = cur;
+    else if (defaultT && !cur) sel.value = String(defaultT.id);
   });
 }
 
@@ -636,7 +737,8 @@ function renderTournamentsTable() {
           <option value="completed"${t.status==='completed'?'selected':''}>Fullført</option>
         </select>
       </td>
-      <td>
+      <td style="display:flex;gap:6px">
+        <button onclick="editTournament(${t.id})" class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)" title="Rediger"><i class="fas fa-pen"></i></button>
         <button onclick="deleteTournament(${t.id},${JSON.stringify(t.name)})" class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
       </td>
     </tr>`).join('');
@@ -663,6 +765,41 @@ async function changeTournamentStatus(id, status) {
     showToast('Status oppdatert til «'+statusLabel(status)+'»');
     await loadTournaments(); await loadDashboard();
   } catch(e) { showToast(e.message,'error'); }
+}
+
+function editTournament(id) {
+  const t = allTournaments.find(x => x.id === id);
+  if (!t) return;
+  document.getElementById('editTId').value = t.id;
+  document.getElementById('editTStatus').value = t.status;
+  document.getElementById('editTYear').value = t.year;
+  document.getElementById('editTName').value = t.name;
+  document.getElementById('editTDate').value = t.date;
+  document.getElementById('editTCourse').value = t.course || '';
+  document.getElementById('editTDesc').value = t.description || '';
+  document.getElementById('editTournamentCard').classList.remove('d-none');
+  document.getElementById('editTournamentCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+async function saveTournamentEdit() {
+  const id = document.getElementById('editTId').value;
+  const year = document.getElementById('editTYear').value;
+  const name = document.getElementById('editTName').value;
+  const date = document.getElementById('editTDate').value;
+  const course = document.getElementById('editTCourse').value;
+  const description = document.getElementById('editTDesc').value;
+  const status = document.getElementById('editTStatus').value;
+  if (!year || !name || !date) { showToast('År, navn og dato er påkrevd', 'error'); return; }
+  try {
+    await api('/api/admin/tournament/' + id, { method: 'PUT', body: JSON.stringify({ year, name, date, course, description, status }) });
+    showToast('Turnering oppdatert!');
+    document.getElementById('editTournamentCard').classList.add('d-none');
+    await loadTournaments(); await loadDashboard();
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+function cancelTournamentEdit() {
+  document.getElementById('editTournamentCard').classList.add('d-none');
 }
 
 async function deleteTournament(id, name) {
@@ -740,7 +877,10 @@ async function loadTeams() {
           <td>${t.player1}</td>
           <td>${t.player2}</td>
           <td><code style="background:var(--gold-pale);padding:2px 8px;border-radius:4px;font-weight:700;color:var(--gold-dark)">${t.pin_code}</code></td>
-          <td><button onclick="deleteTeam(${t.id},${JSON.stringify(t.team_name)})" class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button></td>
+          <td style="display:flex;gap:6px">
+            <button onclick="editTeam(${t.id},${JSON.stringify(t.team_name)},${JSON.stringify(t.player1)},${JSON.stringify(t.player2)},${JSON.stringify(t.pin_code)})" class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)" title="Rediger"><i class="fas fa-pen"></i></button>
+            <button onclick="deleteTeam(${t.id},${JSON.stringify(t.team_name)})" class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
+          </td>
         </tr>`).join('');
 }
 
@@ -759,6 +899,36 @@ async function addTeam() {
     ['newTeamName','newPlayer1','newPlayer2','newPin'].forEach(id=>document.getElementById(id).value='');
     await loadTeams(); await loadDashboard(); loadAwardTeams();
   } catch(e) { showToast(e.message,'error'); }
+}
+
+function editTeam(id, team_name, player1, player2, pin_code) {
+  document.getElementById('editTeamId').value = id;
+  document.getElementById('editTeamName').value = team_name;
+  document.getElementById('editTeamP1').value = player1;
+  document.getElementById('editTeamP2').value = player2;
+  document.getElementById('editTeamPin').value = pin_code;
+  document.getElementById('editTeamCard').classList.remove('d-none');
+  document.getElementById('editTeamCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+async function saveTeamEdit() {
+  const id = document.getElementById('editTeamId').value;
+  const team_name = document.getElementById('editTeamName').value;
+  const player1 = document.getElementById('editTeamP1').value;
+  const player2 = document.getElementById('editTeamP2').value;
+  const pin_code = document.getElementById('editTeamPin').value;
+  if (!team_name || !player1 || !player2 || !pin_code) { showToast('Alle felt er påkrevd', 'error'); return; }
+  if (!/^\d{4}$/.test(pin_code)) { showToast('PIN må være nøyaktig 4 siffer', 'error'); return; }
+  try {
+    await api('/api/admin/team/' + id, { method: 'PUT', body: JSON.stringify({ team_name, player1, player2, pin_code }) });
+    showToast('Lag oppdatert!');
+    document.getElementById('editTeamCard').classList.add('d-none');
+    await loadTeams();
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+function cancelTeamEdit() {
+  document.getElementById('editTeamCard').classList.add('d-none');
 }
 
 async function deleteTeam(id, name) {
@@ -860,37 +1030,113 @@ async function saveGameday() {
 }
 
 // ── Poeng ─────────────────────────────────────────────────────────────────────
+let _adminScoresData = null;
+
 async function loadScores() {
   const tid = document.getElementById('scoresTournamentSelect').value;
   if (!tid) return;
-  const d = await api('/api/admin/tournament/'+tid+'/scores');
-  const tbody = document.getElementById('scoresTable');
-  if (!d.scores.length) {
-    tbody.innerHTML='<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen poeng innsendt ennå</td></tr>';
+  try {
+    const prevTeamId = document.getElementById('scoresTeamSelect').value;
+    const [scoresData, holesData, teamsData] = await Promise.all([
+      api('/api/admin/tournament/'+tid+'/scores'),
+      api('/api/admin/tournament/'+tid+'/holes'),
+      api('/api/admin/tournament/'+tid+'/teams')
+    ]);
+    _adminScoresData = { tid, scores: scoresData.scores, holes: holesData.holes, teams: teamsData.teams };
+
+    const teamSel = document.getElementById('scoresTeamSelect');
+    teamSel.innerHTML = '<option value="">— Velg lag —</option>' +
+      teamsData.teams.map(t =>
+        `<option value="${t.id}">${t.team_name}${t.locked?' 🔒':''}</option>`
+      ).join('');
+    if (prevTeamId) teamSel.value = prevTeamId;
+    renderTeamScores();
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+function renderTeamScores() {
+  if (!_adminScoresData) return;
+  const teamId = parseInt(document.getElementById('scoresTeamSelect').value);
+  if (!teamId) {
+    document.getElementById('scoresTeamStatus').classList.add('d-none');
+    document.getElementById('scoresCardTitle').textContent = 'Innsendte poeng';
+    document.getElementById('scoresTableHead').innerHTML = '<tr><th>Lag</th><th>Hull</th><th>Par</th><th>Poeng</th><th>+/−</th><th>Bilde</th><th>Handlinger</th></tr>';
+    document.getElementById('scoresTableBody').innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted)">Velg et lag for å se poeng</td></tr>';
     return;
   }
-  tbody.innerHTML = d.scores.map(s => {
-    const diff = s.score - s.par;
-    const parStr = diff>0?`+${diff}`:diff===0?'E':String(diff);
+  const team = _adminScoresData.teams.find(t => t.id === teamId);
+  if (!team) return;
+
+  const teamScores = _adminScoresData.scores.filter(s => s.team_id === teamId);
+  const scoresMap = {};
+  teamScores.forEach(s => scoresMap[s.hole_number] = s);
+
+  const total = teamScores.reduce((sum, s) => sum + (s.score || 0), 0);
+  const parTotal = teamScores.reduce((sum, s) => sum + (s.par || 4), 0);
+  const toPar = total > 0 ? total - parTotal : null;
+  const isLocked = !!team.locked;
+
+  // Statuslinje
+  document.getElementById('scoresTeamStatus').classList.remove('d-none');
+  document.getElementById('scoresTeamInfo').innerHTML =
+    `<strong>${team.team_name}</strong> · ${team.player1} &amp; ${team.player2} ·
+     ${teamScores.filter(s=>s.score>0).length}/18 hull innsendt
+     ${total ? ' · Totalt: ' + total + (toPar !== null ? (toPar > 0 ? ' (+'+toPar+')' : toPar===0 ? ' (E)' : ' ('+toPar+')') : '') : ''}
+     ${isLocked ? '&nbsp;<span style="color:var(--danger)"><i class="fas fa-lock"></i> Låst</span>' : ''}`;
+
+  const lockBtn = document.getElementById('scoresLockBtn');
+  if (isLocked) {
+    lockBtn.innerHTML = '<i class="fas fa-lock-open"></i> Lås opp';
+    lockBtn.style.cssText = 'background:#059669;color:white;border:none;min-width:110px';
+  } else {
+    lockBtn.innerHTML = '<i class="fas fa-lock"></i> Lås resultatkort';
+    lockBtn.style.cssText = 'background:#d97706;color:white;border:none;min-width:110px';
+  }
+
+  document.getElementById('scoresCardTitle').textContent = team.team_name + ' — Hull 1–18';
+  document.getElementById('scoresTableHead').innerHTML =
+    '<tr><th style="text-align:center">Hull</th><th style="text-align:center">Par</th><th style="text-align:center">Poeng</th><th style="text-align:center">+/−</th><th style="text-align:center">Bilde</th><th>Handlinger</th></tr>';
+
+  document.getElementById('scoresTableBody').innerHTML = _adminScoresData.holes.map(h => {
+    const s = scoresMap[h.hole_number];
+    const diff = s && s.score > 0 ? (s.score - h.par) : null;
+    const parStr = diff !== null ? (diff > 0 ? `+${diff}` : diff === 0 ? 'E' : String(diff)) : '—';
+    const diffColor = diff !== null ? (diff < 0 ? '#059669' : diff > 0 ? '#dc2626' : 'var(--text)') : 'var(--text-muted)';
     return `<tr>
-      <td><strong>${s.team_name}</strong></td>
-      <td style="font-size:.82rem;color:var(--text-muted)">${s.player1} &amp; ${s.player2}</td>
-      <td style="text-align:center">${s.hole_number}</td>
-      <td style="text-align:center">${s.par}</td>
+      <td style="text-align:center;font-weight:700">${h.hole_number}</td>
+      <td style="text-align:center">${h.par}</td>
       <td style="text-align:center">
-        <input type="number" min="1" max="20" value="${s.score}" id="sc-${s.id}"
-          style="width:60px;padding:4px;border:1px solid var(--gold-border);border-radius:4px;text-align:center">
+        ${s && s.score > 0
+          ? `<input type="number" min="1" max="20" value="${s.score}" id="sc-${s.id}"
+              style="width:60px;padding:4px;border:1px solid var(--gold-border);border-radius:4px;text-align:center">`
+          : '<span style="color:var(--text-muted)">—</span>'}
       </td>
-      <td style="text-align:center;font-weight:600;color:${diff<0?'var(--success)':diff>0?'var(--danger)':'var(--text)'}">${parStr}</td>
+      <td style="text-align:center;font-weight:600;color:${diffColor}">${parStr}</td>
       <td style="text-align:center">
-        ${s.photo_path?`<a href="${s.photo_path}" target="_blank" class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)"><i class="fas fa-image"></i></a>`:'—'}
+        ${s?.photo_path
+          ? `<a href="${s.photo_path}" target="_blank" class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)"><i class="fas fa-image"></i></a>`
+          : '—'}
       </td>
       <td style="display:flex;gap:6px">
-        <button onclick="updateScore(${s.id})" class="btn btn--sm" style="background:var(--success);color:white;border:none"><i class="fas fa-check"></i></button>
-        <button onclick="deleteScore(${s.id})" class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
+        ${s && s.score > 0
+          ? `<button onclick="updateScore(${s.id})" class="btn btn--sm" style="background:#059669;color:white;border:none"><i class="fas fa-check"></i></button>
+             <button onclick="deleteScore(${s.id})" class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>`
+          : '<span style="color:var(--text-muted);font-size:.75rem">—</span>'}
       </td>
     </tr>`;
   }).join('');
+}
+
+async function toggleTeamLock() {
+  if (!_adminScoresData) return;
+  const teamId = parseInt(document.getElementById('scoresTeamSelect').value);
+  const team = _adminScoresData.teams.find(t => t.id === teamId);
+  if (!team) return;
+  try {
+    await api('/api/admin/team/'+teamId+'/lock', { method: 'PUT', body: JSON.stringify({ locked: !team.locked }) });
+    showToast(!team.locked ? 'Resultatkort låst' : 'Resultatkort låst opp');
+    await loadScores();
+  } catch(e) { showToast(e.message, 'error'); }
 }
 
 async function updateScore(id) {
@@ -938,9 +1184,64 @@ async function loadPhotos() {
           <strong>${p.team_name} — Hull ${p.hole_number}</strong>
           <span>${p.player1} &amp; ${p.player2}</span>
           <span style="display:block;margin-top:4px">${new Date(p.submitted_at).toLocaleString('nb-NO')}</span>
+          <button onclick="deletePhoto(${p.id})" class="btn btn--danger btn--sm" style="margin-top:8px;width:100%;justify-content:center">
+            <i class="fas fa-trash"></i> Slett bilde
+          </button>
         </div>
       </div>`).join('');
   } catch(e) { showToast('Kunne ikke laste bilder: '+e.message,'error'); }
+}
+
+async function deletePhoto(id) {
+  if (!confirm('Slett dette bildet? Handlingen kan ikke angres.')) return;
+  try {
+    await api('/api/admin/photo/' + id, { method: 'DELETE' });
+    showToast('Bilde slettet');
+    await loadPhotos();
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+// ── Myntlogo bakside ───────────────────────────────────────────────────────────
+let _coinBackData = {};
+
+async function loadCoinBack() {
+  try {
+    const d = await fetch('/api/coin-back').then(r => r.json());
+    _coinBackData = d;
+    if (d.photo_path) {
+      const img = document.getElementById('coinBackPreview');
+      img.src = d.photo_path;
+      img.style.objectPosition = d.focal_point || '50% 50%';
+      document.getElementById('coinBackPreviewWrap').style.display = 'block';
+      document.getElementById('coinFocusBtn').style.display = 'inline-flex';
+    }
+  } catch(_) {}
+}
+
+async function uploadCoinBack() {
+  const file = document.getElementById('coinBackInput').files[0];
+  if (!file) return;
+  const fd = new FormData();
+  fd.append('photo', file);
+  try {
+    const r = await fetch('/api/admin/coin-back', { method: 'POST', body: fd });
+    const d = await r.json();
+    if (d.success) {
+      showToast('Bakside-bilde oppdatert!');
+      _coinBackData.photo_path = d.photo_path;
+      const img = document.getElementById('coinBackPreview');
+      img.src = d.photo_path + '?t=' + Date.now();
+      document.getElementById('coinBackPreviewWrap').style.display = 'block';
+      document.getElementById('coinFocusBtn').style.display = 'inline-flex';
+    } else {
+      showToast(d.error || 'Opplasting mislyktes', 'error');
+    }
+  } catch(e) { showToast('Opplasting mislyktes', 'error'); }
+  document.getElementById('coinBackInput').value = '';
+}
+
+function openCoinFocusPicker() {
+  openFocusPicker(_coinBackData.photo_path, 'coin', _coinBackData.focal_point || '50% 50%');
 }
 
 // ── Utmerkelser ───────────────────────────────────────────────────────────────
@@ -1050,7 +1351,7 @@ async function loadLegacy() {
             ${c.winner_photo
               ? `<a href="${c.winner_photo}" target="_blank">
                    <img src="${c.winner_photo}" alt="Vinnerbilde ${c.year}"
-                     style="height:40px;width:56px;object-fit:cover;border-radius:4px;border:1px solid var(--gold-border);display:block">
+                     style="height:40px;width:56px;object-fit:cover;border-radius:4px;border:1px solid var(--gold-border);display:block;object-position:${c.winner_photo_focus||'50% 50%'}">
                  </a>`
               : '<span style="color:var(--text-muted);font-size:.75rem">—</span>'}
           </td>
@@ -1060,6 +1361,7 @@ async function loadLegacy() {
               title="Last opp vinnerbilde">
               <i class="fas fa-camera"></i>
             </button>
+            ${c.winner_photo ? `<button onclick="openLegacyFocusPicker(${c.id},'${c.winner_photo}','${c.winner_photo_focus||'50% 50%'}')" class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)" title="Velg fokuspunkt"><i class="fas fa-crosshairs"></i></button>` : ''}
             <button onclick="deleteLegacy(${c.id},${c.year})" class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
           </td>
         </tr>`).join('');
@@ -1112,6 +1414,61 @@ async function deleteLegacy(id, year) {
     showToast('Historikkoppføring fjernet');
     await loadLegacy(); await loadDashboard();
   } catch(e) { showToast(e.message,'error'); }
+}
+
+// ── Fokuspunkt-velger ──────────────────────────────────────────────────────────
+let _focusTarget = null; // 'coin' | legacy_id
+let _focusPendingX = 50, _focusPendingY = 50;
+
+function openFocusPicker(imgSrc, target, currentFocus) {
+  _focusTarget = target;
+  const [fx, fy] = (currentFocus || '50% 50%').replace(/%/g, '').split(' ').map(Number);
+  _focusPendingX = fx; _focusPendingY = fy;
+  const img = document.getElementById('focusPickerImg');
+  img.src = imgSrc;
+  img.style.objectPosition = currentFocus || '50% 50%';
+  const dot = document.getElementById('focusPickerDot');
+  dot.style.left = fx + '%'; dot.style.top = fy + '%';
+  document.getElementById('focusPickerCoords').textContent = `Fokus: ${fx}% × ${fy}%`;
+  document.getElementById('focusPickerModal').style.display = 'flex';
+}
+
+function focusPickerClick(e) {
+  const wrap = document.getElementById('focusPickerImgWrap');
+  const rect = wrap.getBoundingClientRect();
+  const x = Math.round((e.clientX - rect.left) / rect.width * 100);
+  const y = Math.round((e.clientY - rect.top) / rect.height * 100);
+  _focusPendingX = x; _focusPendingY = y;
+  const dot = document.getElementById('focusPickerDot');
+  dot.style.left = x + '%'; dot.style.top = y + '%';
+  document.getElementById('focusPickerCoords').textContent = `Fokus: ${x}% × ${y}%`;
+  document.getElementById('focusPickerImg').style.objectPosition = x + '% ' + y + '%';
+}
+
+function closeFocusPicker() {
+  document.getElementById('focusPickerModal').style.display = 'none';
+  _focusTarget = null;
+}
+
+async function saveFocusPicker() {
+  const focalPoint = _focusPendingX + '% ' + _focusPendingY + '%';
+  try {
+    if (_focusTarget === 'coin') {
+      await api('/api/admin/coin-back/focus', { method: 'PUT', body: JSON.stringify({ focal_point: focalPoint }) });
+      _coinBackData.focal_point = focalPoint;
+      document.getElementById('coinBackPreview').style.objectPosition = focalPoint;
+      showToast('Fokuspunkt lagret for myntlogo!');
+    } else if (_focusTarget) {
+      await api('/api/admin/legacy/' + _focusTarget + '/photo-focus', { method: 'PUT', body: JSON.stringify({ focus: focalPoint }) });
+      showToast('Fokuspunkt lagret!');
+      await loadLegacy();
+    }
+    closeFocusPicker();
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+function openLegacyFocusPicker(id, imgSrc, currentFocus) {
+  openFocusPicker(imgSrc, id, currentFocus);
 }
 </script>
 </body>
