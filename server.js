@@ -74,18 +74,35 @@ function getActiveTournament() {
 function buildScoreboard(tournament) {
   const teams     = db.prepare('SELECT * FROM teams WHERE tournament_id=?').all(tournament.id);
   const holes     = db.prepare('SELECT * FROM holes WHERE tournament_id=? ORDER BY hole_number').all(tournament.id);
-  const rawAwards = db.prepare(
-    `SELECT a.*, t.team_name, t.player1, t.player2
-     FROM awards a LEFT JOIN teams t ON t.id=a.team_id
-     WHERE a.tournament_id=?`
-  ).all(tournament.id);
-
   const allScoreRows = teams.length
     ? db.prepare(`SELECT * FROM scores WHERE team_id IN (${teams.map(() => '?').join(',')})`).all(...teams.map(t => t.id))
     : [];
 
-  const awards = rawAwards.map(a => ({
-    id: a.id, tournament_id: a.tournament_id, award_type: a.award_type,
+  // Compute best awards from award_claims (robust: bypasses missing UNIQUE constraint on awards table)
+  const allClaims = db.prepare(
+    `SELECT ac.*, t.team_name, t.player1, t.player2
+     FROM award_claims ac LEFT JOIN teams t ON t.id=ac.team_id
+     WHERE ac.tournament_id=?`
+  ).all(tournament.id);
+  const bestMap = {};
+  allClaims.forEach(c => {
+    const key = `${c.award_type}_${c.hole_number}`;
+    const val = parseFloat(c.detail) || 0;
+    if (!bestMap[key]) { bestMap[key] = c; return; }
+    const cur = parseFloat(bestMap[key].detail) || 0;
+    if (c.award_type === 'longest_drive' && val > cur) bestMap[key] = c;
+    else if (c.award_type === 'closest_to_pin' && val > 0 && (cur <= 0 || val < cur)) bestMap[key] = c;
+  });
+  // Admin manual overrides take precedence
+  const manualAwards = db.prepare(
+    `SELECT a.*, t.team_name, t.player1, t.player2
+     FROM awards a LEFT JOIN teams t ON t.id=a.team_id
+     WHERE a.tournament_id=?`
+  ).all(tournament.id);
+  manualAwards.forEach(a => { bestMap[`${a.award_type}_${a.hole_number}`] = a; });
+
+  const awards = Object.values(bestMap).map(a => ({
+    id: a.id || null, tournament_id: a.tournament_id, award_type: a.award_type,
     team_id: a.team_id, player_name: a.player_name || null,
     hole_number: a.hole_number, detail: a.detail,
     team_name: a.team_name || null, player1: a.player1 || null, player2: a.player2 || null
@@ -543,25 +560,30 @@ app.post('/api/team/claim-award', requireTeam, (req, res) => {
        DO UPDATE SET player_name=excluded.player_name, detail=excluded.detail, claimed_at=CURRENT_TIMESTAMP`
     ).run(req.session.tournamentId, req.session.teamId, hole_number, award_type, player_name, detail||'');
     // Auto-register claim as award only if it beats the current best result
-    const existingAward = db.prepare(
-      'SELECT detail FROM awards WHERE tournament_id=? AND award_type=? AND hole_number=?'
-    ).get(req.session.tournamentId, award_type, hole_number);
+    // Find best existing claim (from award_claims, not awards — robust regardless of schema)
+    const allExistingClaims = db.prepare(
+      'SELECT detail FROM award_claims WHERE tournament_id=? AND award_type=? AND hole_number=?'
+    ).all(req.session.tournamentId, award_type, hole_number);
     const newVal = parseFloat(detail) || 0;
-    let shouldUpdate = true;
-    if (existingAward && existingAward.detail) {
-      const existingVal = parseFloat(existingAward.detail) || 0;
-      if (award_type === 'longest_drive') {
-        shouldUpdate = newVal > existingVal; // lengre drive vinner
-      } else if (award_type === 'closest_to_pin') {
-        shouldUpdate = newVal > 0 && newVal < existingVal; // nærmere hullet (færre meter) vinner
-      }
+    let isNewBest = allExistingClaims.length === 0;
+    if (!isNewBest) {
+      // Compare new claim against all existing claims
+      let bestExisting = null;
+      allExistingClaims.forEach(c => {
+        const v = parseFloat(c.detail) || 0;
+        if (bestExisting === null) { bestExisting = v; return; }
+        if (award_type === 'longest_drive' && v > bestExisting) bestExisting = v;
+        else if (award_type === 'closest_to_pin' && v > 0 && (bestExisting <= 0 || v < bestExisting)) bestExisting = v;
+      });
+      if (award_type === 'longest_drive') isNewBest = newVal > (bestExisting || 0);
+      else if (award_type === 'closest_to_pin') isNewBest = newVal > 0 && (bestExisting === null || bestExisting <= 0 || newVal < bestExisting);
     }
-    if (shouldUpdate) {
+    if (isNewBest) {
+      // DELETE all existing rows for this type+hole (handles missing UNIQUE constraint), then INSERT best
+      db.prepare('DELETE FROM awards WHERE tournament_id=? AND award_type=? AND hole_number=?')
+        .run(req.session.tournamentId, award_type, hole_number);
       db.prepare(
-        `INSERT INTO awards (tournament_id, award_type, team_id, player_name, hole_number, detail)
-         VALUES (?,?,?,?,?,?)
-         ON CONFLICT(tournament_id, award_type, hole_number)
-         DO UPDATE SET team_id=excluded.team_id, player_name=excluded.player_name, detail=excluded.detail`
+        `INSERT INTO awards (tournament_id, award_type, team_id, player_name, hole_number, detail) VALUES (?,?,?,?,?,?)`
       ).run(req.session.tournamentId, award_type, req.session.teamId, player_name, hole_number, detail||'');
     }
     broadcast('award_updated', {});
