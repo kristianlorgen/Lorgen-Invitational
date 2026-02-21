@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Registrer Poeng — Lorgen Invitational</title>
+  <title>Scorekort — Lorgen Invitational</title>
   <meta name="description" content="Registrer poengsummen for ditt lag i Lorgen Invitational.">
   <link rel="icon" type="image/png" href="/images/logo.png">
   <link rel="stylesheet" href="/css/style.css">
@@ -85,6 +85,13 @@
       font-family: var(--font-heading); font-size: 1.05rem;
       color: var(--gold-light); line-height: 1.2;
     }
+    .mobile-score-shortcut {
+      position: fixed; top: calc(var(--nav-height) + 8px); right: 12px; z-index: 130;
+      display: none; border-radius: 999px; box-shadow: var(--shadow-md);
+    }
+    @media (max-width: 768px) {
+      .mobile-score-shortcut { display: inline-flex; }
+    }
   </style>
 </head>
 <body>
@@ -97,11 +104,11 @@
     </a>
     <ul class="navbar-nav">
       <li><a href="/" class="nav-link">Hjem</a></li>
-      <li><a href="/gameday" class="nav-link">Spilledag</a></li>
+      <li><a href="/gameday" class="nav-link">Spilleregler &amp; Informasjon</a></li>
       <li><a href="/scoreboard" class="nav-link">Live Resultater</a></li>
-      <li><a href="/gallery" class="nav-link">Glimtskudd</a></li>
-      <li><a href="/legacy" class="nav-link">Historikk</a></li>
-      <li><a href="/enter-score" class="nav-link nav-link--cta active" style="background:var(--gold-dark)">Registrer Poeng</a></li>
+      <li><a href="/gallery" class="nav-link">Turneringsbilder</a></li>
+      <li><a href="/legacy" class="nav-link">Hall of Fame</a></li>
+      <li><a href="/enter-score" class="nav-link nav-link--cta active" style="background:var(--gold-dark)">Scorekort</a></li>
     </ul>
 
     <!-- ── Hurtignavigasjon ───────────────────────────────────────────────────── -->
@@ -112,11 +119,11 @@
       <div class="quick-nav-panel" id="quickNavPanel">
         <a href="/" class="quick-nav-link">
           <i class="fas fa-home"></i> Hjem</a>
-        <a href="/gameday" class="quick-nav-link"><i class="fas fa-calendar-day"></i> Spilledag</a>
+        <a href="/gameday" class="quick-nav-link"><i class="fas fa-calendar-day"></i> Spilleregler & Informasjon</a>
         <a href="/scoreboard" class="quick-nav-link"><i class="fas fa-flag"></i> Live Resultater</a>
-        <a href="/gallery" class="quick-nav-link"><i class="fas fa-camera"></i> Glimtskudd</a>
-        <a href="/legacy" class="quick-nav-link"><i class="fas fa-trophy"></i> Historikk</a>
-        <a href="/enter-score" class="quick-nav-link active"><i class="fas fa-golf-ball"></i> Registrer Poeng</a>
+        <a href="/gallery" class="quick-nav-link"><i class="fas fa-camera"></i> Turneringsbilder</a>
+        <a href="/legacy" class="quick-nav-link"><i class="fas fa-trophy"></i> Hall of Fame</a>
+        <a href="/enter-score" class="quick-nav-link active"><i class="fas fa-golf-ball"></i> Scorekort</a>
         <a href="/admin" class="quick-nav-link" style="color:rgba(255,255,255,.45)"><i class="fas fa-lock"></i> Admin</a>
       </div>
     </div>
@@ -127,11 +134,11 @@
 </nav>
 <div class="navbar-mobile" id="mobileMenu">
   <a href="/" class="nav-link">Hjem</a>
-  <a href="/gameday" class="nav-link">Spilledag</a>
+  <a href="/gameday" class="nav-link">Spilleregler &amp; Informasjon</a>
   <a href="/scoreboard" class="nav-link">Live Resultater</a>
-  <a href="/gallery" class="nav-link">Glimtskudd</a>
-  <a href="/legacy" class="nav-link">Historikk</a>
-  <a href="/enter-score" class="nav-link">Registrer Poeng</a>
+  <a href="/gallery" class="nav-link">Turneringsbilder</a>
+  <a href="/legacy" class="nav-link">Hall of Fame</a>
+  <a href="/enter-score" class="nav-link">Scorekort</a>
   <a href="/admin" class="nav-link" style="color:rgba(255,255,255,.35);font-size:.78rem">Admin</a>
 </div>
 
@@ -141,7 +148,7 @@
 <div id="loginScreen" style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;padding-top:calc(var(--nav-height)+40px);background:linear-gradient(160deg,var(--dark),var(--dark-mid))">
   <div style="max-width:440px;width:100%;text-align:center">
     <img src="/images/logo.png" alt="Lorgen Invitational" style="height:80px;margin:0 auto 24px;filter:drop-shadow(0 0 16px rgba(201,168,76,.5))">
-    <h1 style="font-family:var(--font-heading);font-size:1.8rem;color:var(--white);margin-bottom:6px">Poengregistrering</h1>
+    <h1 style="font-family:var(--font-heading);font-size:1.8rem;color:var(--white);margin-bottom:6px">Scorekort</h1>
     <p style="color:rgba(255,255,255,.5);font-size:.9rem;margin-bottom:36px">Skriv inn din lag-PIN for å få tilgang til resultatkortet</p>
 
     <div style="background:rgba(255,255,255,.05);border:1px solid rgba(201,168,76,.2);border-radius:var(--radius-xl);padding:36px">
@@ -163,12 +170,15 @@
 
 <!-- ── RESULTATKORTSKJERM ─────────────────────────────────────────────────── -->
 <div id="scorecardScreen" class="d-none">
+  <button class="btn btn--gold btn--sm mobile-score-shortcut" onclick="scrollToScoreInput()">
+    <i class="fas fa-bolt"></i> Registrer poeng
+  </button>
   <!-- Skjermhode -->
   <div class="page-hero" style="padding-bottom:32px">
     <div class="container">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
         <div>
-          <div class="page-hero-tag" style="margin-bottom:8px;text-align:left"><i class="fas fa-pencil"></i> &nbsp; Poengregistrering</div>
+          <div class="page-hero-tag" style="margin-bottom:8px;text-align:left"><i class="fas fa-pencil"></i> &nbsp; Scorekort</div>
           <h1 class="page-hero-title" style="text-align:left;font-size:1.6rem" id="scTeamName">—</h1>
           <p class="page-hero-sub" style="text-align:left" id="scPlayers">—</p>
         </div>
@@ -329,6 +339,10 @@ let claimsData     = {};
 let pendingPhotoHole = null;
 let currentHoleIndex = 0;
 
+function allHolesCompleted() {
+  return holesData.length > 0 && holesData.every(h => (scoresData[h.hole_number]?.score || 0) > 0);
+}
+
 async function doLogin() {
   const pin = getPin();
   if (pin.length < 4) { document.getElementById('loginError').textContent = 'Vennligst skriv inn din 4-sifrede PIN'; return; }
@@ -354,9 +368,29 @@ async function doLogin() {
 }
 
 async function doLogout() {
+  if (!allHolesCompleted()) {
+    showToast('Du må fylle ut alle hull før du kan lukke scorekortet.', 'error');
+    return;
+  }
   await fetch('/api/auth/logout', { method: 'POST' });
   location.reload();
 }
+
+function scrollToScoreInput() {
+  const hole = holesData[currentHoleIndex];
+  if (!hole) return;
+  const input = document.getElementById(`score-${hole.hole_number}`);
+  if (!input) return;
+  input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  setTimeout(() => input.focus(), 250);
+}
+
+window.addEventListener('beforeunload', (e) => {
+  if (!document.getElementById('scorecardScreen').classList.contains('d-none') && !allHolesCompleted()) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
 
 async function loadScorecard() {
   const r = await fetch('/api/team/scorecard');
@@ -482,8 +516,8 @@ function renderCurrentHole() {
         <option value="${teamData.player1}">${teamData.player1}</option>
         <option value="${teamData.player2}">${teamData.player2}</option>
       </select>
-      <label>Avstand fra flagget (f.eks. 1,2m)</label>
-      <input type="text" id="ctp-detail-${h.hole_number}" placeholder="f.eks. 1,2m" value="${ctpClaim ? ctpClaim.detail : ''}">
+      <label>Avstand fra flagget (f.eks. 1.2m)</label>
+      <input type="text" id="ctp-detail-${h.hole_number}" placeholder="f.eks. 1.2m" value="${ctpClaim ? ctpClaim.detail : ''}">
       ${ctpClaim ? `<div class="claim-sent">✓ Innmeldt: ${ctpClaim.player_name} — ${ctpClaim.detail||''}</div>` : ''}
       <button class="claim-btn" onclick="submitClaim(${h.hole_number},'closest_to_pin')">Meld inn kandidat</button>
     </div>` : '';
