@@ -92,6 +92,75 @@
     @media (max-width: 768px) {
       .mobile-score-shortcut { display: inline-flex; }
     }
+
+    .team-chat {
+      margin-top: 20px;
+      background: var(--white);
+      border: 1px solid var(--gold-border);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+    }
+    .team-chat-header {
+      padding: 14px 16px;
+      background: linear-gradient(180deg, var(--gold-pale), var(--white));
+      border-bottom: 1px solid var(--gold-border);
+      font-size: .78rem;
+      font-weight: 700;
+      color: var(--gold-dark);
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+    .team-chat-messages {
+      max-height: 240px;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      background: var(--off-white);
+    }
+    .team-chat-empty {
+      text-align: center;
+      color: var(--text-muted);
+      font-size: .82rem;
+      padding: 14px;
+      border: 1px dashed var(--gold-border);
+      border-radius: var(--radius-sm);
+      background: var(--white);
+    }
+    .team-chat-row {
+      background: var(--white);
+      border: 1px solid var(--gold-border);
+      border-radius: var(--radius-sm);
+      padding: 8px 10px;
+    }
+    .team-chat-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 4px;
+      font-size: .68rem;
+    }
+    .team-chat-name { font-weight: 700; color: var(--gold-dark); }
+    .team-chat-time { color: var(--text-muted); }
+    .team-chat-text { color: var(--text); font-size: .82rem; line-height: 1.35; white-space: pre-wrap; }
+    .team-chat-form {
+      display: flex;
+      gap: 8px;
+      padding: 12px;
+      border-top: 1px solid var(--gold-border);
+      background: var(--white);
+    }
+    .team-chat-input {
+      flex: 1;
+      border: 1px solid var(--gold-border);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      font-size: .85rem;
+      color: var(--text);
+      background: var(--white);
+    }
   </style>
 </head>
 <body>
@@ -221,6 +290,25 @@
         </button>
       </div>
 
+      <div class="team-chat">
+        <div class="team-chat-header"><i class="fas fa-comments"></i> Lagchat</div>
+        <div class="team-chat-messages" id="chatMessages">
+          <div class="team-chat-empty">Laster chat…</div>
+        </div>
+        <form class="team-chat-form" onsubmit="sendChatMessage(event)">
+          <input
+            type="text"
+            id="chatInput"
+            class="team-chat-input"
+            maxlength="400"
+            placeholder="Skriv en melding til de andre lagene…"
+            autocomplete="off">
+          <button class="btn btn--gold btn--sm" id="chatSendBtn" style="justify-content:center" type="submit">
+            <i class="fas fa-paper-plane"></i>
+          </button>
+        </form>
+      </div>
+
     </div>
   </section>
 
@@ -338,6 +426,9 @@ let scoresData     = {};
 let claimsData     = {};
 let pendingPhotoHole = null;
 let currentHoleIndex = 0;
+let teamPin = '';
+let chatMessages = [];
+let chatEventSource = null;
 
 function allHolesCompleted() {
   return holesData.length > 0 && holesData.every(h => (scoresData[h.hole_number]?.score || 0) > 0);
@@ -355,6 +446,8 @@ async function doLogin() {
     });
     const d = await r.json();
     if (d.success) {
+      teamPin = pin;
+      sessionStorage.setItem('team_pin', pin);
       teamData = d.team;
       await loadScorecard();
       document.getElementById('loginScreen').classList.add('d-none');
@@ -373,6 +466,7 @@ async function doLogout() {
     return;
   }
   await fetch('/api/auth/logout', { method: 'POST' });
+  sessionStorage.removeItem('team_pin');
   location.reload();
 }
 
@@ -400,7 +494,110 @@ async function loadScorecard() {
   if (d.claims) d.claims.forEach(c => { claimsData[c.hole_number + '_' + c.award_type] = c; });
   renderAll();
   loadPosition();
+  await loadChatMessages();
+  startChatEvents();
   if (teamData.locked) showLockedState();
+}
+
+function formatChatTime(timestamp) {
+  if (!timestamp) return '';
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+}
+
+function escapeHtml(text) {
+  return String(text || '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function renderChatMessages() {
+  const wrap = document.getElementById('chatMessages');
+  if (!wrap) return;
+  if (!chatMessages.length) {
+    wrap.innerHTML = '<div class="team-chat-empty">Ingen meldinger ennå. Vær førstemann ut! 💬</div>';
+    return;
+  }
+  wrap.innerHTML = chatMessages.map(m => `
+    <div class="team-chat-row">
+      <div class="team-chat-meta">
+        <span class="team-chat-name">${escapeHtml(m.team_name || 'Lag')}</span>
+        <span class="team-chat-time">${formatChatTime(m.created_at)}</span>
+      </div>
+      <div class="team-chat-text">${escapeHtml(m.message)}</div>
+    </div>
+  `).join('');
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+async function loadChatMessages() {
+  try {
+    const r = await fetch('/api/chat/messages');
+    const d = await r.json();
+    chatMessages = Array.isArray(d.messages) ? d.messages : [];
+    renderChatMessages();
+  } catch (_) {
+    const wrap = document.getElementById('chatMessages');
+    if (wrap) wrap.innerHTML = '<div class="team-chat-empty">Kunne ikke hente chat nå.</div>';
+  }
+}
+
+function startChatEvents() {
+  if (chatEventSource) return;
+  chatEventSource = new EventSource('/api/events');
+  chatEventSource.onmessage = (evt) => {
+    try {
+      const payload = JSON.parse(evt.data);
+      if (payload.type === 'chat_message' && payload.data) {
+        chatMessages.push(payload.data);
+        if (chatMessages.length > 100) chatMessages = chatMessages.slice(-100);
+        renderChatMessages();
+      }
+    } catch (_) {}
+  };
+  chatEventSource.onerror = () => {
+    if (chatEventSource) {
+      chatEventSource.close();
+      chatEventSource = null;
+      setTimeout(startChatEvents, 3000);
+    }
+  };
+}
+
+async function sendChatMessage(event) {
+  event.preventDefault();
+  const input = document.getElementById('chatInput');
+  const btn = document.getElementById('chatSendBtn');
+  const message = (input?.value || '').trim();
+  if (!message) return;
+  if (!teamPin) {
+    showToast('Mangler PIN for å sende melding. Logg inn på nytt.', 'error');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+  try {
+    const r = await fetch('/api/chat/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: teamPin, message })
+    });
+    const d = await r.json();
+    if (!d.success) {
+      showToast(d.error || 'Kunne ikke sende melding', 'error');
+    } else {
+      input.value = '';
+    }
+  } catch (_) {
+    showToast('Tilkoblingsfeil ved sending av melding', 'error');
+  }
+  btn.disabled = false;
+  btn.innerHTML = '<i class="fas fa-paper-plane"></i>';
 }
 
 function getCourseHandicap() {
@@ -796,6 +993,7 @@ async function submitClaim(holeNum, awardType) {
 
 async function checkSession() {
   try {
+    teamPin = sessionStorage.getItem('team_pin') || '';
     const r = await fetch('/api/auth/status');
     const d = await r.json();
     if (d.type === 'team') {
