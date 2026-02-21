@@ -96,7 +96,7 @@
         <div class="sidebar-link" onclick="showPanel('teams')"><i class="fas fa-users"></i> Lag</div>
         <div class="sidebar-link" onclick="showPanel('holes')"><i class="fas fa-golf-ball-tee"></i> Bane og Hull</div>
         <div class="sidebar-link" onclick="showPanel('courses')"><i class="fas fa-map-location-dot"></i> Baner</div>
-        <div class="sidebar-link" onclick="showPanel('gameday')"><i class="fas fa-calendar-day"></i> Spilledag</div>
+        <div class="sidebar-link" onclick="showPanel('gameday')"><i class="fas fa-calendar-day"></i> Spilleregler & Informasjon</div>
       </div>
       <div class="sidebar-section">
         <div class="sidebar-label">Aktiv Dag</div>
@@ -105,7 +105,7 @@
         <div class="sidebar-link" onclick="showPanel('awards')"><i class="fas fa-trophy"></i> Utmerkelser</div>
       </div>
       <div class="sidebar-section">
-        <div class="sidebar-label">Historikk</div>
+        <div class="sidebar-label">Hall of Fame</div>
         <div class="sidebar-link" onclick="showPanel('legacy')"><i class="fas fa-crown"></i> Æresgalleri</div>
       </div>
     </div>
@@ -149,7 +149,7 @@
         </div>
 
         <div style="margin-top:20px;display:flex;gap:12px;flex-wrap:wrap">
-          <a href="/scoreboard" target="_blank" class="btn btn--gold btn--sm"><i class="fas fa-list-ol"></i> Live Resultattavle</a>
+          <a href="/scoreboard" target="_blank" class="btn btn--gold btn--sm"><i class="fas fa-list-ol"></i> Live Resultater</a>
           <button onclick="showPanel('teams')" class="btn btn--dark btn--sm"><i class="fas fa-users"></i> Administrer Lag</button>
           <button onclick="showPanel('holes')" class="btn btn--dark btn--sm"><i class="fas fa-golf-ball-tee"></i> Konfigurer Hull</button>
         </div>
@@ -365,8 +365,8 @@
 
       <!-- ── SPILLEDAG ──────────────────────────────────────────────────────── -->
       <div class="admin-panel" id="panel-gameday">
-        <div class="admin-panel-title">Spilledag</div>
-        <div class="admin-panel-sub">Rediger program og informasjon som vises på den offentlige Spilledag-siden</div>
+        <div class="admin-panel-title">Spilleregler &amp; Informasjon</div>
+        <div class="admin-panel-sub">Rediger program og informasjon som vises på den offentlige Spilleregler & Informasjon-siden</div>
 
         <div class="card" style="margin-bottom:24px">
           <div class="card-body">
@@ -387,7 +387,7 @@
           <div class="card-body">
             <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:16px">
               <i class="fas fa-info-circle" style="color:var(--gold)"></i>
-              Teksten vises som program på den offentlige Spilledag-siden. Bruk linjeskift for å strukturere innholdet.
+              Teksten vises som program på den offentlige Spilleregler & Informasjon-siden. Bruk linjeskift for å strukturere innholdet.
             </p>
             <div class="form-group" style="margin:0">
               <label class="form-label">Spilledag-tekst</label>
@@ -512,7 +512,7 @@
       <!-- ── BILDER ─────────────────────────────────────────────────────────── -->
       <div class="admin-panel" id="panel-photos">
         <div class="admin-panel-title">Bilder</div>
-        <div class="admin-panel-sub">Velg hvilke bilder som skal publiseres i Dagens Glimtskudd</div>
+        <div class="admin-panel-sub">Velg hvilke bilder som skal publiseres i Turneringsbilder</div>
 
         <div class="card" style="margin-bottom:24px">
           <div class="card-body" style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end">
@@ -528,20 +528,20 @@
         </div>
 
         <div class="card" style="margin-bottom:24px">
-          <div class="card-header"><strong>Last opp eget Glimtskudd-bilde</strong></div>
+          <div class="card-header"><strong>Last opp eget Turneringsbilder-bilde</strong></div>
           <div class="card-body" style="display:grid;grid-template-columns:2fr 1fr auto;gap:12px;align-items:end">
             <div class="form-group" style="margin:0">
               <label class="form-label">Bilde</label>
-              <input class="form-input" type="file" id="adminGlimtskuddFile" accept="image/*">
+              <input class="form-input" type="file" id="adminTurneringsbilderFile" accept="image/*">
             </div>
             <div class="form-group" style="margin:0">
               <label class="form-label">Bildetekst (valgfritt)</label>
-              <input class="form-input" id="adminGlimtskuddCaption" placeholder="f.eks. Solnedgang på hull 18">
+              <input class="form-input" id="adminTurneringsbilderCaption" placeholder="f.eks. Solnedgang på hull 18">
             </div>
-            <button onclick="uploadAdminGlimtskudd()" class="btn btn--gold btn--sm" style="justify-content:center"><i class="fas fa-upload"></i> Last opp</button>
+            <button onclick="uploadAdminTurneringsbilder()" class="btn btn--gold btn--sm" style="justify-content:center"><i class="fas fa-upload"></i> Last opp</button>
           </div>
           <div class="card-footer" style="font-size:.8rem;color:var(--text-muted)">
-            Bildene lagres i <code>/uploads/glimtskudd</code> og vises i Dagens Glimtskudd.
+            Bildene lagres i <code>/uploads/glimtskudd</code> og vises i Turneringsbilder.
           </div>
         </div>
 
@@ -1173,7 +1173,7 @@ function clearAllCtp() {
   holesData.forEach(h => { const el=document.getElementById('h-ctp-'+h.hole_number); if(el) el.checked=false; });
 }
 
-// ── Spilledag ─────────────────────────────────────────────────────────────────
+// ── Spilleregler & Informasjon ─────────────────────────────────────────────────────────────────
 async function loadGameday() {
   const tid = document.getElementById('gamedayTournamentSelect').value;
   if (!tid) return;
@@ -1321,13 +1321,13 @@ async function deleteScore(id) {
 }
 
 // ── Bilder ────────────────────────────────────────────────────────────────────
-async function uploadAdminGlimtskudd() {
+async function uploadAdminTurneringsbilder() {
   const tid = document.getElementById('photosTournamentSelect').value;
   if (!tid) {
     showToast('Velg en turnering før du laster opp bilde', 'error');
     return;
   }
-  const fileInput = document.getElementById('adminGlimtskuddFile');
+  const fileInput = document.getElementById('adminTurneringsbilderFile');
   const file = fileInput.files[0];
   if (!file) {
     showToast('Velg et bilde først', 'error');
@@ -1336,7 +1336,7 @@ async function uploadAdminGlimtskudd() {
 
   const fd = new FormData();
   fd.append('photo', file);
-  fd.append('caption', document.getElementById('adminGlimtskuddCaption').value || '');
+  fd.append('caption', document.getElementById('adminTurneringsbilderCaption').value || '');
 
   try {
     await fetch('/api/admin/tournament/' + tid + '/gallery', {
@@ -1350,8 +1350,8 @@ async function uploadAdminGlimtskudd() {
     });
 
     fileInput.value = '';
-    document.getElementById('adminGlimtskuddCaption').value = '';
-    showToast('Glimtskudd-bilde lastet opp');
+    document.getElementById('adminTurneringsbilderCaption').value = '';
+    showToast('Turneringsbilder-bilde lastet opp');
     await loadPhotos();
   } catch(e) {
     showToast(e.message, 'error');
@@ -1412,7 +1412,7 @@ async function loadPhotos() {
           <span style="display:block;margin-top:4px">${new Date(p.submitted_at).toLocaleString('nb-NO')}</span>
           <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:.8rem;color:var(--dark);font-weight:600">
             <input type="checkbox" ${p.is_published ? 'checked' : ''} onchange="togglePhotoPublish(${p.id}, this.checked)" style="accent-color:var(--gold)">
-            Publiser i Dagens Glimtskudd
+            Publiser i Turneringsbilder
           </label>
           <div style="display:flex;gap:8px;margin-top:8px">
             <a href="/api/admin/photo/${p.id}/download" class="btn btn--sm" style="flex:1;justify-content:center;background:var(--dark);color:var(--gold-light);border:none">
@@ -1431,12 +1431,12 @@ async function loadPhotos() {
           <img src="${p.photo_path}" alt="Admin-opplastet bilde" loading="lazy">
         </a>
         <div class="photo-card-body">
-          <strong>Admin-opplastet Glimtskudd</strong>
+          <strong>Admin-opplastet Turneringsbilder</strong>
           <span>${p.caption || 'Uten bildetekst'}</span>
           <span style="display:block;margin-top:4px">${new Date(p.uploaded_at).toLocaleString('nb-NO')}</span>
           <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:.8rem;color:var(--dark);font-weight:600">
             <input type="checkbox" ${p.is_published ? 'checked' : ''} onchange="toggleGalleryPhotoPublish(${p.id}, this.checked)" style="accent-color:var(--gold)">
-            Publiser i Dagens Glimtskudd
+            Publiser i Turneringsbilder
           </label>
           <div style="display:flex;gap:8px;margin-top:8px">
             <a href="/api/admin/gallery/${p.id}/download" class="btn btn--sm" style="flex:1;justify-content:center;background:var(--dark);color:var(--gold-light);border:none">
@@ -1459,7 +1459,7 @@ async function togglePhotoPublish(id, isPublished) {
       method: 'PUT',
       body: JSON.stringify({ is_published: isPublished })
     });
-    showToast(isPublished ? 'Bildet er publisert i Dagens Glimtskudd' : 'Bildet er skjult fra Dagens Glimtskudd');
+    showToast(isPublished ? 'Bildet er publisert i Turneringsbilder' : 'Bildet er skjult fra Turneringsbilder');
   } catch(e) {
     showToast(e.message, 'error');
     await loadPhotos();
@@ -1481,7 +1481,7 @@ async function toggleGalleryPhotoPublish(id, isPublished) {
       method: 'PUT',
       body: JSON.stringify({ is_published: isPublished })
     });
-    showToast(isPublished ? 'Admin-bildet er publisert i Dagens Glimtskudd' : 'Admin-bildet er skjult fra Dagens Glimtskudd');
+    showToast(isPublished ? 'Admin-bildet er publisert i Turneringsbilder' : 'Admin-bildet er skjult fra Turneringsbilder');
   } catch(e) {
     showToast(e.message, 'error');
     await loadPhotos();
@@ -1697,7 +1697,7 @@ async function addLegacy() {
   if (!year||!winner_team||!player1||!player2) { showToast('År, lag og spillere er påkrevd','error'); return; }
   try {
     await api('/api/admin/legacy',{method:'POST',body:JSON.stringify({year,winner_team,player1,player2,score,score_to_par,course,notes})});
-    showToast('Historikkoppføring lagt til!');
+    showToast('Hall of Fameoppføring lagt til!');
     ['lYear','lTeam','lP1','lP2','lScore','lToPar','lCourse','lNotes'].forEach(id=>document.getElementById(id).value='');
     await loadLegacy(); await loadDashboard();
   } catch(e) { showToast(e.message,'error'); }
@@ -1707,7 +1707,7 @@ async function deleteLegacy(id, year) {
   if (!confirm(`Fjerne historikkoppføringen fra ${year}?`)) return;
   try {
     await api('/api/admin/legacy/'+id,{method:'DELETE'});
-    showToast('Historikkoppføring fjernet');
+    showToast('Hall of Fameoppføring fjernet');
     await loadLegacy(); await loadDashboard();
   } catch(e) { showToast(e.message,'error'); }
 }

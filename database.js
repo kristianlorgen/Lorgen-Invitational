@@ -124,6 +124,18 @@ db.exec(`
     FOREIGN KEY (tournament_id) REFERENCES tournaments(id)
   );
 
+
+  CREATE TABLE IF NOT EXISTS chat_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tournament_id INTEGER NOT NULL,
+    team_id INTEGER NOT NULL,
+    team_name TEXT NOT NULL,
+    message TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
+    FOREIGN KEY (team_id) REFERENCES teams(id)
+  );
+
   CREATE TABLE IF NOT EXISTS photo_votes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     tournament_id INTEGER NOT NULL,
@@ -161,3 +173,12 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS photo_votes (
 )`); } catch(_) {}
 
 module.exports = db;
+
+try { db.exec(`CREATE TABLE IF NOT EXISTS chat_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tournament_id INTEGER NOT NULL,
+  team_id INTEGER NOT NULL,
+  team_name TEXT NOT NULL,
+  message TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`); } catch(_) {}

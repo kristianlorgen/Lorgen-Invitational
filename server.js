@@ -114,6 +114,12 @@ function getActiveTournament() {
   ).get();
 }
 
+function getScoreboardTournament() {
+  let t = db.prepare(`SELECT * FROM tournaments WHERE status='active' ORDER BY date DESC LIMIT 1`).get();
+  if (!t) t = db.prepare(`SELECT * FROM tournaments WHERE status='completed' ORDER BY date DESC LIMIT 1`).get();
+  return t || null;
+}
+
 function normalizePhotoPath(photoPath = '') {
   if (!photoPath || typeof photoPath !== 'string') return '';
 
@@ -334,8 +340,7 @@ app.get('/api/tournament', (req, res) => {
 
 app.get('/api/scoreboard', (req, res) => {
   try {
-    let t = db.prepare(`SELECT * FROM tournaments WHERE status='active' ORDER BY date DESC LIMIT 1`).get();
-    if (!t) t = db.prepare(`SELECT * FROM tournaments WHERE status='completed' ORDER BY date DESC LIMIT 1`).get();
+    const t = getScoreboardTournament();
     if (!t) return res.json({ scoreboard: [], holes: [], awards: [], tournament: null });
     res.json(buildScoreboard(t));
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -357,6 +362,59 @@ app.get('/api/events', (req, res) => {
   res.write(`data: ${JSON.stringify({ type: 'connected' })}\n\n`);
   const hb = setInterval(() => { try { res.write(':hb\n\n'); } catch (_) { clearInterval(hb); } }, 25000);
   req.on('close', () => { sseClients.delete(id); clearInterval(hb); });
+});
+
+
+app.get('/api/chat/messages', (req, res) => {
+  try {
+    const t = getScoreboardTournament();
+    if (!t) return res.json({ messages: [] });
+    const messages = db.prepare(
+      `SELECT id, team_name, message, created_at
+       FROM chat_messages
+       WHERE tournament_id=?
+       ORDER BY id DESC
+       LIMIT 100`
+    ).all(t.id).reverse();
+    res.json({ messages });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/chat/send', (req, res) => {
+  const { pin, message } = req.body;
+  const msg = String(message || '').trim();
+  if (!pin) return res.status(400).json({ error: 'PIN er påkrevd' });
+  if (!msg) return res.status(400).json({ error: 'Melding kan ikke være tom' });
+  if (msg.length > 400) return res.status(400).json({ error: 'Meldingen er for lang (maks 400 tegn)' });
+  try {
+    const t = db.prepare(`SELECT * FROM tournaments WHERE status='active' ORDER BY date DESC LIMIT 1`).get();
+    if (!t) return res.status(404).json({ error: 'Ingen aktiv turnering' });
+    const team = db.prepare('SELECT id, team_name FROM teams WHERE tournament_id=? AND pin_code=? LIMIT 1').get(t.id, pin);
+    if (!team) return res.status(401).json({ error: 'Ugyldig PIN' });
+    const result = db.prepare(
+      'INSERT INTO chat_messages (tournament_id, team_id, team_name, message) VALUES (?,?,?,?)'
+    ).run(t.id, team.id, team.team_name, msg);
+    const created = db.prepare('SELECT id, team_name, message, created_at FROM chat_messages WHERE id=?').get(result.lastInsertRowid);
+    broadcast('chat_message', created);
+    res.json({ success: true, message: created });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/team/birdie-shot', (req, res) => {
+  const { pin, note } = req.body;
+  if (!pin) return res.status(400).json({ error: 'PIN er påkrevd' });
+  try {
+    const t = db.prepare(`SELECT * FROM tournaments WHERE status='active' ORDER BY date DESC LIMIT 1`).get();
+    if (!t) return res.status(404).json({ error: 'Ingen aktiv turnering' });
+    const team = db.prepare('SELECT id, team_name FROM teams WHERE tournament_id=? AND pin_code=? LIMIT 1').get(t.id, pin);
+    if (!team) return res.status(401).json({ error: 'Ugyldig PIN' });
+    const payload = {
+      team_name: team.team_name,
+      note: String(note || '').trim().slice(0, 140)
+    };
+    broadcast('birdie_shot', payload);
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 // ════════════════════════════════════════════════════════════════════════════
