@@ -554,6 +554,47 @@ let currentHoleIndex = 0;
 let teamPin = '';
 let chatMessages = [];
 let chatEventSource = null;
+let notificationRegistration = null;
+
+async function initNotifications() {
+  if (!('Notification' in window) || !('serviceWorker' in navigator)) return;
+  try {
+    notificationRegistration = await navigator.serviceWorker.register('/notification-sw.js');
+  } catch (_) {}
+}
+
+async function ensureNotificationPermission() {
+  if (!('Notification' in window)) return false;
+  if (Notification.permission === 'granted') return true;
+  if (Notification.permission === 'denied') return false;
+  try {
+    const permission = await Notification.requestPermission();
+    return permission === 'granted';
+  } catch (_) {
+    return false;
+  }
+}
+
+async function notifyBirdieShot(payload) {
+  if (!(await ensureNotificationPermission())) return;
+  const teamName = payload?.team_name || 'Et lag';
+  const note = payload?.note ? ` ${payload.note}` : '';
+  const body = `⛳ ${teamName} roper birdie! Alle spillere må ta birdie shots! 🥃${note}`;
+  try {
+    if (notificationRegistration) {
+      await notificationRegistration.showNotification('Birdie shoutout', {
+        body,
+        icon: '/images/logo.png',
+        badge: '/images/logo.png',
+        tag: 'birdie-shoutout',
+        renotify: true,
+        data: { url: '/enter-score' }
+      });
+      return;
+    }
+    new Notification('Birdie shoutout', { body, icon: '/images/logo.png', tag: 'birdie-shoutout' });
+  } catch (_) {}
+}
 
 function allHolesCompleted() {
   return holesData.length > 0 && holesData.every(h => (scoresData[h.hole_number]?.score || 0) > 0);
@@ -574,6 +615,7 @@ async function doLogin() {
       teamPin = pin;
       sessionStorage.setItem('team_pin', pin);
       teamData = d.team;
+      await ensureNotificationPermission();
       await loadScorecard();
       document.getElementById('loginScreen').classList.add('d-none');
       document.getElementById('scorecardScreen').classList.remove('d-none');
@@ -690,6 +732,7 @@ function startChatEvents() {
           setTimeout(() => shoutBtn.classList.remove('is-celebrating'), 1700);
         }
         if (navigator.vibrate) navigator.vibrate([120, 90, 120]);
+        notifyBirdieShot(payload.data);
         showToast(`⛳ ${payload.data.team_name || 'Et lag'} roper birdie! Alle spillere må ta birdie shots! 🥃`, 'info');
       }
     } catch (_) {}
@@ -1178,11 +1221,13 @@ async function submitClaim(holeNum, awardType) {
 
 async function checkSession() {
   try {
+    await initNotifications();
     teamPin = sessionStorage.getItem('team_pin') || '';
     const r = await fetch('/api/auth/status');
     const d = await r.json();
     if (d.type === 'team') {
       teamData = d.team;
+      await ensureNotificationPermission();
       await loadScorecard();
       document.getElementById('loginScreen').classList.add('d-none');
       document.getElementById('scorecardScreen').classList.remove('d-none');
