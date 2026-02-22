@@ -97,8 +97,9 @@
         left: 8px;
         right: 8px;
         top: calc(var(--nav-height) + 8px);
-        bottom: max(56px, calc(env(safe-area-inset-bottom) + 8px));
-        max-height: calc(100dvh - var(--nav-height) - 16px);
+        bottom: calc(env(safe-area-inset-bottom) + 8px);
+        height: auto;
+        max-height: none;
       }
       .chat-widget.open {
         display: flex;
@@ -108,11 +109,11 @@
         flex: 1;
         min-height: 0;
         max-height: none;
-        padding-bottom: 18px;
+        padding-bottom: 82px;
       }
       .team-chat-form {
-        position: sticky;
-        bottom: 0;
+        position: relative;
+        z-index: 2;
       }
       .team-chat-input {
         min-width: 0;
@@ -297,9 +298,11 @@
     .chat-upload-input { display: none; }
     .chat-upload-meta {
       margin-top: 6px;
+      padding: 0 12px 10px;
       font-size: .72rem;
       color: var(--text-muted);
       min-height: 16px;
+      background: var(--white);
     }
     .notification-banner {
       display: none;
