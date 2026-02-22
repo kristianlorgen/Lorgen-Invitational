@@ -430,6 +430,12 @@ app.post('/api/team/birdie-shot', (req, res) => {
       team_name: team.team_name,
       note: String(note || '').trim().slice(0, 140)
     };
+    const shoutMessage = `⛳ ${team.team_name} roper birdie! ${payload.note || 'Alle spillere må ta birdie shots! 🥃'}`;
+    const chatResult = db.prepare(
+      'INSERT INTO chat_messages (tournament_id, team_id, team_name, message, image_path) VALUES (?,?,?,?,?)'
+    ).run(t.id, team.id, team.team_name, shoutMessage.slice(0, 400), '');
+    const chatMessage = db.prepare('SELECT id, team_name, message, image_path, created_at FROM chat_messages WHERE id=?').get(chatResult.lastInsertRowid);
+    broadcast('chat_message', chatMessage);
     broadcast('birdie_shot', payload);
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
