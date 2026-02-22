@@ -11,10 +11,6 @@
   <style>
     .leaderboard-row-1 { background: linear-gradient(90deg, rgba(201,168,76,.08), transparent) !important; }
     .leaderboard-row-1 td:first-child { border-left: 3px solid var(--gold); }
-    .chat-box { background: var(--white); border:1px solid var(--gold-border); border-radius: var(--radius-lg); padding:16px; }
-    .chat-messages { max-height:260px; overflow:auto; display:flex; flex-direction:column; gap:10px; margin-bottom:12px; }
-    .chat-item { background:var(--off-white); border:1px solid var(--gold-border); border-radius:var(--radius-sm); padding:8px 10px; }
-    .chat-meta { font-size:.72rem; color:var(--text-muted); margin-bottom:4px; }
   </style>
 </head>
 <body>
@@ -76,9 +72,6 @@
     <h1 class="page-hero-title">Resultattavle</h1>
     <p class="page-hero-sub" id="sbTournamentName">Laster...</p>
     <div style="margin-top:12px;font-size:.78rem;color:var(--text-muted)" id="lastUpdated">Oppdateres automatisk i sanntid</div>
-    <div style="margin-top:14px;display:flex;justify-content:center">
-      <button class="btn btn--gold" onclick="sendBirdieShot()"><i class="fas fa-bullhorn"></i> Birdieshots</button>
-    </div>
   </div>
 </div>
 
@@ -169,23 +162,6 @@
   </div>
 </section>
 
-<section class="section" style="background:var(--white)" id="chatSection">
-  <div class="container" style="max-width:800px">
-    <div class="section-header" style="margin-bottom:20px">
-      <span class="section-tag">Scoreboard-chat</span>
-      <h2 class="section-title">Felles <span>Chat</span></h2>
-    </div>
-    <div class="chat-box">
-      <div class="chat-messages" id="chatMessages"></div>
-      <div style="display:grid;grid-template-columns:120px 1fr auto;gap:8px">
-        <input id="chatPin" class="form-input" placeholder="PIN">
-        <input id="chatInput" class="form-input" maxlength="400" placeholder="Skriv melding til alle flighter...">
-        <button class="btn btn--gold btn--sm" onclick="sendChat()">Send</button>
-      </div>
-    </div>
-  </div>
-</section>
-
 <!-- ── Bunntekst ──────────────────────────────────────────────────────────── -->
 <footer class="footer">
   <div class="container">
@@ -253,7 +229,6 @@ document.addEventListener('click', e => {
 let holes = [];
 let scoreboard = [];
 let currentTournament = null;
-let chatMessages = [];
 
 function formatToPar(n, holesCompleted) {
   if (holesCompleted === 0) return '<span class="score-par score-even">–</span>';
@@ -441,48 +416,6 @@ function renderAwards(awards) {
 }
 
 
-function renderChat() {
-  const wrap = document.getElementById('chatMessages');
-  if (!wrap) return;
-  if (!chatMessages.length) { wrap.innerHTML = '<div style="color:var(--text-muted);font-size:.85rem">Ingen meldinger ennå.</div>'; return; }
-  wrap.innerHTML = chatMessages.map(m => `<div class="chat-item"><div class="chat-meta">${m.team_name} · ${new Date(m.created_at).toLocaleTimeString('nb-NO',{hour:'2-digit',minute:'2-digit'})}</div>${m.message ? `<div>${m.message}</div>` : ''}${m.image_path ? `<img src="${m.image_path}" alt="Chatbilde" style="margin-top:8px;max-width:100%;border-radius:8px;border:1px solid rgba(201,168,76,.25)">` : ''}</div>`).join('');
-  wrap.scrollTop = wrap.scrollHeight;
-}
-
-async function loadChat() {
-  try {
-    const r = await fetch('/api/chat/messages');
-    const d = await r.json();
-    chatMessages = d.messages || [];
-    renderChat();
-  } catch (_) {}
-}
-
-async function sendChat() {
-  const pinEl = document.getElementById('chatPin');
-  const msgEl = document.getElementById('chatInput');
-  const pin = pinEl.value.trim();
-  const message = msgEl.value.trim();
-  if (!pin || !message) return alert('Skriv inn PIN og melding');
-  localStorage.setItem('lorgen_chat_pin', pin);
-  const r = await fetch('/api/chat/send', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ pin, message }) });
-  const d = await r.json();
-  if (!r.ok) return alert(d.error || 'Kunne ikke sende melding');
-  msgEl.value = '';
-}
-
-async function sendBirdieShot() {
-  const saved = document.getElementById('chatPin') ? document.getElementById('chatPin').value : '';
-  const pin = (saved || localStorage.getItem('lorgen_chat_pin') || prompt('Skriv inn lagets PIN') || '').trim();
-  if (!pin) return;
-  localStorage.setItem('lorgen_chat_pin', pin);
-  const note = prompt('Valgfri melding til Birdieshots-varselet', '') || '';
-  const r = await fetch('/api/team/birdie-shot', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ pin, note }) });
-  const d = await r.json();
-  if (!r.ok) return alert(d.error || 'Kunne ikke sende varsel');
-  alert('Birdieshots-varsling sendt til alle flighter!');
-}
-
 async function loadScoreboard() {
   try {
     const r = await fetch('/api/scoreboard');
@@ -537,14 +470,6 @@ function connectSSE() {
       if (data.type === 'score_updated' || data.type === 'award_updated') {
         loadScoreboard();
       }
-      if (data.type === 'chat_message') {
-        chatMessages.push(data.data);
-        if (chatMessages.length > 100) chatMessages = chatMessages.slice(-100);
-        renderChat();
-      }
-      if (data.type === 'birdie_shot') {
-        alert(`Birdieshots! ${data.data.team_name} melder birdie eller bedre${data.data.note ? `: ${data.data.note}` : ''}`);
-      }
     } catch (_) {}
   };
   sse.onerror = () => {
@@ -552,9 +477,7 @@ function connectSSE() {
   };
 }
 
-if (document.getElementById('chatPin')) document.getElementById('chatPin').value = localStorage.getItem('lorgen_chat_pin') || "";
 loadScoreboard();
-loadChat();
 connectSSE();
 // Reserveoppdatering hvert 60. sekund
 setInterval(loadScoreboard, 60000);
