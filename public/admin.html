@@ -188,8 +188,7 @@
           <div class="card-header"><strong>Opprett ny turnering</strong></div>
           <div class="card-body">
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px">
-              <div class="form-group"><label class="form-label">År</label><input class="form-input" id="tYear" type="number" min="2020" max="2050" placeholder="2025"></div>
-              <div class="form-group"><label class="form-label">Turneringsnavn</label><input class="form-input" id="tName" type="text" placeholder="Lorgen Invitational 2025"></div>
+              <div class="form-group"><label class="form-label">Turneringsnavn</label><input class="form-input" id="tName" type="text" value="Lorgen Invitational" readonly></div>
               <div class="form-group"><label class="form-label">Dato og klokkeslett</label><input class="form-input" id="tDate" type="datetime-local"></div>
               <div class="form-group"><label class="form-label">Bane</label><input class="form-input" id="tCourse" type="text" placeholder="f.eks. Bogstad Golfklubb"></div>
               <div class="form-group"><label class="form-label">Slope Rating</label><input class="form-input" id="tSlope" type="number" min="55" max="155" value="113" placeholder="113"></div>
@@ -217,8 +216,7 @@
             <input type="hidden" id="editTId">
             <input type="hidden" id="editTStatus">
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px">
-              <div class="form-group"><label class="form-label">År</label><input class="form-input" id="editTYear" type="number"></div>
-              <div class="form-group"><label class="form-label">Navn</label><input class="form-input" id="editTName"></div>
+              <div class="form-group"><label class="form-label">Navn</label><input class="form-input" id="editTName" value="Lorgen Invitational" readonly></div>
               <div class="form-group"><label class="form-label">Dato og klokkeslett</label><input class="form-input" id="editTDate" type="datetime-local"></div>
               <div class="form-group"><label class="form-label">Bane</label><input class="form-input" id="editTCourse"></div>
               <div class="form-group"><label class="form-label">Slope Rating</label><input class="form-input" id="editTSlope" type="number" min="55" max="155" value="113"></div>
@@ -877,15 +875,16 @@ function renderTournamentsTable() {
 }
 
 async function createTournament() {
-  const year=document.getElementById('tYear').value, name=document.getElementById('tName').value,
-        date=document.getElementById('tDate').value, course=document.getElementById('tCourse').value,
+  const name='Lorgen Invitational', date=document.getElementById('tDate').value, course=document.getElementById('tCourse').value,
         description=document.getElementById('tDesc').value,
         slope_rating=document.getElementById('tSlope').value||113;
-  if (!year||!name||!date) { showToast('År, navn og dato er påkrevd','error'); return; }
+  const year = date ? new Date(date).getFullYear() : null;
+  if (!year||!date) { showToast('Dato og klokkeslett er påkrevd','error'); return; }
   try {
     await api('/api/admin/tournament',{method:'POST',body:JSON.stringify({year,name,date,course,description,slope_rating})});
     showToast('Turnering opprettet!');
-    ['tYear','tName','tDate','tCourse','tDesc'].forEach(id=>document.getElementById(id).value='');
+    ['tDate','tCourse','tDesc'].forEach(id=>document.getElementById(id).value='');
+    document.getElementById('tName').value='Lorgen Invitational';
     document.getElementById('tSlope').value='113';
     await loadTournaments(); await loadDashboard();
   } catch(e) { showToast(e.message,'error'); }
@@ -906,8 +905,7 @@ function editTournament(id) {
   if (!t) return;
   document.getElementById('editTId').value = t.id;
   document.getElementById('editTStatus').value = t.status;
-  document.getElementById('editTYear').value = t.year;
-  document.getElementById('editTName').value = t.name;
+  document.getElementById('editTName').value = 'Lorgen Invitational';
   document.getElementById('editTDate').value = (t.date || '').slice(0,16);
   document.getElementById('editTCourse').value = t.course || '';
   document.getElementById('editTSlope').value = t.slope_rating || 113;
@@ -918,14 +916,14 @@ function editTournament(id) {
 
 async function saveTournamentEdit() {
   const id = document.getElementById('editTId').value;
-  const year = document.getElementById('editTYear').value;
-  const name = document.getElementById('editTName').value;
+  const name = 'Lorgen Invitational';
   const date = document.getElementById('editTDate').value;
+  const year = date ? new Date(date).getFullYear() : null;
   const course = document.getElementById('editTCourse').value;
   const slope_rating = document.getElementById('editTSlope').value || 113;
   const description = document.getElementById('editTDesc').value;
   const status = document.getElementById('editTStatus').value;
-  if (!year || !name || !date) { showToast('År, navn og dato er påkrevd', 'error'); return; }
+  if (!year || !date) { showToast('Dato og klokkeslett er påkrevd', 'error'); return; }
   try {
     await api('/api/admin/tournament/' + id, { method: 'PUT', body: JSON.stringify({ year, name, date, course, slope_rating, description, status }) });
     showToast('Turnering oppdatert!');

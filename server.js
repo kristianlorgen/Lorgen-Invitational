@@ -333,15 +333,23 @@ function buildScoreboard(tournament) {
       if (h) { total += s.score; par += h.par; done++; }
       holeScores[s.hole_number] = { score: s.score, photo: normalizePhotoPath(s.photo_path) };
     });
-    const hcpIndex = ((team.player1_handicap || 0) + (team.player2_handicap || 0)) * 0.75;
+    const hcpIndex = ((team.player1_handicap || 0) + (team.player2_handicap || 0)) * 0.25;
     const courseHcp = Math.round(hcpIndex * slopeRating / 113);
-    const netScore = total > 0 ? total - courseHcp : 0;
+    let usedHandicapStrokes = 0;
+    teamScores.forEach(s => {
+      const h = holes.find(h => h.hole_number === s.hole_number);
+      const si = h?.stroke_index || 0;
+      if (!si || courseHcp <= 0) return;
+      if (courseHcp >= si) usedHandicapStrokes += 1;
+      if (courseHcp >= si + 18) usedHandicapStrokes += 1;
+    });
+    const netScore = total > 0 ? total - usedHandicapStrokes : 0;
     const netToPar = total > 0 ? netScore - par : 0;
     return {
       team_id: team.id, team_name: team.team_name,
       player1: team.player1, player2: team.player2,
       player1_handicap: team.player1_handicap || 0, player2_handicap: team.player2_handicap || 0,
-      handicap: courseHcp, net_score: netScore, net_to_par: netToPar,
+      handicap: courseHcp, used_handicap_strokes: usedHandicapStrokes, net_score: netScore, net_to_par: netToPar,
       total_score: total, total_par: par, to_par: total - par,
       holes_completed: done, hole_scores: holeScores
     };
@@ -610,8 +618,11 @@ app.get('/api/admin/tournaments', requireAdmin, (req, res) => {
 });
 
 app.post('/api/admin/tournament', requireAdmin, (req, res) => {
-  const { year, name, date, course, description, gameday_info, slope_rating } = req.body;
-  if (!year || !name || !date) return res.status(400).json({ error: 'År, navn og dato er påkrevd' });
+  const { date, course, description, gameday_info, slope_rating } = req.body;
+  if (!date) return res.status(400).json({ error: 'Dato er påkrevd' });
+  const year = new Date(date).getFullYear();
+  if (!Number.isFinite(year)) return res.status(400).json({ error: 'Ugyldig dato' });
+  const name = 'Lorgen Invitational';
   try {
     const result = db.prepare(
       'INSERT INTO tournaments (year, name, date, course, description, gameday_info, slope_rating) VALUES (?,?,?,?,?,?,?)'
@@ -627,7 +638,11 @@ app.post('/api/admin/tournament', requireAdmin, (req, res) => {
 });
 
 app.put('/api/admin/tournament/:id', requireAdmin, (req, res) => {
-  const { year, name, date, course, description, gameday_info, status, slope_rating } = req.body;
+  const { date, course, description, gameday_info, status, slope_rating } = req.body;
+  if (!date) return res.status(400).json({ error: 'Dato er påkrevd' });
+  const year = new Date(date).getFullYear();
+  if (!Number.isFinite(year)) return res.status(400).json({ error: 'Ugyldig dato' });
+  const name = 'Lorgen Invitational';
   try {
     db.prepare(
       'UPDATE tournaments SET year=?, name=?, date=?, course=?, description=?, gameday_info=?, status=?, slope_rating=? WHERE id=?'
