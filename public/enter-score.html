@@ -97,7 +97,7 @@
         left: 8px;
         right: 8px;
         top: calc(var(--nav-height) + 8px);
-        bottom: 8px;
+        bottom: max(56px, calc(env(safe-area-inset-bottom) + 8px));
         max-height: calc(100dvh - var(--nav-height) - 16px);
       }
       .chat-widget.open {
@@ -108,6 +108,7 @@
         flex: 1;
         min-height: 0;
         max-height: none;
+        padding-bottom: 18px;
       }
       .team-chat-form {
         position: sticky;
