@@ -274,6 +274,25 @@
       color: var(--text-muted);
       min-height: 16px;
     }
+    .notification-banner {
+      display: none;
+      margin: 10px 12px 0;
+      padding: 10px;
+      border: 1px solid var(--gold-border);
+      border-radius: var(--radius-sm);
+      background: #fff9eb;
+      font-size: .76rem;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+    .notification-banner.show {
+      display: block;
+    }
+    .notification-banner button {
+      margin-top: 8px;
+      width: 100%;
+      justify-content: center;
+    }
 
   </style>
 </head>
@@ -329,6 +348,7 @@
 
 <section class="chat-widget" id="chatWidget" aria-label="Felles chat">
   <div class="team-chat-header"><span><i class="fas fa-comments"></i> Felles chat</span><button type="button" class="birdie-shout-btn" id="birdieShoutBtn" onclick="sendBirdieShoutout()"><i class="fas fa-bullhorn"></i> Birdie shoutout</button></div>
+  <div class="notification-banner" id="notificationBanner"></div>
   <div class="team-chat-messages" id="chatMessages">
     <div class="team-chat-empty">Laster chat…</div>
   </div>
@@ -556,11 +576,49 @@ let chatMessages = [];
 let chatEventSource = null;
 let notificationRegistration = null;
 
+function isIOSDevice() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent || '') ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+function isStandaloneMode() {
+  return window.matchMedia('(display-mode: standalone)').matches || !!navigator.standalone;
+}
+
+function updateNotificationBanner() {
+  const banner = document.getElementById('notificationBanner');
+  if (!banner) return;
+  if (!('Notification' in window)) {
+    banner.classList.remove('show');
+    banner.innerHTML = '';
+    return;
+  }
+
+  if (Notification.permission === 'granted') {
+    banner.classList.remove('show');
+    banner.innerHTML = '';
+    return;
+  }
+
+  if (isIOSDevice() && !isStandaloneMode()) {
+    banner.classList.add('show');
+    banner.innerHTML = '<strong>iPhone/iPad:</strong> Varsler i Safari krever at siden er lagt til på hjemskjermen. Trykk Del <i class="fas fa-share-square"></i> → <em>Legg til på Hjem-skjerm</em>, åpne appen derfra og trykk så på knappen under.';
+    return;
+  }
+
+  const deniedText = Notification.permission === 'denied'
+    ? 'Varsler er blokkert i nettleseren. Åpne nettleserinnstillinger og tillat varsler for siden.'
+    : 'Slå på varsler for å få birdie shoutout med lyd/varsel på telefonen.';
+  banner.classList.add('show');
+  banner.innerHTML = `${deniedText}<button type="button" class="btn btn--gold btn--sm" onclick="requestNotificationPermissionFromButton()"><i class="fas fa-bell"></i> Tillat varsler fra denne siden</button>`;
+}
+
 async function initNotifications() {
   if (!('Notification' in window) || !('serviceWorker' in navigator)) return;
   try {
     notificationRegistration = await navigator.serviceWorker.register('/notification-sw.js');
   } catch (_) {}
+  updateNotificationBanner();
 }
 
 async function ensureNotificationPermission() {
@@ -569,10 +627,16 @@ async function ensureNotificationPermission() {
   if (Notification.permission === 'denied') return false;
   try {
     const permission = await Notification.requestPermission();
+    updateNotificationBanner();
     return permission === 'granted';
   } catch (_) {
     return false;
   }
+}
+
+async function requestNotificationPermissionFromButton() {
+  await ensureNotificationPermission();
+  updateNotificationBanner();
 }
 
 async function notifyBirdieShot(payload) {
@@ -615,7 +679,7 @@ async function doLogin() {
       teamPin = pin;
       sessionStorage.setItem('team_pin', pin);
       teamData = d.team;
-      await ensureNotificationPermission();
+      updateNotificationBanner();
       await loadScorecard();
       document.getElementById('loginScreen').classList.add('d-none');
       document.getElementById('scorecardScreen').classList.remove('d-none');
@@ -733,6 +797,7 @@ function startChatEvents() {
         }
         if (navigator.vibrate) navigator.vibrate([120, 90, 120]);
         notifyBirdieShot(payload.data);
+        updateNotificationBanner();
         showToast(`⛳ ${payload.data.team_name || 'Et lag'} roper birdie! Alle spillere må ta birdie shots! 🥃`, 'info');
       }
     } catch (_) {}
