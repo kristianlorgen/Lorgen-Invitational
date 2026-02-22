@@ -378,10 +378,10 @@
     <div class="team-chat-empty">Laster chat…</div>
   </div>
   <form class="team-chat-form" onsubmit="sendChatMessage(event)">
-    <label class="chat-upload-btn" for="chatImageInput" title="Legg ved bilde" aria-label="Legg ved bilde">
-      <i class="fas fa-image"></i>
+    <label class="chat-upload-btn" for="chatImageInput" title="Ta bilde med kamera" aria-label="Ta bilde med kamera">
+      <i class="fas fa-camera"></i>
     </label>
-    <input type="file" id="chatImageInput" class="chat-upload-input" accept="image/*">
+    <input type="file" id="chatImageInput" class="chat-upload-input" accept="image/*" capture="environment">
     <div class="team-chat-actions">
       <input type="text" id="chatInput" class="team-chat-input" maxlength="400" placeholder="Skriv en melding til de andre lagene…" autocomplete="off">
       <button class="btn btn--gold btn--sm" id="chatSendBtn" style="justify-content:center" type="submit">
@@ -900,7 +900,7 @@ function updateChatUploadMeta() {
   const meta = document.getElementById('chatUploadMeta');
   if (!meta || !input) return;
   const file = input.files && input.files[0];
-  meta.textContent = file ? `Valgt bilde: ${file.name}` : '';
+  meta.textContent = file ? `Kamerabilde klart: ${file.name}` : '';
 }
 
 document.getElementById('chatImageInput')?.addEventListener('change', updateChatUploadMeta);
