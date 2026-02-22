@@ -93,10 +93,31 @@
       .mobile-score-shortcut { display: inline-flex; }
       .chat-widget {
         min-width: 0;
-        width: max(220px, calc((100vw - 24px) / 2));
+        width: auto;
+        left: 8px;
+        right: 8px;
+        top: calc(var(--nav-height) + 8px);
+        bottom: 8px;
+        max-height: calc(100dvh - var(--nav-height) - 16px);
+      }
+      .chat-widget.open {
+        display: flex;
+        flex-direction: column;
       }
       .team-chat-messages {
-        min-height: clamp(360px, 60vh, 720px);
+        flex: 1;
+        min-height: 0;
+        max-height: none;
+      }
+      .team-chat-form {
+        position: sticky;
+        bottom: 0;
+      }
+      .team-chat-input {
+        min-width: 0;
+      }
+      #chatSendBtn {
+        flex: 0 0 auto;
       }
     }
 
@@ -120,8 +141,9 @@
       position: fixed;
       top: calc(var(--nav-height) + 14px);
       left: 12px;
-      width: min(25vw, calc(100vw - 24px));
-      min-width: 260px;
+      width: min(42vw, calc(100vw - 24px));
+      max-width: 680px;
+      min-width: 320px;
       background: var(--white);
       border: 1px solid var(--gold-border);
       border-radius: 18px;
@@ -171,8 +193,8 @@
       100% { transform: translateX(0); }
     }
     .team-chat-messages {
-      max-height: min(72vh, 900px);
-      min-height: clamp(120px, 20vh, 280px);
+      max-height: min(78vh, 960px);
+      min-height: clamp(240px, 34vh, 520px);
       overflow-y: auto;
       padding: 12px;
       display: flex;
@@ -215,6 +237,44 @@
       color: var(--text);
       background: var(--white);
     }
+
+    .team-chat-image {
+      margin-top: 8px;
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid var(--gold-border);
+      display: block;
+      background: var(--off-white);
+    }
+    .team-chat-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+      min-width: 0;
+    }
+    .chat-upload-btn {
+      width: 40px;
+      height: 40px;
+      border: 1px solid var(--gold-border);
+      border-radius: var(--radius-sm);
+      background: var(--off-white);
+      color: var(--gold-dark);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex: 0 0 auto;
+    }
+    .chat-upload-btn:hover { background: #f6f0e1; }
+    .chat-upload-input { display: none; }
+    .chat-upload-meta {
+      margin-top: 6px;
+      font-size: .72rem;
+      color: var(--text-muted);
+      min-height: 16px;
+    }
+
   </style>
 </head>
 <body>
@@ -273,11 +333,18 @@
     <div class="team-chat-empty">Laster chat…</div>
   </div>
   <form class="team-chat-form" onsubmit="sendChatMessage(event)">
-    <input type="text" id="chatInput" class="team-chat-input" maxlength="400" placeholder="Skriv en melding til de andre lagene…" autocomplete="off">
-    <button class="btn btn--gold btn--sm" id="chatSendBtn" style="justify-content:center" type="submit">
-      <i class="fas fa-paper-plane"></i>
-    </button>
+    <label class="chat-upload-btn" for="chatImageInput" title="Legg ved bilde" aria-label="Legg ved bilde">
+      <i class="fas fa-image"></i>
+    </label>
+    <input type="file" id="chatImageInput" class="chat-upload-input" accept="image/*">
+    <div class="team-chat-actions">
+      <input type="text" id="chatInput" class="team-chat-input" maxlength="400" placeholder="Skriv en melding til de andre lagene…" autocomplete="off">
+      <button class="btn btn--gold btn--sm" id="chatSendBtn" style="justify-content:center" type="submit">
+        <i class="fas fa-paper-plane"></i>
+      </button>
+    </div>
   </form>
+  <div class="chat-upload-meta" id="chatUploadMeta"></div>
 </section>
 
 <!-- ── INNLOGGINGSSKJERM ───────────────────────────────────────────────────── -->
@@ -586,7 +653,8 @@ function renderChatMessages() {
         <span class="team-chat-name">${escapeHtml(m.team_name || 'Lag')}</span>
         <span class="team-chat-time">${formatChatTime(m.created_at)}</span>
       </div>
-      <div class="team-chat-text">${escapeHtml(m.message)}</div>
+      ${m.message ? `<div class="team-chat-text">${escapeHtml(m.message)}</div>` : ''}
+      ${m.image_path ? `<img class="team-chat-image" src="${escapeHtml(m.image_path)}" alt="Bilde sendt i chat" loading="lazy">` : ''}
     </div>
   `).join('');
   wrap.scrollTop = wrap.scrollHeight;
@@ -662,12 +730,24 @@ async function sendBirdieShoutout() {
   setTimeout(() => btn && btn.classList.remove('is-celebrating'), 1700);
 }
 
+function updateChatUploadMeta() {
+  const input = document.getElementById('chatImageInput');
+  const meta = document.getElementById('chatUploadMeta');
+  if (!meta || !input) return;
+  const file = input.files && input.files[0];
+  meta.textContent = file ? `Valgt bilde: ${file.name}` : '';
+}
+
+document.getElementById('chatImageInput')?.addEventListener('change', updateChatUploadMeta);
+
 async function sendChatMessage(event) {
   event.preventDefault();
   const input = document.getElementById('chatInput');
+  const imageInput = document.getElementById('chatImageInput');
   const btn = document.getElementById('chatSendBtn');
   const message = (input?.value || '').trim();
-  if (!message) return;
+  const imageFile = imageInput?.files?.[0] || null;
+  if (!message && !imageFile) return;
   if (!teamPin) {
     showToast('Mangler PIN for å sende melding. Logg inn på nytt.', 'error');
     return;
@@ -676,16 +756,27 @@ async function sendChatMessage(event) {
   btn.disabled = true;
   btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
   try {
-    const r = await fetch('/api/chat/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: teamPin, message })
-    });
+    let r;
+    if (imageFile) {
+      const formData = new FormData();
+      formData.append('pin', teamPin);
+      formData.append('message', message);
+      formData.append('image', imageFile);
+      r = await fetch('/api/chat/send', { method: 'POST', body: formData });
+    } else {
+      r = await fetch('/api/chat/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: teamPin, message })
+      });
+    }
     const d = await r.json();
     if (!d.success) {
       showToast(d.error || 'Kunne ikke sende melding', 'error');
     } else {
       input.value = '';
+      if (imageInput) imageInput.value = '';
+      updateChatUploadMeta();
     }
   } catch (_) {
     showToast('Tilkoblingsfeil ved sending av melding', 'error');

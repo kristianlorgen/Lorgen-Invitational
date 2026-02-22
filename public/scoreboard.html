@@ -445,7 +445,7 @@ function renderChat() {
   const wrap = document.getElementById('chatMessages');
   if (!wrap) return;
   if (!chatMessages.length) { wrap.innerHTML = '<div style="color:var(--text-muted);font-size:.85rem">Ingen meldinger ennå.</div>'; return; }
-  wrap.innerHTML = chatMessages.map(m => `<div class="chat-item"><div class="chat-meta">${m.team_name} · ${new Date(m.created_at).toLocaleTimeString('nb-NO',{hour:'2-digit',minute:'2-digit'})}</div><div>${m.message}</div></div>`).join('');
+  wrap.innerHTML = chatMessages.map(m => `<div class="chat-item"><div class="chat-meta">${m.team_name} · ${new Date(m.created_at).toLocaleTimeString('nb-NO',{hour:'2-digit',minute:'2-digit'})}</div>${m.message ? `<div>${m.message}</div>` : ''}${m.image_path ? `<img src="${m.image_path}" alt="Chatbilde" style="margin-top:8px;max-width:100%;border-radius:8px;border:1px solid rgba(201,168,76,.25)">` : ''}</div>`).join('');
   wrap.scrollTop = wrap.scrollHeight;
 }
 

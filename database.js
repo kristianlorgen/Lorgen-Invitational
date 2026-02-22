@@ -131,6 +131,7 @@ db.exec(`
     team_id INTEGER NOT NULL,
     team_name TEXT NOT NULL,
     message TEXT NOT NULL,
+    image_path TEXT DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
     FOREIGN KEY (team_id) REFERENCES teams(id)
@@ -163,6 +164,7 @@ try { db.exec(`ALTER TABLE scores ADD COLUMN is_published INTEGER NOT NULL DEFAU
 try { db.exec(`UPDATE scores SET is_published=1 WHERE is_published IS NULL`); } catch(_) {}
 try { db.exec(`ALTER TABLE gallery_photos ADD COLUMN is_published INTEGER NOT NULL DEFAULT 1`); } catch(_) {}
 try { db.exec(`UPDATE gallery_photos SET is_published=1 WHERE is_published IS NULL`); } catch(_) {}
+try { db.exec(`ALTER TABLE chat_messages ADD COLUMN image_path TEXT DEFAULT ''`); } catch(_) {}
 try { db.exec(`CREATE TABLE IF NOT EXISTS photo_votes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   tournament_id INTEGER NOT NULL,
@@ -180,5 +182,6 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS chat_messages (
   team_id INTEGER NOT NULL,
   team_name TEXT NOT NULL,
   message TEXT NOT NULL,
+  image_path TEXT DEFAULT '',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`); } catch(_) {}
