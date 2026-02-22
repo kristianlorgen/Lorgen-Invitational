@@ -26,6 +26,7 @@ function isAllowedImageUpload(file = {}) {
 // Ensure required directories exist
 if (!fs.existsSync('uploads')) fs.mkdirSync('uploads', { recursive: true });
 if (!fs.existsSync('./uploads/glimtskudd')) fs.mkdirSync('./uploads/glimtskudd', { recursive: true });
+if (!fs.existsSync('./uploads/chat')) fs.mkdirSync('./uploads/chat', { recursive: true });
 if (!fs.existsSync('./data/sessions')) fs.mkdirSync('./data/sessions', { recursive: true });
 
 // ── SSE live-update clients ──────────────────────────────────────────────────
@@ -60,6 +61,20 @@ const galleryStorage = multer.diskStorage({
 const galleryUpload = multer({
   storage: galleryStorage,
   limits: { fileSize: 15 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (isAllowedImageUpload(file)) return cb(null, true);
+    cb(new Error('Kun bilder er tillatt'));
+  }
+});
+
+const chatStorage = multer.diskStorage({
+  destination: './uploads/chat/',
+  filename: (req, file, cb) =>
+    cb(null, `chat-${Date.now()}-${Math.round(Math.random() * 1e6)}${path.extname(file.originalname)}`)
+});
+const chatUpload = multer({
+  storage: chatStorage,
+  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (isAllowedImageUpload(file)) return cb(null, true);
     cb(new Error('Kun bilder er tillatt'));
@@ -370,7 +385,7 @@ app.get('/api/chat/messages', (req, res) => {
     const t = getScoreboardTournament();
     if (!t) return res.json({ messages: [] });
     const messages = db.prepare(
-      `SELECT id, team_name, message, created_at
+      `SELECT id, team_name, message, image_path, created_at
        FROM chat_messages
        WHERE tournament_id=?
        ORDER BY id DESC
@@ -380,11 +395,14 @@ app.get('/api/chat/messages', (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/chat/send', (req, res) => {
-  const { pin, message } = req.body;
-  const msg = String(message || '').trim();
+app.post('/api/chat/send', chatUpload.single('image'), (req, res) => {
+  const body = req.body || {};
+  const pin = String(body.pin || '').trim();
+  const msg = String(body.message || '').trim();
+  const imagePath = req.file ? normalizePhotoPath(`/uploads/chat/${req.file.filename}`) : '';
+
   if (!pin) return res.status(400).json({ error: 'PIN er påkrevd' });
-  if (!msg) return res.status(400).json({ error: 'Melding kan ikke være tom' });
+  if (!msg && !imagePath) return res.status(400).json({ error: 'Melding eller bilde er påkrevd' });
   if (msg.length > 400) return res.status(400).json({ error: 'Meldingen er for lang (maks 400 tegn)' });
   try {
     const t = db.prepare(`SELECT * FROM tournaments WHERE status='active' ORDER BY date DESC LIMIT 1`).get();
@@ -392,9 +410,9 @@ app.post('/api/chat/send', (req, res) => {
     const team = db.prepare('SELECT id, team_name FROM teams WHERE tournament_id=? AND pin_code=? LIMIT 1').get(t.id, pin);
     if (!team) return res.status(401).json({ error: 'Ugyldig PIN' });
     const result = db.prepare(
-      'INSERT INTO chat_messages (tournament_id, team_id, team_name, message) VALUES (?,?,?,?)'
-    ).run(t.id, team.id, team.team_name, msg);
-    const created = db.prepare('SELECT id, team_name, message, created_at FROM chat_messages WHERE id=?').get(result.lastInsertRowid);
+      'INSERT INTO chat_messages (tournament_id, team_id, team_name, message, image_path) VALUES (?,?,?,?,?)'
+    ).run(t.id, team.id, team.team_name, msg, imagePath);
+    const created = db.prepare('SELECT id, team_name, message, image_path, created_at FROM chat_messages WHERE id=?').get(result.lastInsertRowid);
     broadcast('chat_message', created);
     res.json({ success: true, message: created });
   } catch(e) { res.status(500).json({ error: e.message }); }
