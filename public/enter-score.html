@@ -122,6 +122,7 @@
     }
 
     .chat-widget-toggle {
+      position: relative;
       width: 48px;
       height: 48px;
       border: none;
@@ -137,6 +138,25 @@
       transition: transform .2s ease;
     }
     .chat-widget-toggle:hover { transform: scale(1.06); }
+    .chat-widget-toggle.has-unread::after {
+      content: attr(data-unread);
+      position: absolute;
+      top: -4px;
+      right: -4px;
+      min-width: 20px;
+      height: 20px;
+      border-radius: 999px;
+      background: #ef4444;
+      color: #fff;
+      border: 2px solid var(--white);
+      font-size: .66rem;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 5px;
+      box-shadow: 0 6px 14px rgba(239,68,68,.3);
+    }
     .chat-widget {
       position: fixed;
       top: calc(var(--nav-height) + 14px);
@@ -196,7 +216,7 @@
       max-height: min(78vh, 960px);
       min-height: clamp(240px, 34vh, 520px);
       overflow-y: auto;
-      padding: 12px;
+      padding: 12px 12px max(16px, env(safe-area-inset-bottom));
       display: flex;
       flex-direction: column;
       gap: 8px;
@@ -216,6 +236,10 @@
       border: 1px solid var(--gold-border);
       border-radius: var(--radius-sm);
       padding: 8px 10px;
+      scroll-margin-bottom: 110px;
+    }
+    .team-chat-row:last-child {
+      margin-bottom: 6px;
     }
     .team-chat-meta { display:flex; justify-content:space-between; gap:8px; margin-bottom:4px; font-size:.68rem; }
     .team-chat-name { font-weight: 700; color: var(--gold-dark); }
@@ -301,7 +325,7 @@
 <!-- ── Navigasjon ──────────────────────────────────────────────────────────── -->
 <nav class="navbar" id="navbar">
   <div class="container">
-    <button class="chat-widget-toggle" id="chatWidgetToggle" type="button" onclick="toggleChatWidget()" aria-label="Åpne chat">
+    <button class="chat-widget-toggle" id="chatWidgetToggle" type="button" onclick="toggleChatWidget()" aria-label="Åpne chat" data-unread="0">
       <i class="fas fa-comment-dots"></i>
     </button>
     <ul class="navbar-nav">
@@ -527,7 +551,9 @@ function toggleChatWidget() {
   const widget = document.getElementById('chatWidget');
   if (!widget) return;
   widget.classList.toggle('open');
+  if (widget.classList.contains('open')) markChatAsSeen();
 }
+
 document.addEventListener('click', e => {
   if (!document.getElementById('quickNav').contains(e.target)) {
     document.getElementById('quickNavPanel').classList.remove('open');
@@ -575,6 +601,8 @@ let teamPin = '';
 let chatMessages = [];
 let chatEventSource = null;
 let notificationRegistration = null;
+let unreadChatCount = 0;
+let lastSeenChatId = 0;
 
 function isIOSDevice() {
   return /iPad|iPhone|iPod/.test(navigator.userAgent || '') ||
@@ -637,6 +665,30 @@ async function ensureNotificationPermission() {
 async function requestNotificationPermissionFromButton() {
   await ensureNotificationPermission();
   updateNotificationBanner();
+}
+
+
+function syncChatUnreadIndicator() {
+  const btn = document.getElementById('chatWidgetToggle');
+  if (!btn) return;
+  if (unreadChatCount > 0) {
+    btn.classList.add('has-unread');
+    btn.setAttribute('data-unread', unreadChatCount > 9 ? '9+' : String(unreadChatCount));
+  } else {
+    btn.classList.remove('has-unread');
+    btn.setAttribute('data-unread', '0');
+  }
+}
+
+function markChatAsSeen() {
+  const newest = chatMessages[chatMessages.length - 1];
+  if (newest?.id) lastSeenChatId = Math.max(lastSeenChatId, Number(newest.id) || 0);
+  unreadChatCount = 0;
+  syncChatUnreadIndicator();
+}
+
+function isChatWidgetOpen() {
+  return document.getElementById('chatWidget')?.classList.contains('open');
 }
 
 async function notifyBirdieShot(payload) {
@@ -764,6 +816,9 @@ function renderChatMessages() {
     </div>
   `).join('');
   wrap.scrollTop = wrap.scrollHeight;
+  const newestMessage = chatMessages[chatMessages.length - 1];
+  if (newestMessage?.id) lastSeenChatId = Math.max(lastSeenChatId, Number(newestMessage.id) || 0);
+  if (isChatWidgetOpen()) markChatAsSeen();
 }
 
 async function loadChatMessages() {
@@ -787,6 +842,11 @@ function startChatEvents() {
       if (payload.type === 'chat_message' && payload.data) {
         chatMessages.push(payload.data);
         if (chatMessages.length > 100) chatMessages = chatMessages.slice(-100);
+        const incomingId = Number(payload.data.id) || 0;
+        if (!isChatWidgetOpen() && incomingId > lastSeenChatId) {
+          unreadChatCount += 1;
+          syncChatUnreadIndicator();
+        }
         renderChatMessages();
       }
       if (payload.type === 'birdie_shot' && payload.data) {
