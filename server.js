@@ -263,6 +263,28 @@ function rebuildPhotoDatabase(tournamentId = null) {
   };
 }
 
+
+function resolveTeamForActiveTournament(req, pinInput) {
+  const t = db.prepare(`SELECT * FROM tournaments WHERE status='active' ORDER BY date DESC LIMIT 1`).get();
+  if (!t) return { error: { status: 404, message: 'Ingen aktiv turnering' } };
+
+  const pin = String(pinInput || '').trim();
+  if (pin) {
+    const teamByPin = db.prepare('SELECT id, team_name, tournament_id FROM teams WHERE tournament_id=? AND pin_code=? LIMIT 1').get(t.id, pin);
+    if (!teamByPin) return { error: { status: 401, message: 'Ugyldig PIN' } };
+    return { tournament: t, team: teamByPin };
+  }
+
+  if (req.session?.teamId) {
+    const sessionTeam = db.prepare('SELECT id, team_name, tournament_id FROM teams WHERE id=? LIMIT 1').get(req.session.teamId);
+    if (sessionTeam && sessionTeam.tournament_id === t.id) {
+      return { tournament: t, team: sessionTeam };
+    }
+  }
+
+  return { error: { status: 400, message: 'Mangler pin for chat' } };
+}
+
 function buildScoreboard(tournament) {
   const teams     = db.prepare('SELECT * FROM teams WHERE tournament_id=?').all(tournament.id);
   const holes     = db.prepare('SELECT * FROM holes WHERE tournament_id=? ORDER BY hole_number').all(tournament.id);
@@ -397,18 +419,16 @@ app.get('/api/chat/messages', (req, res) => {
 
 app.post('/api/chat/send', chatUpload.single('image'), (req, res) => {
   const body = req.body || {};
-  const pin = String(body.pin || '').trim();
   const msg = String(body.message || '').trim();
   const imagePath = req.file ? normalizePhotoPath(`/uploads/chat/${req.file.filename}`) : '';
 
-  if (!pin) return res.status(400).json({ error: 'PIN er påkrevd' });
+  const resolved = resolveTeamForActiveTournament(req, body.pin);
+  if (resolved.error) return res.status(resolved.error.status).json({ error: resolved.error.message });
   if (!msg && !imagePath) return res.status(400).json({ error: 'Melding eller bilde er påkrevd' });
   if (msg.length > 400) return res.status(400).json({ error: 'Meldingen er for lang (maks 400 tegn)' });
   try {
-    const t = db.prepare(`SELECT * FROM tournaments WHERE status='active' ORDER BY date DESC LIMIT 1`).get();
-    if (!t) return res.status(404).json({ error: 'Ingen aktiv turnering' });
-    const team = db.prepare('SELECT id, team_name FROM teams WHERE tournament_id=? AND pin_code=? LIMIT 1').get(t.id, pin);
-    if (!team) return res.status(401).json({ error: 'Ugyldig PIN' });
+    const t = resolved.tournament;
+    const team = resolved.team;
     const result = db.prepare(
       'INSERT INTO chat_messages (tournament_id, team_id, team_name, message, image_path) VALUES (?,?,?,?,?)'
     ).run(t.id, team.id, team.team_name, msg, imagePath);
@@ -419,13 +439,12 @@ app.post('/api/chat/send', chatUpload.single('image'), (req, res) => {
 });
 
 app.post('/api/team/birdie-shot', (req, res) => {
-  const { pin, note } = req.body;
-  if (!pin) return res.status(400).json({ error: 'PIN er påkrevd' });
+  const { pin, note } = req.body || {};
   try {
-    const t = db.prepare(`SELECT * FROM tournaments WHERE status='active' ORDER BY date DESC LIMIT 1`).get();
-    if (!t) return res.status(404).json({ error: 'Ingen aktiv turnering' });
-    const team = db.prepare('SELECT id, team_name FROM teams WHERE tournament_id=? AND pin_code=? LIMIT 1').get(t.id, pin);
-    if (!team) return res.status(401).json({ error: 'Ugyldig PIN' });
+    const resolved = resolveTeamForActiveTournament(req, pin);
+    if (resolved.error) return res.status(resolved.error.status).json({ error: resolved.error.message });
+    const t = resolved.tournament;
+    const team = resolved.team;
     const payload = {
       team_name: team.team_name,
       note: String(note || '').trim().slice(0, 140)

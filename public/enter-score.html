@@ -813,10 +813,6 @@ function startChatEvents() {
 
 
 async function sendBirdieShoutout() {
-  if (!teamPin) {
-    showToast('Mangler PIN for shoutout. Logg inn på nytt.', 'error');
-    return;
-  }
   const btn = document.getElementById('birdieShoutBtn');
   if (btn) btn.classList.add('is-celebrating');
   if (navigator.vibrate) navigator.vibrate([120, 80, 120, 80, 180]);
@@ -824,7 +820,7 @@ async function sendBirdieShoutout() {
     const r = await fetch('/api/team/birdie-shot', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: teamPin, note: 'Alle spillere må ta birdie shots! 🥃' })
+      body: JSON.stringify({ note: 'Alle spillere må ta birdie shots! 🥃', ...(teamPin ? { pin: teamPin } : {}) })
     });
     const d = await r.json();
     if (!d.success) {
@@ -856,18 +852,13 @@ async function sendChatMessage(event) {
   const message = (input?.value || '').trim();
   const imageFile = imageInput?.files?.[0] || null;
   if (!message && !imageFile) return;
-  if (!teamPin) {
-    showToast('Mangler PIN for å sende melding. Logg inn på nytt.', 'error');
-    return;
-  }
-
   btn.disabled = true;
   btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
   try {
     let r;
     if (imageFile) {
       const formData = new FormData();
-      formData.append('pin', teamPin);
+      if (teamPin) formData.append('pin', teamPin);
       formData.append('message', message);
       formData.append('image', imageFile);
       r = await fetch('/api/chat/send', { method: 'POST', body: formData });
@@ -875,7 +866,7 @@ async function sendChatMessage(event) {
       r = await fetch('/api/chat/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: teamPin, message })
+        body: JSON.stringify({ message, ...(teamPin ? { pin: teamPin } : {}) })
       });
     }
     const d = await r.json();

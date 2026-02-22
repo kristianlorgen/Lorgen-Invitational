@@ -297,15 +297,26 @@ document.addEventListener('click', e => {
   }
 });
 
+
+function formatTournamentDate(dateValue, includeWeekday = false) {
+  const dt = new Date(dateValue);
+  if (Number.isNaN(dt.getTime())) return '—';
+  const hasTime = typeof dateValue === 'string' && dateValue.includes('T');
+  return dt.toLocaleString('nb-NO', {
+    ...(includeWeekday ? { weekday: 'long' } : {}),
+    day: 'numeric', month: 'long', year: 'numeric',
+    ...(hasTime ? { hour: '2-digit', minute: '2-digit' } : {})
+  });
+}
+
 async function loadGameday() {
   try {
     const r = await fetch('/api/tournament');
     const d = await r.json();
     if (d.tournament) {
       const t = d.tournament;
-      const dt = new Date(t.date);
-      const datoFull = dt.toLocaleDateString('nb-NO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-      const datoKort = dt.toLocaleDateString('nb-NO', { day: 'numeric', month: 'long', year: 'numeric' });
+      const datoFull = formatTournamentDate(t.date, true);
+      const datoKort = formatTournamentDate(t.date);
 
       document.getElementById('heroDateLine').textContent = datoFull + (t.course ? ' · ' + t.course : '');
       document.getElementById('detDate').textContent = datoKort;
