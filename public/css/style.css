@@ -1216,8 +1216,8 @@ input, select, textarea { font-family: inherit; }
 }
 
 .sponsor-logo {
-  width: 132px;
-  height: 132px;
+  width: 264px;
+  height: 264px;
   object-fit: contain;
   background: var(--white);
   border-radius: 14px;
@@ -1238,6 +1238,14 @@ input, select, textarea { font-family: inherit; }
   color: var(--dark);
   font-weight: 700;
   line-height: 1.25;
+}
+
+.sponsor-description {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1.4;
+  max-width: 42ch;
 }
 
 @media (max-width: 768px) {
