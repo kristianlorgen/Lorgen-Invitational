@@ -129,7 +129,7 @@
 
     <div id="sponsorSection" class="d-none" style="margin-top:28px;width:min(100%,1120px)">
       <div style="font-size:.8rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--text-muted);margin-bottom:16px">Sponsorer</div>
-      <div id="sponsorGrid" style="display:flex;gap:16px;flex-wrap:wrap;justify-content:center"></div>
+      <div id="sponsorGrid" class="sponsor-grid"></div>
     </div>
   </div>
 </section>
@@ -448,10 +448,10 @@ async function loadSponsors() {
     if (!topFive.length) return;
     section.classList.remove('d-none');
     grid.innerHTML = topFive.map(s => `
-      <div style="display:flex;align-items:center;gap:14px;border:1px solid var(--gold-border);border-radius:14px;background:rgba(255,255,255,.9);padding:16px 20px;backdrop-filter:blur(2px)">
-        ${s.logo_path ? `<img src="${s.logo_path}" alt="${s.sponsor_name || 'Sponsor'}" style="width:64px;height:64px;object-fit:contain;background:var(--white);border-radius:10px;padding:4px">` : ''}
-        <span style="font-size:1.2rem;color:var(--dark);font-weight:700;line-height:1.2">${s.sponsor_name || `Sponsorplass ${s.spot_number}`}</span>
-      </div>
+      <article class="sponsor-card">
+        ${s.logo_path ? `<img src="${s.logo_path}" alt="${s.sponsor_name || 'Sponsor'}" class="sponsor-logo">` : '<div class="sponsor-logo sponsor-logo--placeholder"><i class="fas fa-image"></i></div>'}
+        <span class="sponsor-name">${s.sponsor_name || `Sponsorplass ${s.spot_number}`}</span>
+      </article>
     `).join('');
   } catch(_) {}
 }
