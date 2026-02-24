@@ -1,5 +1,0 @@
-{
-  "installCommand": "cd . && npm install",
-  "buildCommand": "cd . && echo 'No build step required'",
-  "outputDirectory": "public"
-}

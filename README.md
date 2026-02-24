@@ -27,11 +27,7 @@ npm start              # Runs on http://localhost:3000
 |---|---|---|
 | `PORT` | `3000` | Server port |
 | `SESSION_SECRET` | `lorgen-inv-secret` | Session encryption key |
-| `SITE_URL` | `http://localhost:3000` | Public base URL used for OAuth callback redirects |
-| `SUPABASE_URL` | - | Supabase project URL (or use `NEXT_PUBLIC_SUPABASE_URL`) |
-| `SUPABASE_ANON_KEY` | - | Supabase anon key for GitHub OAuth user verification (or `NEXT_PUBLIC_SUPABASE_ANON_KEY`) |
-| `ADMIN_GITHUB_USERNAMES` | - | Comma-separated GitHub usernames allowed as admins (blank = all) |
-| `ADMIN_PASSWORD` | `LorgenAdmin2025` | Admin panel password fallback login |
+| `ADMIN_PASSWORD` | `LorgenAdmin2025` | Admin panel password |
 
 ## Tournament Day Flow
 
@@ -51,22 +47,5 @@ npm start              # Runs on http://localhost:3000
 - **Database**: SQLite (better-sqlite3)
 - **Live Updates**: Server-Sent Events (SSE)
 - **File Uploads**: Multer
-- **Auth**: Express-session (PIN for teams, password or Supabase GitHub OAuth for admin)
+- **Auth**: Express-session (PIN for teams, password for admin)
 - **Frontend**: Vanilla HTML/CSS/JS
-## Vercel Deployment
-
-This repository currently has a single web app at the repo root (there is no `packages/*` frontend package to target), so Vercel should build from root using `vercel.json`:
-
-- `installCommand`: `cd . && npm install`
-- `buildCommand`: `cd . && echo 'No build step required'`
-- `outputDirectory`: `public`
-
-A serverless health endpoint is provided at `/api/health` and returns:
-
-```json
-{ "ok": true }
-```
-
-After deploy, expected health URL:
-
-- `https://<your-vercel-domain>/api/health`
