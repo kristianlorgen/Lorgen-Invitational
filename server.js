@@ -285,6 +285,21 @@ function resolveTeamForActiveTournament(req, pinInput) {
   return { error: { status: 400, message: 'Mangler pin for chat' } };
 }
 
+
+function getSponsorsForTournament(tournamentId, placement) {
+  return db.prepare(
+    `SELECT id, tournament_id, placement, slot_key, spot_number, hole_number, sponsor_name, description,
+            logo_path, is_enabled
+     FROM sponsors
+     WHERE tournament_id=? AND placement=?
+     ORDER BY CASE WHEN placement='home' THEN spot_number ELSE hole_number END ASC`
+  ).all(tournamentId, placement).map(row => ({
+    ...row,
+    logo_path: normalizePhotoPath(row.logo_path),
+    is_enabled: row.is_enabled ? 1 : 0
+  }));
+}
+
 function buildScoreboard(tournament) {
   const teams     = db.prepare('SELECT * FROM teams WHERE tournament_id=?').all(tournament.id);
   const holes     = db.prepare('SELECT * FROM holes WHERE tournament_id=? ORDER BY hole_number').all(tournament.id);
@@ -381,6 +396,31 @@ app.get('/api/tournament', (req, res) => {
     const holes = db.prepare('SELECT * FROM holes WHERE tournament_id=? ORDER BY hole_number').all(t.id);
     res.json({ tournament: t, holes });
   } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/sponsors', (req, res) => {
+  try {
+    const placement = String(req.query.placement || 'home');
+    if (!['home', 'hole'].includes(placement)) {
+      return res.status(400).json({ error: 'Ugyldig sponsor-plassering' });
+    }
+
+    let tournamentId = parseInt(req.query.tournament_id, 10);
+    if (!Number.isFinite(tournamentId)) {
+      const t = getActiveTournament() || getScoreboardTournament();
+      tournamentId = t?.id;
+    }
+    if (!tournamentId) return res.json({ sponsors: [] });
+
+    const sponsors = getSponsorsForTournament(tournamentId, placement).filter(s => s.is_enabled);
+    if (placement === 'hole') {
+      const holeNumber = parseInt(req.query.hole_number, 10);
+      if (Number.isFinite(holeNumber)) {
+        return res.json({ sponsors: sponsors.filter(s => s.hole_number === holeNumber) });
+      }
+    }
+    res.json({ sponsors });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/scoreboard', (req, res) => {
@@ -531,7 +571,8 @@ app.get('/api/team/scorecard', requireTeam, (req, res) => {
     const scoresRaw  = db.prepare('SELECT * FROM scores WHERE team_id=?').all(req.session.teamId);
     const scores     = scoresRaw.map(s => ({ ...s, photo_path: normalizePhotoPath(s.photo_path) }));
     const claims     = db.prepare('SELECT * FROM award_claims WHERE tournament_id=? AND team_id=?').all(req.session.tournamentId, req.session.teamId);
-    res.json({ team: { ...team, locked: team.locked || 0 }, tournament, holes, scores, claims });
+    const holeSponsors = getSponsorsForTournament(req.session.tournamentId, 'hole').filter(s => s.is_enabled);
+    res.json({ team: { ...team, locked: team.locked || 0 }, tournament, holes, scores, claims, hole_sponsors: holeSponsors });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -656,6 +697,85 @@ app.put('/api/admin/tournament/:id/slope', requireAdmin, (req, res) => {
     db.prepare('UPDATE tournaments SET slope_rating=? WHERE id=?').run(parseInt(req.body.slope_rating)||113, req.params.id);
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+
+app.get('/api/admin/tournament/:id/sponsors', requireAdmin, (req, res) => {
+  try {
+    const tournamentId = parseInt(req.params.id, 10);
+    const home = getSponsorsForTournament(tournamentId, 'home');
+    const hole = getSponsorsForTournament(tournamentId, 'hole');
+    res.json({ home, hole });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/admin/tournament/:id/sponsors', requireAdmin, (req, res) => {
+  try {
+    const tournamentId = parseInt(req.params.id, 10);
+    const sponsors = Array.isArray(req.body.sponsors) ? req.body.sponsors : [];
+    const stmt = db.prepare(
+      `INSERT INTO sponsors (tournament_id, placement, slot_key, spot_number, hole_number, sponsor_name, description, logo_path, is_enabled, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+       ON CONFLICT(tournament_id, placement, slot_key)
+       DO UPDATE SET
+         spot_number=excluded.spot_number,
+         hole_number=excluded.hole_number,
+         sponsor_name=excluded.sponsor_name,
+         description=excluded.description,
+         logo_path=excluded.logo_path,
+         is_enabled=excluded.is_enabled,
+         updated_at=CURRENT_TIMESTAMP`
+    );
+
+    const tx = db.transaction(() => {
+      sponsors.forEach(item => {
+        const placement = item.placement === 'hole' ? 'hole' : 'home';
+        const slotNumber = placement === 'home' ? (parseInt(item.spot_number, 10) || null) : null;
+        const holeNumber = placement === 'hole' ? (parseInt(item.hole_number, 10) || null) : null;
+        const slotKey = placement === 'home' ? `spot_${slotNumber}` : `hole_${holeNumber}`;
+        if (!slotNumber && !holeNumber) return;
+        stmt.run(
+          tournamentId,
+          placement,
+          slotKey,
+          slotNumber,
+          holeNumber,
+          String(item.sponsor_name || '').trim(),
+          String(item.description || '').trim(),
+          String(item.logo_path || '').trim(),
+          item.is_enabled ? 1 : 0
+        );
+      });
+    });
+
+    tx();
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/admin/tournament/:id/sponsor-logo', requireAdmin, (req, res) => {
+  const tournamentId = parseInt(req.params.id, 10);
+  const uploadDir = `./uploads/admin/t${tournamentId}/sponsors`;
+  ensureDir(uploadDir);
+
+  const dynamicUpload = multer({
+    storage: multer.diskStorage({
+      destination: uploadDir,
+      filename: (req, file, cb) => cb(null, `sponsor-${Date.now()}-${Math.round(Math.random()*1e6)}${path.extname(file.originalname)}`)
+    }),
+    limits: { fileSize: 15 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+      if (isAllowedImageUpload(file)) return cb(null, true);
+      cb(new Error('Kun bilder er tillatt'));
+    }
+  }).single('logo');
+
+  dynamicUpload(req, res, err => {
+    if (err) return res.status(400).json({ error: err.message });
+    if (!req.file) return res.status(400).json({ error: 'Ingen fil lastet opp' });
+    const logoPath = `/uploads/admin/t${tournamentId}/sponsors/${req.file.filename}`;
+    res.json({ success: true, logo_path: logoPath });
+  });
 });
 
 app.put('/api/admin/tournament/:id/gameday', requireAdmin, (req, res) => {
