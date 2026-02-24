@@ -122,14 +122,14 @@
       </div>
     </div>
 
-    <div id="sponsorSection" class="d-none" style="margin-top:16px;width:min(100%,980px)">
-      <div style="font-size:.68rem;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--text-muted);margin-bottom:10px">Sponsorer</div>
-      <div id="sponsorGrid" style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center"></div>
-    </div>
-
     <div class="hero-actions">
       <a href="/scoreboard" class="btn btn--gold btn--lg"><i class="fas fa-golf-ball-tee"></i> Live Resultater</a>
       <a href="/gameday" class="btn btn--outline btn--lg" style="color:var(--gold-dark);border-color:var(--gold)"><i class="fas fa-calendar-day"></i> Spilleregler & Informasjon</a>
+    </div>
+
+    <div id="sponsorSection" class="d-none" style="margin-top:24px;width:min(100%,980px)">
+      <div style="font-size:.72rem;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--text-muted);margin-bottom:12px">Sponsorer</div>
+      <div id="sponsorGrid" style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center"></div>
     </div>
   </div>
 </section>
@@ -448,9 +448,9 @@ async function loadSponsors() {
     if (!topFive.length) return;
     section.classList.remove('d-none');
     grid.innerHTML = topFive.map(s => `
-      <div style="display:flex;align-items:center;gap:8px;border:1px solid var(--gold-border);border-radius:10px;background:rgba(255,255,255,.78);padding:7px 10px;backdrop-filter:blur(2px)">
-        ${s.logo_path ? `<img src="${s.logo_path}" alt="${s.sponsor_name || 'Sponsor'}" style="width:26px;height:26px;object-fit:contain;background:var(--white);border-radius:6px;padding:2px">` : ''}
-        <span style="font-size:.8rem;color:var(--dark);font-weight:600">${s.sponsor_name || `Sponsorplass ${s.spot_number}`}</span>
+      <div style="display:flex;align-items:center;gap:10px;border:1px solid var(--gold-border);border-radius:10px;background:rgba(255,255,255,.78);padding:10px 14px;backdrop-filter:blur(2px)">
+        ${s.logo_path ? `<img src="${s.logo_path}" alt="${s.sponsor_name || 'Sponsor'}" style="width:36px;height:36px;object-fit:contain;background:var(--white);border-radius:6px;padding:2px">` : ''}
+        <span style="font-size:.94rem;color:var(--dark);font-weight:600">${s.sponsor_name || `Sponsorplass ${s.spot_number}`}</span>
       </div>
     `).join('');
   } catch(_) {}
