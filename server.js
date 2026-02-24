@@ -10,15 +10,6 @@ const db      = require('./database');
 const app  = express();
 const PORT = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'LorgenAdmin2025';
-const SITE_URL = process.env.SITE_URL || `http://localhost:${PORT}`;
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const ADMIN_GITHUB_USERNAMES = new Set(
-  String(process.env.ADMIN_GITHUB_USERNAMES || '')
-    .split(',')
-    .map(v => v.trim().toLowerCase())
-    .filter(Boolean)
-);
 
 const allowedImageExtensions = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.heic', '.heif', '.avif']);
 
@@ -481,60 +472,9 @@ app.post('/api/team/birdie-shot', (req, res) => {
 //  AUTH
 // ════════════════════════════════════════════════════════════════════════════
 
+// GitHub OAuth not supported without Supabase
 app.get('/api/auth/github-url', (req, res) => {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-    return res.status(501).json({ error: 'GitHub-innlogging er ikke konfigurert: mangler Supabase-nøkler' });
-  }
-  const redirectTo = `${SITE_URL.replace(/\/$/, '')}/admin`;
-  const url = `${SUPABASE_URL.replace(/\/$/, '')}/auth/v1/authorize?provider=github&redirect_to=${encodeURIComponent(redirectTo)}`;
-  res.json({ url });
-});
-
-app.post('/api/auth/github-token', async (req, res) => {
-  const accessToken = String(req.body?.access_token || '').trim();
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-    return res.status(501).json({ error: 'GitHub-innlogging er ikke konfigurert: mangler Supabase-nøkler' });
-  }
-  if (!accessToken) {
-    return res.status(400).json({ error: 'access_token er påkrevd' });
-  }
-
-  try {
-    const meRes = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/auth/v1/user`, {
-      headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${accessToken}`
-      }
-    });
-    const user = await meRes.json();
-    if (!meRes.ok) {
-      return res.status(401).json({ error: user?.msg || user?.error_description || 'Ugyldig GitHub-session' });
-    }
-
-    const githubIdentity = Array.isArray(user.identities)
-      ? user.identities.find(i => i?.provider === 'github')
-      : null;
-    if (!githubIdentity) {
-      return res.status(403).json({ error: 'Brukeren er ikke logget inn via GitHub' });
-    }
-
-    const username = String(
-      user.user_metadata?.user_name ||
-      user.user_metadata?.preferred_username ||
-      user.user_metadata?.login ||
-      ''
-    ).trim();
-    const usernameLower = username.toLowerCase();
-    if (ADMIN_GITHUB_USERNAMES.size > 0 && !ADMIN_GITHUB_USERNAMES.has(usernameLower)) {
-      return res.status(403).json({ error: 'GitHub-brukeren har ikke admin-tilgang' });
-    }
-
-    req.session.isAdmin = true;
-    req.session.adminGithubUsername = username;
-    return res.json({ success: true, username });
-  } catch (e) {
-    return res.status(500).json({ error: e.message || 'Ukjent feil ved GitHub-innlogging' });
-  }
+  res.status(501).json({ error: 'GitHub-innlogging er ikke konfigurert på denne serveren' });
 });
 
 app.post('/api/auth/team-login', (req, res) => {
