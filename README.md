@@ -27,7 +27,11 @@ npm start              # Runs on http://localhost:3000
 |---|---|---|
 | `PORT` | `3000` | Server port |
 | `SESSION_SECRET` | `lorgen-inv-secret` | Session encryption key |
-| `ADMIN_PASSWORD` | `LorgenAdmin2025` | Admin panel password |
+| `SITE_URL` | `http://localhost:3000` | Public base URL used for OAuth callback redirects |
+| `SUPABASE_URL` | - | Supabase project URL (or use `NEXT_PUBLIC_SUPABASE_URL`) |
+| `SUPABASE_ANON_KEY` | - | Supabase anon key for GitHub OAuth user verification (or `NEXT_PUBLIC_SUPABASE_ANON_KEY`) |
+| `ADMIN_GITHUB_USERNAMES` | - | Comma-separated GitHub usernames allowed as admins (blank = all) |
+| `ADMIN_PASSWORD` | `LorgenAdmin2025` | Admin panel password fallback login |
 
 ## Tournament Day Flow
 
@@ -47,5 +51,5 @@ npm start              # Runs on http://localhost:3000
 - **Database**: SQLite (better-sqlite3)
 - **Live Updates**: Server-Sent Events (SSE)
 - **File Uploads**: Multer
-- **Auth**: Express-session (PIN for teams, password for admin)
+- **Auth**: Express-session (PIN for teams, password or Supabase GitHub OAuth for admin)
 - **Frontend**: Vanilla HTML/CSS/JS
