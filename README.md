@@ -53,3 +53,20 @@ npm start              # Runs on http://localhost:3000
 - **File Uploads**: Multer
 - **Auth**: Express-session (PIN for teams, password or Supabase GitHub OAuth for admin)
 - **Frontend**: Vanilla HTML/CSS/JS
+## Vercel Deployment
+
+This repository currently has a single web app at the repo root (there is no `packages/*` frontend package to target), so Vercel should build from root using `vercel.json`:
+
+- `installCommand`: `cd . && npm install`
+- `buildCommand`: `cd . && echo 'No build step required'`
+- `outputDirectory`: `public`
+
+A serverless health endpoint is provided at `/api/health` and returns:
+
+```json
+{ "ok": true }
+```
+
+After deploy, expected health URL:
+
+- `https://<your-vercel-domain>/api/health`
