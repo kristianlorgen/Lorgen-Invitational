@@ -451,6 +451,7 @@ async function loadSponsors() {
       <article class="sponsor-card">
         ${s.logo_path ? `<img src="${s.logo_path}" alt="${s.sponsor_name || 'Sponsor'}" class="sponsor-logo">` : '<div class="sponsor-logo sponsor-logo--placeholder"><i class="fas fa-image"></i></div>'}
         <span class="sponsor-name">${s.sponsor_name || `Sponsorplass ${s.spot_number}`}</span>
+        ${s.description ? `<span class="sponsor-description">${s.description}</span>` : ''}
       </article>
     `).join('');
   } catch(_) {}
