@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="nb">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bestilling mottatt | Lorgen Invitational</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<section class="section" style="min-height:100vh;display:flex;align-items:center;background:var(--off-white)">
+  <div class="container" style="max-width:720px">
+    <div class="feature-card">
+      <h1>Takk for bestillingen 🏌️</h1>
+      <p>Vi har mottatt betalingen din. Ordren blir nå behandlet.</p>
+      <div id="orderDetails"><p>Laster ordredetaljer…</p></div>
+      <p style="margin-top:16px"><a href="/webshop" class="btn btn--outline">Tilbake til Webshop</a></p>
+    </div>
+  </div>
+</section>
+<script>
+(async function () {
+  const params = new URLSearchParams(window.location.search);
+  const sessionId = params.get('session_id');
+  const details = document.getElementById('orderDetails');
+  if (!sessionId) {
+    details.innerHTML = '<p>Mangler session_id.</p>';
+    return;
+  }
+  try {
+    const res = await fetch(`/api/orders/by-session?session_id=${encodeURIComponent(sessionId)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Kunne ikke laste ordre');
+    const order = data.order;
+    const items = (order.items_json || []).map((item) => `<li>${item.name} × ${item.quantity}</li>`).join('');
+    details.innerHTML = `
+      <p><strong>Ordre-ID:</strong> ${order.id}</p>
+      <p><strong>Status:</strong> ${order.status}</p>
+      <p><strong>Kjøper:</strong> ${order.shipping_name || order.email || '-'}</p>
+      <ul>${items}</ul>
+    `;
+  } catch (err) {
+    details.innerHTML = `<p>${err.message}</p>`;
+  }
+})();
+</script>
+</body>
+</html>

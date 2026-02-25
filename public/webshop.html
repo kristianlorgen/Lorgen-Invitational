@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="nb">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Webshop | Lorgen Invitational</title>
+  <link rel="icon" type="image/png" href="/images/logo.png">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body>
+<nav class="navbar" id="navbar">
+  <div class="container">
+    <a href="/" class="navbar-brand"><img src="/images/logo.png" alt="Lorgen Invitational" class="navbar-logo"></a>
+    <ul class="navbar-nav">
+      <li><a href="/" class="nav-link">Hjem</a></li>
+      <li><a href="/gameday" class="nav-link">Spilleregler &amp; Informasjon</a></li>
+      <li><a href="/scoreboard" class="nav-link">Live Resultater</a></li>
+      <li><a href="/gallery" class="nav-link">Turneringsbilder</a></li>
+      <li><a href="/legacy" class="nav-link">Hall of Fame</a></li>
+      <li><a href="/webshop" class="nav-link active">Webshop</a></li>
+      <li><a href="/enter-score" class="nav-link nav-link--cta">Scorekort</a></li>
+    </ul>
+    <button class="navbar-toggle" id="navToggle" aria-label="Meny"><span></span><span></span><span></span></button>
+  </div>
+</nav>
+<div class="navbar-mobile" id="mobileMenu">
+  <a href="/" class="nav-link">Hjem</a>
+  <a href="/gameday" class="nav-link">Spilleregler &amp; Informasjon</a>
+  <a href="/scoreboard" class="nav-link">Live Resultater</a>
+  <a href="/gallery" class="nav-link">Turneringsbilder</a>
+  <a href="/legacy" class="nav-link">Hall of Fame</a>
+  <a href="/webshop" class="nav-link active">Webshop</a>
+  <a href="/enter-score" class="nav-link">Scorekort</a>
+</div>
+
+<section class="section" style="padding-top:120px;background:var(--off-white);min-height:100vh">
+  <div class="container">
+    <div class="section-header">
+      <span class="section-tag">Lorgen Shop</span>
+      <h1 class="section-title">Webshop <span>Produkter</span></h1>
+      <p class="section-subtitle">Dropship via Printify. Sikker betaling med Stripe Checkout.</p>
+    </div>
+    <div id="productGrid" class="feature-grid"></div>
+    <p id="shopError" style="display:none;color:#b42318;text-align:center"></p>
+  </div>
+</section>
+
+<script>
+const navToggle = document.getElementById('navToggle');
+const mobileMenu = document.getElementById('mobileMenu');
+if (navToggle && mobileMenu) {
+  navToggle.addEventListener('click', () => mobileMenu.classList.toggle('open'));
+}
+
+async function startCheckout(productId) {
+  try {
+    const res = await fetch('/api/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ productId, quantity: 1 })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Checkout feilet');
+    window.location.href = data.url;
+  } catch (err) {
+    alert(err.message || 'Kunne ikke starte checkout');
+  }
+}
+
+async function loadProducts() {
+  const grid = document.getElementById('productGrid');
+  const errorNode = document.getElementById('shopError');
+  try {
+    const res = await fetch('/api/webshop/products');
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Kunne ikke laste produkter');
+    if (!data.products?.length) {
+      grid.innerHTML = '<div class="feature-card"><h3>Ingen produkter ennå</h3><p>Kom tilbake snart.</p></div>';
+      return;
+    }
+
+    grid.innerHTML = data.products.map((product) => `
+      <article class="feature-card" style="display:flex;flex-direction:column;gap:12px">
+        <img src="${product.image_url || '/images/logo.png'}" alt="${product.name}" style="width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:12px">
+        <h3>${product.name}</h3>
+        <p>${product.description || ''}</p>
+        <p style="font-weight:700">${(product.price_nok / 100).toFixed(2)} ${product.currency}</p>
+        <button class="btn btn--gold" onclick="startCheckout('${product.id}')">Kjøp nå</button>
+      </article>
+    `).join('');
+  } catch (err) {
+    errorNode.style.display = 'block';
+    errorNode.textContent = err.message;
+  }
+}
+
+loadProducts();
+</script>
+</body>
+</html>

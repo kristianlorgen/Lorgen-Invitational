@@ -49,3 +49,73 @@ npm start              # Runs on http://localhost:3000
 - **File Uploads**: Multer
 - **Auth**: Express-session (PIN for teams, password for admin)
 - **Frontend**: Vanilla HTML/CSS/JS
+
+## Webshop (Stripe + Printify + Supabase)
+
+Webshop er nå bygget inn i nettsiden på `/webshop` med flyten:
+
+1. Kunde velger produkt i webshop
+2. `POST /api/checkout` oppretter Stripe Checkout Session
+3. Stripe redirecter til `/webshop/success` eller `/webshop/cancel`
+4. Stripe webhook (`POST /api/stripe/webhook`) verifiserer signatur på raw body
+5. Ordre lagres i Supabase (`orders`)
+6. Ordren sendes videre til Printify og oppdateres til `submitted` ved suksess
+
+### Miljøvariabler
+
+Sett følgende i `.env` (ikke commit secrets):
+
+- `NEXT_PUBLIC_SITE_URL`
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `PRINTIFY_API_TOKEN`
+
+### Supabase migrasjon
+
+Kjør SQL-migrasjonen i `supabase/migrations/20260225141000_webshop.sql`.
+Den oppretter tabellene `products` og `orders` + RLS policy.
+
+### Stripe webhook setup
+
+Lokalt (med Stripe CLI):
+
+```bash
+stripe listen --forward-to localhost:3000/api/stripe/webhook
+```
+
+Bruk `whsec_...` fra CLI/dashboard i `STRIPE_WEBHOOK_SECRET`.
+
+### How to add products (V1)
+
+1. Opprett produkt i Printify UI.
+2. Finn `shop_id` og `product_id` i Printify (fra URL/API).
+3. Sett inn produkt i Supabase `products`:
+
+```sql
+insert into public.products (
+  name,
+  description,
+  image_url,
+  price_nok,
+  currency,
+  printify_shop_id,
+  printify_product_id,
+  printify_variant_id,
+  is_active
+) values (
+  'Lorgen Cap',
+  'Offisiell Lorgen cap',
+  'https://.../image.jpg',
+  34900,
+  'NOK',
+  '1234567',
+  'abcdef123456',
+  12345,
+  true
+);
+```
+
+> `price_nok` er i øre (f.eks. `34900` = 349,00 NOK).
