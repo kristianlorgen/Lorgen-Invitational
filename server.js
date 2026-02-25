@@ -1731,14 +1731,18 @@ app.get('/api/instagram-qr', (req, res) => {
 
 // ── Webshop APIs ─────────────────────────────────────────────────────────────
 app.get('/api/webshop/products', async (req, res) => {
-  if (!hasEnv('SUPABASE_URL') || !hasEnv('SUPABASE_ANON_KEY')) {
+  const hasSupabaseUrl = hasEnv('SUPABASE_URL');
+  const hasAnonKey = hasEnv('SUPABASE_ANON_KEY');
+  const hasServiceKey = hasEnv('SUPABASE_SERVICE_ROLE_KEY');
+
+  if (!hasSupabaseUrl || (!hasAnonKey && !hasServiceKey)) {
     return res.json({ products: [], warning: 'Webshop er ikke konfigurert enda.' });
   }
 
   try {
     const products = await supabaseRequest('products', {
       query: '?select=id,name,description,image_url,price_nok,currency,is_active&is_active=eq.true&order=created_at.desc'
-    }, false);
+    }, !hasAnonKey);
     res.json({ products: products || [] });
   } catch (error) {
     console.error('webshop products error:', error.message);
