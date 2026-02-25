@@ -1719,7 +1719,7 @@ app.get('/api/webshop/products', async (req, res) => {
   try {
     const products = await supabaseRequest('products', {
       query: '?select=id,name,description,image_url,price_nok,currency,is_active&is_active=eq.true&order=created_at.desc'
-    });
+    }, false);
     res.json({ products: products || [] });
   } catch (error) {
     console.error('webshop products error:', error.message);
