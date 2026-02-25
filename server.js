@@ -1841,6 +1841,15 @@ async function getOrderByStripeSessionId(sessionId) {
   return rows?.[0] || null;
 }
 
+function getLocalWebshopProducts() {
+  return db.prepare(`
+    SELECT id, name, description, image_url, price_nok, currency
+    FROM webshop_products
+    WHERE is_active = 1
+    ORDER BY sort_order ASC, id ASC
+  `).all();
+}
+
 app.get('/api/webshop/products', (req, res) => {
   supabaseRequestWithFallback('products', {
     query: '?select=id,name,description,image_url,price_nok,currency,printify_shop_id,printify_product_id,printify_variant_id&is_active=eq.true&order=created_at.asc'
@@ -1848,7 +1857,18 @@ app.get('/api/webshop/products', (req, res) => {
     res.json({ products: products || [] });
   }).catch((error) => {
     console.error('webshop products error:', error.message);
-    res.status(500).json({ error: 'Kunne ikke hente produkter' });
+    try {
+      const localProducts = getLocalWebshopProducts().map((product) => ({
+        ...product,
+        printify_shop_id: null,
+        printify_product_id: null,
+        printify_variant_id: null
+      }));
+      res.json({ products: localProducts });
+    } catch (localError) {
+      console.error('webshop local products error:', localError.message);
+      res.status(500).json({ error: 'Kunne ikke hente produkter' });
+    }
   });
 });
 
