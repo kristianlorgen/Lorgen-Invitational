@@ -78,6 +78,19 @@ Sett følgende i `.env` (ikke commit secrets):
 Kjør SQL-migrasjonen i `supabase/migrations/20260225141000_webshop.sql`.
 Den oppretter tabellene `products` og `orders` + RLS policy.
 
+
+### Nytt webshop-oppsett (anbefalt restart)
+
+Hvis webshop ikke fungerer etter tidligere oppsett, kjør en «ren» restart slik:
+
+1. Oppdater `.env` med alle webshop-nøkler (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `PRINTIFY_API_TOKEN`, `NEXT_PUBLIC_SITE_URL`).
+2. Kjør SQL fra `supabase/migrations/20260225141000_webshop.sql` på nytt i Supabase SQL Editor.
+3. Tøm gamle testordrer/produkter om nødvendig, og legg inn minst ett aktivt produkt i `public.products`.
+4. Start serveren på nytt.
+5. Verifiser status på `GET /api/webshop/status` (alle konfigurerte checks skal være `OK`).
+
+> Backend prioriterer nå `SUPABASE_SERVICE_ROLE_KEY` for webshop-APIene, slik at webshop fortsatt fungerer selv om anon-key/policy-oppsett ikke er helt riktig.
+
 ### Stripe webhook setup
 
 Lokalt (med Stripe CLI):

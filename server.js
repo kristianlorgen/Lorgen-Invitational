@@ -1752,9 +1752,10 @@ app.get('/api/webshop/products', async (req, res) => {
   }
 
   try {
+    const preferServiceKey = hasServiceKey;
     const products = await supabaseRequest('products', {
       query: '?select=id,name,description,image_url,price_nok,currency,is_active&is_active=eq.true&order=created_at.desc'
-    }, !hasAnonKey);
+    }, preferServiceKey);
     res.json({ products: products || [] });
   } catch (error) {
     console.error('webshop products error:', error.message);
@@ -1797,19 +1798,19 @@ async function checkApiEndpoint(name, endpoint, { headers = {}, method = 'GET', 
 app.get('/api/webshop/status', async (req, res) => {
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseAnon = process.env.SUPABASE_ANON_KEY;
+  const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const stripeSecret = process.env.STRIPE_SECRET_KEY;
   const printifyToken = process.env.PRINTIFY_API_TOKEN;
-  const printifyShop = process.env.PRINTIFY_SHOP_ID;
 
   const checks = await Promise.all([
     checkApiEndpoint(
       'supabase',
       `${String(supabaseUrl || '').replace(/\/$/, '')}/rest/v1/products?select=id&limit=1`,
       {
-        enabled: Boolean(supabaseUrl && supabaseAnon),
+        enabled: Boolean(supabaseUrl && (supabaseService || supabaseAnon)),
         headers: {
-          apikey: supabaseAnon || '',
-          Authorization: `Bearer ${supabaseAnon || ''}`
+          apikey: supabaseService || supabaseAnon || '',
+          Authorization: `Bearer ${supabaseService || supabaseAnon || ''}`
         }
       }
     ),
@@ -1817,8 +1818,8 @@ app.get('/api/webshop/status', async (req, res) => {
       enabled: Boolean(stripeSecret),
       headers: { Authorization: `Bearer ${stripeSecret || ''}` }
     }),
-    checkApiEndpoint('printify', `https://api.printify.com/v1/shops/${printifyShop || ''}.json`, {
-      enabled: Boolean(printifyToken && printifyShop),
+    checkApiEndpoint('printify', 'https://api.printify.com/v1/shops.json', {
+      enabled: Boolean(printifyToken),
       headers: { Authorization: `Bearer ${printifyToken || ''}` }
     })
   ]);
