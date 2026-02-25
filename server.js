@@ -5,10 +5,12 @@ const FileStore = require('session-file-store')(session);
 const multer  = require('multer');
 const path    = require('path');
 const fs      = require('fs');
+const crypto  = require('crypto');
 const db      = require('./database');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || `http://localhost:${PORT}`;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'LorgenAdmin2025';
 
 const allowedImageExtensions = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.heic', '.heif', '.avif']);
@@ -82,6 +84,7 @@ const chatUpload = multer({
 });
 
 // ── Middleware ───────────────────────────────────────────────────────────────
+app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use('/uploads', express.static('uploads', { fallthrough: true }));
@@ -105,6 +108,160 @@ app.use(session({
   saveUninitialized: false,
   cookie: { maxAge: 24 * 60 * 60 * 1000 }
 }));
+
+// ── Webshop integrations (Supabase + Stripe + Printify) ─────────────────────
+const STRIPE_API_BASE = 'https://api.stripe.com/v1';
+
+function env(name, required = false) {
+  const value = process.env[name];
+  if (required && !value) throw new Error(`Missing env var: ${name}`);
+  return value;
+}
+
+async function supabaseRequest(pathname, { method = 'GET', query = '', body } = {}, useService = true) {
+  const baseUrl = env('SUPABASE_URL', true);
+  const key = useService ? env('SUPABASE_SERVICE_ROLE_KEY', true) : env('SUPABASE_ANON_KEY', true);
+  const headers = {
+    apikey: key,
+    Authorization: `Bearer ${key}`,
+    'Content-Type': 'application/json'
+  };
+
+  const url = `${baseUrl.replace(/\/$/, '')}/rest/v1/${pathname}${query}`;
+  const res = await fetch(url, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Supabase ${method} ${pathname} failed: ${res.status} ${text}`);
+  }
+
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
+}
+
+function formUrlEncode(data) {
+  const params = new URLSearchParams();
+  const append = (key, value) => params.append(key, String(value));
+  const walk = (prefix, value) => {
+    if (Array.isArray(value)) {
+      value.forEach((item, idx) => walk(`${prefix}[${idx}]`, item));
+      return;
+    }
+    if (value !== null && typeof value === 'object') {
+      Object.entries(value).forEach(([k, v]) => walk(`${prefix}[${k}]`, v));
+      return;
+    }
+    append(prefix, value ?? '');
+  };
+
+  Object.entries(data).forEach(([k, v]) => walk(k, v));
+  return params.toString();
+}
+
+async function stripeRequest(pathname, payload) {
+  const secret = env('STRIPE_SECRET_KEY', true);
+  const res = await fetch(`${STRIPE_API_BASE}${pathname}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${secret}`,
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: formUrlEncode(payload)
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(`Stripe error: ${data?.error?.message || res.statusText}`);
+  return data;
+}
+
+function verifyStripeSignature(rawBody, sigHeader, secret) {
+  if (!sigHeader) throw new Error('Missing Stripe signature header');
+  const parts = Object.fromEntries(sigHeader.split(',').map(part => part.split('=')));
+  const t = parts.t;
+  const v1 = parts.v1;
+  if (!t || !v1) throw new Error('Invalid Stripe signature format');
+
+  const signedPayload = `${t}.${rawBody}`;
+  const expected = crypto.createHmac('sha256', secret).update(signedPayload, 'utf8').digest('hex');
+  const isValid = crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(v1));
+  if (!isValid) throw new Error('Stripe signature mismatch');
+
+  const ageSeconds = Math.floor(Date.now() / 1000) - Number(t);
+  if (ageSeconds > 300) throw new Error('Stripe signature timestamp too old');
+}
+
+async function createPrintifyOrder({ orderId, product, quantity, email, shippingAddress }) {
+  const token = env('PRINTIFY_API_TOKEN', true);
+  const url = `https://api.printify.com/v1/shops/${product.printify_shop_id}/orders.json`;
+
+  const variantId = product.printify_variant_id || 1;
+  const body = {
+    external_id: orderId,
+    label: `Lorgen order ${orderId}`,
+    line_items: [{
+      product_id: product.printify_product_id,
+      variant_id: variantId,
+      quantity
+    }],
+    address_to: {
+      first_name: shippingAddress.first_name,
+      last_name: shippingAddress.last_name,
+      email,
+      phone: shippingAddress.phone || '',
+      country: shippingAddress.country,
+      region: shippingAddress.region || '',
+      address1: shippingAddress.address1,
+      address2: shippingAddress.address2 || '',
+      city: shippingAddress.city,
+      zip: shippingAddress.zip
+    },
+    send_shipping_notification: false
+  };
+
+  const createRes = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body)
+  });
+
+  const createData = await createRes.json();
+  if (!createRes.ok) throw new Error(`Printify create order failed: ${JSON.stringify(createData)}`);
+
+  const submitUrl = `https://api.printify.com/v1/shops/${product.printify_shop_id}/orders/${createData.id}/send_to_production.json`;
+  const submitRes = await fetch(submitUrl, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ external_id: orderId })
+  });
+
+  if (!submitRes.ok) {
+    const fallbackUrl = `https://api.printify.com/v1/shops/${product.printify_shop_id}/orders/${createData.id}/submit.json`;
+    const fallbackRes = await fetch(fallbackUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ external_id: orderId })
+    });
+    if (!fallbackRes.ok) {
+      const fallbackErr = await fallbackRes.text();
+      throw new Error(`Printify submit failed: ${fallbackErr}`);
+    }
+  }
+
+  return createData;
+}
 
 // ── Auth guards ──────────────────────────────────────────────────────────────
 const requireTeam = (req, res, next) =>
@@ -1557,8 +1714,191 @@ app.get('/api/instagram-qr', (req, res) => {
   } catch(e) { res.status(500).end(); }
 });
 
+// ── Webshop APIs ─────────────────────────────────────────────────────────────
+app.get('/api/webshop/products', async (req, res) => {
+  try {
+    const products = await supabaseRequest('products', {
+      query: '?select=id,name,description,image_url,price_nok,currency,is_active&is_active=eq.true&order=created_at.desc'
+    });
+    res.json({ products: products || [] });
+  } catch (error) {
+    console.error('webshop products error:', error.message);
+    res.status(500).json({ error: 'Kunne ikke hente produkter' });
+  }
+});
+
+app.post('/api/checkout', async (req, res) => {
+  try {
+    const { productId, quantity } = req.body || {};
+    const qty = Number(quantity);
+    if (!productId || !Number.isInteger(qty) || qty < 1 || qty > 5) {
+      return res.status(400).json({ error: 'Ugyldig input. quantity må være 1-5.' });
+    }
+
+    const products = await supabaseRequest('products', {
+      query: `?select=*&id=eq.${encodeURIComponent(productId)}&is_active=eq.true&limit=1`
+    });
+    const product = products?.[0];
+    if (!product) return res.status(404).json({ error: 'Produkt ikke funnet' });
+
+    const session = await stripeRequest('/checkout/sessions', {
+      mode: 'payment',
+      'success_url': `${SITE_URL}/webshop/success?session_id={CHECKOUT_SESSION_ID}`,
+      'cancel_url': `${SITE_URL}/webshop/cancel`,
+      'line_items[0][quantity]': qty,
+      'line_items[0][price_data][currency]': (product.currency || 'NOK').toLowerCase(),
+      'line_items[0][price_data][unit_amount]': product.price_nok,
+      'line_items[0][price_data][product_data][name]': product.name,
+      'line_items[0][price_data][product_data][description]': product.description || '',
+      'shipping_address_collection[allowed_countries][0]': 'NO',
+      'metadata[productId]': product.id,
+      'metadata[quantity]': qty
+    });
+
+    res.json({ url: session.url });
+  } catch (error) {
+    console.error('checkout error:', error.message);
+    res.status(500).json({ error: 'Kunne ikke starte checkout' });
+  }
+});
+
+app.post('/api/stripe/webhook', async (req, res) => {
+  const secret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!secret) return res.status(500).json({ error: 'Webhook ikke konfigurert' });
+
+  try {
+    const rawBody = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : String(req.body || '');
+    verifyStripeSignature(rawBody, req.headers['stripe-signature'], secret);
+    const event = JSON.parse(rawBody);
+
+    if (event.type !== 'checkout.session.completed') return res.json({ received: true });
+
+    const session = event.data?.object || {};
+    const productId = session.metadata?.productId;
+    const quantity = Number(session.metadata?.quantity || 1);
+    if (!productId || !Number.isInteger(quantity) || quantity < 1) {
+      return res.status(400).json({ error: 'Manglende metadata' });
+    }
+
+    const existingOrderRows = await supabaseRequest('orders', {
+      query: `?select=*&stripe_session_id=eq.${encodeURIComponent(session.id)}&limit=1`
+    });
+    const existingOrder = existingOrderRows?.[0];
+    if (existingOrder?.printify_order_id) {
+      console.log('stripe webhook duplicate skipped', event.id, existingOrder.id);
+      return res.json({ received: true, duplicate: true });
+    }
+
+    const productRows = await supabaseRequest('products', {
+      query: `?select=*&id=eq.${encodeURIComponent(productId)}&limit=1`
+    });
+    const product = productRows?.[0];
+    if (!product) return res.status(404).json({ error: 'Produkt ikke funnet' });
+
+    const fullName = session.shipping_details?.name || '';
+    const [firstName, ...lastParts] = fullName.split(' ').filter(Boolean);
+    const shippingAddress = {
+      first_name: firstName || 'Kunde',
+      last_name: lastParts.join(' ') || 'Lorgen',
+      address1: session.shipping_details?.address?.line1 || '',
+      address2: session.shipping_details?.address?.line2 || '',
+      city: session.shipping_details?.address?.city || '',
+      zip: session.shipping_details?.address?.postal_code || '',
+      region: session.shipping_details?.address?.state || '',
+      country: session.shipping_details?.address?.country || 'NO'
+    };
+
+    const orderPayload = {
+      email: session.customer_details?.email || null,
+      amount_nok: Number(session.amount_total || product.price_nok * quantity),
+      currency: (session.currency || 'nok').toUpperCase(),
+      status: 'paid',
+      stripe_session_id: session.id,
+      stripe_payment_intent_id: session.payment_intent || null,
+      shipping_name: fullName || null,
+      shipping_address_json: session.shipping_details?.address || null,
+      items_json: [{ product_id: product.id, quantity, unit_price_nok: product.price_nok, name: product.name }]
+    };
+
+    let order;
+    if (existingOrder) {
+      const updated = await supabaseRequest('orders', {
+        method: 'PATCH',
+        query: `?id=eq.${existingOrder.id}&select=*`,
+        body: orderPayload
+      });
+      order = updated?.[0] || existingOrder;
+    } else {
+      const inserted = await supabaseRequest('orders', {
+        method: 'POST',
+        query: '?select=*',
+        body: orderPayload
+      });
+      order = inserted?.[0];
+    }
+
+    console.log('stripe webhook processed', event.id, order?.id);
+
+    if (!order) return res.status(500).json({ error: 'Kunne ikke lagre ordre' });
+    if (order.printify_order_id) return res.json({ received: true, duplicate: true });
+
+    try {
+      const printifyOrder = await createPrintifyOrder({
+        orderId: order.id,
+        product,
+        quantity,
+        email: order.email || '',
+        shippingAddress
+      });
+
+      await supabaseRequest('orders', {
+        method: 'PATCH',
+        query: `?id=eq.${order.id}`,
+        body: {
+          status: 'submitted',
+          printify_order_id: String(printifyOrder.id)
+        }
+      });
+      console.log('printify order submitted', event.id, order.id, printifyOrder.id);
+    } catch (printifyError) {
+      console.error('printify submit error:', printifyError.message);
+      await supabaseRequest('orders', {
+        method: 'PATCH',
+        query: `?id=eq.${order.id}`,
+        body: { status: 'failed' }
+      });
+    }
+
+    res.json({ received: true });
+  } catch (error) {
+    console.error('stripe webhook error:', error.message);
+    res.status(400).json({ error: 'Webhook validation feilet' });
+  }
+});
+
+app.get('/api/orders/by-session', async (req, res) => {
+  try {
+    const sessionId = String(req.query.session_id || '');
+    if (!sessionId) return res.status(400).json({ error: 'session_id er påkrevd' });
+
+    const rows = await supabaseRequest('orders', {
+      query: `?select=id,created_at,email,status,amount_nok,currency,shipping_name,items_json,stripe_session_id&stripe_session_id=eq.${encodeURIComponent(sessionId)}&limit=1`
+    });
+
+    const order = rows?.[0];
+    if (!order) return res.status(404).json({ error: 'Ordre ikke funnet' });
+    res.json({ order });
+  } catch (error) {
+    console.error('order lookup error:', error.message);
+    res.status(500).json({ error: 'Kunne ikke hente ordre' });
+  }
+});
+
 // ── Clean URL routing ────────────────────────────────────────────────────────
-['gameday', 'scoreboard', 'legacy', 'enter-score', 'admin', 'gallery'].forEach(p => {
+app.get('/webshop/success', (req, res) => res.sendFile(path.join(__dirname, 'public/webshop-success.html')));
+app.get('/webshop/cancel', (req, res) => res.sendFile(path.join(__dirname, 'public/webshop-cancel.html')));
+
+['gameday', 'scoreboard', 'legacy', 'enter-score', 'admin', 'gallery', 'webshop'].forEach(p => {
   app.get(`/${p}`, (req, res) => res.sendFile(path.join(__dirname, `public/${p}.html`)));
 });
 
