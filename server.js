@@ -95,6 +95,16 @@ app.use(express.static('public', {
     }
   }
 }));
+
+// Enkel helsesjekk for deploy-plattformer
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok' });
+});
+
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ status: 'ok' });
+});
+
 let sessionStore;
 try {
   sessionStore = new FileStore({ path: './data/sessions', ttl: 86400, retries: 0, logFn: () => {} });
