@@ -170,6 +170,31 @@ async function supabaseRequest(pathname, { method = 'GET', query = '', body } = 
   return text ? JSON.parse(text) : null;
 }
 
+async function supabaseRequestWithFallback(pathname, options = {}) {
+  const hasServiceKey = hasEnv('SUPABASE_SERVICE_ROLE_KEY');
+  const hasAnonKey = hasEnv('SUPABASE_ANON_KEY');
+
+  let lastError;
+
+  if (hasServiceKey) {
+    try {
+      return await supabaseRequest(pathname, options, true);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (hasAnonKey) {
+    try {
+      return await supabaseRequest(pathname, options, false);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error('Missing Supabase API key');
+}
+
 function formUrlEncode(data) {
   const params = new URLSearchParams();
   const append = (key, value) => params.append(key, String(value));
@@ -1756,10 +1781,9 @@ app.get('/api/webshop/products', async (req, res) => {
   }
 
   try {
-    const preferServiceKey = hasServiceKey;
-    const products = await supabaseRequest('products', {
+    const products = await supabaseRequestWithFallback('products', {
       query: '?select=id,name,description,image_url,price_nok,currency,is_active&is_active=eq.true&order=created_at.desc'
-    }, preferServiceKey);
+    });
     res.json({ products: products || [] });
   } catch (error) {
     console.error('webshop products error:', error.message);
@@ -1848,7 +1872,7 @@ app.post('/api/checkout', async (req, res) => {
       return res.status(400).json({ error: 'Ugyldig input. quantity må være 1-5.' });
     }
 
-    const products = await supabaseRequest('products', {
+    const products = await supabaseRequestWithFallback('products', {
       query: `?select=*&id=eq.${encodeURIComponent(productId)}&is_active=eq.true&limit=1`
     });
     const product = products?.[0];
