@@ -121,6 +121,7 @@ app.use(session({
 
 // ── Webshop integrations (Supabase + Stripe + Printify) ─────────────────────
 const STRIPE_API_BASE = 'https://api.stripe.com/v1';
+const EXTERNAL_API_TIMEOUT_MS = Number(process.env.EXTERNAL_API_TIMEOUT_MS || 8000);
 
 function env(name, required = false) {
   const value = process.env[name];
@@ -133,6 +134,17 @@ function hasEnv(name) {
   return typeof value === 'string' && value.trim() !== '';
 }
 
+async function fetchWithTimeout(url, options = {}, timeoutMs = EXTERNAL_API_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function supabaseRequest(pathname, { method = 'GET', query = '', body } = {}, useService = true) {
   const baseUrl = env('SUPABASE_URL', true);
   const key = useService ? env('SUPABASE_SERVICE_ROLE_KEY', true) : env('SUPABASE_ANON_KEY', true);
@@ -143,7 +155,7 @@ async function supabaseRequest(pathname, { method = 'GET', query = '', body } = 
   };
 
   const url = `${baseUrl.replace(/\/$/, '')}/rest/v1/${pathname}${query}`;
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined
@@ -179,7 +191,7 @@ function formUrlEncode(data) {
 
 async function stripeRequest(pathname, payload) {
   const secret = env('STRIPE_SECRET_KEY', true);
-  const res = await fetch(`${STRIPE_API_BASE}${pathname}`, {
+  const res = await fetchWithTimeout(`${STRIPE_API_BASE}${pathname}`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${secret}`,
@@ -237,7 +249,7 @@ async function createPrintifyOrder({ orderId, product, quantity, email, shipping
     send_shipping_notification: false
   };
 
-  const createRes = await fetch(url, {
+  const createRes = await fetchWithTimeout(url, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -250,7 +262,7 @@ async function createPrintifyOrder({ orderId, product, quantity, email, shipping
   if (!createRes.ok) throw new Error(`Printify create order failed: ${JSON.stringify(createData)}`);
 
   const submitUrl = `https://api.printify.com/v1/shops/${product.printify_shop_id}/orders/${createData.id}/send_to_production.json`;
-  const submitRes = await fetch(submitUrl, {
+  const submitRes = await fetchWithTimeout(submitUrl, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -261,7 +273,7 @@ async function createPrintifyOrder({ orderId, product, quantity, email, shipping
 
   if (!submitRes.ok) {
     const fallbackUrl = `https://api.printify.com/v1/shops/${product.printify_shop_id}/orders/${createData.id}/submit.json`;
-    const fallbackRes = await fetch(fallbackUrl, {
+    const fallbackRes = await fetchWithTimeout(fallbackUrl, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -1751,6 +1763,72 @@ app.get('/api/webshop/products', async (req, res) => {
       warning: 'Webshop er midlertidig utilgjengelig. Prøv igjen litt senere.'
     });
   }
+});
+
+async function checkApiEndpoint(name, endpoint, { headers = {}, method = 'GET', enabled = true } = {}) {
+  if (!enabled) return { name, configured: false, reachable: false, status: null, detail: 'Mangler miljøvariabler' };
+
+  try {
+    const response = await fetchWithTimeout(endpoint, {
+      method,
+      headers
+    }, 5000);
+    return {
+      name,
+      configured: true,
+      reachable: response.ok,
+      status: response.status,
+      detail: response.ok ? 'OK' : `HTTP ${response.status}`
+    };
+  } catch (error) {
+    const detail = error?.name === 'AbortError'
+      ? `Timeout etter ${5000}ms`
+      : (error?.message || 'Ukjent nettverksfeil');
+    return {
+      name,
+      configured: true,
+      reachable: false,
+      status: null,
+      detail
+    };
+  }
+}
+
+app.get('/api/webshop/status', async (req, res) => {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnon = process.env.SUPABASE_ANON_KEY;
+  const stripeSecret = process.env.STRIPE_SECRET_KEY;
+  const printifyToken = process.env.PRINTIFY_API_TOKEN;
+  const printifyShop = process.env.PRINTIFY_SHOP_ID;
+
+  const checks = await Promise.all([
+    checkApiEndpoint(
+      'supabase',
+      `${String(supabaseUrl || '').replace(/\/$/, '')}/rest/v1/products?select=id&limit=1`,
+      {
+        enabled: Boolean(supabaseUrl && supabaseAnon),
+        headers: {
+          apikey: supabaseAnon || '',
+          Authorization: `Bearer ${supabaseAnon || ''}`
+        }
+      }
+    ),
+    checkApiEndpoint('stripe', 'https://api.stripe.com/v1/account', {
+      enabled: Boolean(stripeSecret),
+      headers: { Authorization: `Bearer ${stripeSecret || ''}` }
+    }),
+    checkApiEndpoint('printify', `https://api.printify.com/v1/shops/${printifyShop || ''}.json`, {
+      enabled: Boolean(printifyToken && printifyShop),
+      headers: { Authorization: `Bearer ${printifyToken || ''}` }
+    })
+  ]);
+
+  const allReachable = checks.every(check => !check.configured || check.reachable);
+  res.json({
+    ok: allReachable,
+    timeout_ms: 5000,
+    checks
+  });
 });
 
 app.post('/api/checkout', async (req, res) => {

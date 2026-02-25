@@ -79,6 +79,19 @@ async function loadProducts() {
     if (data.warning) {
       errorNode.style.display = 'block';
       errorNode.textContent = data.warning;
+
+      try {
+        const statusRes = await fetch('/api/webshop/status');
+        const statusData = await statusRes.json();
+        if (Array.isArray(statusData.checks)) {
+          const details = statusData.checks
+            .map((check) => `${check.name}: ${check.detail}`)
+            .join(' · ');
+          errorNode.textContent = `${data.warning} (${details})`;
+        }
+      } catch (_) {
+        // Ignorer ekstra statusfeil, behold hovedmelding.
+      }
     }
     if (!data.products?.length) {
       grid.innerHTML = '<div class="feature-card"><h3>Ingen produkter ennå</h3><p>Kom tilbake snart.</p></div>';
