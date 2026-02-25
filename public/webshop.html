@@ -71,10 +71,15 @@ async function startCheckout(productId) {
 async function loadProducts() {
   const grid = document.getElementById('productGrid');
   const errorNode = document.getElementById('shopError');
+  errorNode.style.display = 'none';
   try {
     const res = await fetch('/api/webshop/products');
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Kunne ikke laste produkter');
+    if (data.warning) {
+      errorNode.style.display = 'block';
+      errorNode.textContent = data.warning;
+    }
     if (!data.products?.length) {
       grid.innerHTML = '<div class="feature-card"><h3>Ingen produkter ennå</h3><p>Kom tilbake snart.</p></div>';
       return;

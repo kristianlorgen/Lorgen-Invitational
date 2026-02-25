@@ -1746,7 +1746,10 @@ app.get('/api/webshop/products', async (req, res) => {
     res.json({ products: products || [] });
   } catch (error) {
     console.error('webshop products error:', error.message);
-    res.status(500).json({ error: 'Kunne ikke hente produkter' });
+    res.json({
+      products: [],
+      warning: 'Webshop er midlertidig utilgjengelig. Prøv igjen litt senere.'
+    });
   }
 });
 
