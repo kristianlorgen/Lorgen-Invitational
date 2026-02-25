@@ -1748,7 +1748,11 @@ app.get('/api/webshop/products', async (req, res) => {
   const hasServiceKey = hasEnv('SUPABASE_SERVICE_ROLE_KEY');
 
   if (!hasSupabaseUrl || (!hasAnonKey && !hasServiceKey)) {
-    return res.json({ products: [], warning: 'Webshop er ikke konfigurert enda.' });
+    return res.json({
+      products: [],
+      warning: 'Webshop er ikke konfigurert enda.',
+      status: await getWebshopStatusChecks()
+    });
   }
 
   try {
@@ -1761,7 +1765,8 @@ app.get('/api/webshop/products', async (req, res) => {
     console.error('webshop products error:', error.message);
     res.json({
       products: [],
-      warning: 'Webshop er midlertidig utilgjengelig. Prøv igjen litt senere.'
+      warning: 'Webshop er midlertidig utilgjengelig. Prøv igjen litt senere.',
+      status: await getWebshopStatusChecks()
     });
   }
 });
@@ -1795,7 +1800,7 @@ async function checkApiEndpoint(name, endpoint, { headers = {}, method = 'GET', 
   }
 }
 
-app.get('/api/webshop/status', async (req, res) => {
+async function getWebshopStatusChecks() {
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseAnon = process.env.SUPABASE_ANON_KEY;
   const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -1824,12 +1829,15 @@ app.get('/api/webshop/status', async (req, res) => {
     })
   ]);
 
-  const allReachable = checks.every(check => !check.configured || check.reachable);
-  res.json({
-    ok: allReachable,
+  return {
+    ok: checks.every(check => !check.configured || check.reachable),
     timeout_ms: 5000,
     checks
-  });
+  };
+}
+
+app.get('/api/webshop/status', async (req, res) => {
+  res.json(await getWebshopStatusChecks());
 });
 
 app.post('/api/checkout', async (req, res) => {
