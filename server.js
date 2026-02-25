@@ -118,6 +118,11 @@ function env(name, required = false) {
   return value;
 }
 
+function hasEnv(name) {
+  const value = process.env[name];
+  return typeof value === 'string' && value.trim() !== '';
+}
+
 async function supabaseRequest(pathname, { method = 'GET', query = '', body } = {}, useService = true) {
   const baseUrl = env('SUPABASE_URL', true);
   const key = useService ? env('SUPABASE_SERVICE_ROLE_KEY', true) : env('SUPABASE_ANON_KEY', true);
@@ -1716,6 +1721,10 @@ app.get('/api/instagram-qr', (req, res) => {
 
 // ── Webshop APIs ─────────────────────────────────────────────────────────────
 app.get('/api/webshop/products', async (req, res) => {
+  if (!hasEnv('SUPABASE_URL') || !hasEnv('SUPABASE_ANON_KEY')) {
+    return res.json({ products: [], warning: 'Webshop er ikke konfigurert enda.' });
+  }
+
   try {
     const products = await supabaseRequest('products', {
       query: '?select=id,name,description,image_url,price_nok,currency,is_active&is_active=eq.true&order=created_at.desc'
