@@ -34,89 +34,157 @@
   <a href="/enter-score" class="nav-link">Scorekort</a>
 </div>
 
-<section class="section" style="padding-top:120px;background:var(--off-white);min-height:100vh">
+<section class="section" style="padding-top:120px;background:var(--off-white)">
   <div class="container">
     <div class="section-header">
       <span class="section-tag">Lorgen Shop</span>
-      <h1 class="section-title">Webshop <span>Produkter</span></h1>
-      <p class="section-subtitle">Dropship via Printify. Sikker betaling med Stripe Checkout.</p>
+      <h1 class="section-title">Webshop <span>Bestilling</span></h1>
+      <p class="section-subtitle">Vi har satt opp nettbutikken på nytt med enkel bestilling direkte i løsningen.</p>
     </div>
+
     <div id="productGrid" class="feature-grid"></div>
     <p id="shopError" style="display:none;color:#b42318;text-align:center"></p>
+
+    <div class="feature-card" style="margin-top:28px">
+      <h2 style="margin-bottom:14px">Leveringsinformasjon</h2>
+      <form id="orderForm" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))">
+        <input required name="name" placeholder="Fullt navn" class="form-control" style="padding:12px;border:1px solid var(--gold-border);border-radius:10px">
+        <input required type="email" name="email" placeholder="E-post" class="form-control" style="padding:12px;border:1px solid var(--gold-border);border-radius:10px">
+        <input name="phone" placeholder="Telefon" class="form-control" style="padding:12px;border:1px solid var(--gold-border);border-radius:10px">
+        <input required name="address" placeholder="Adresse" class="form-control" style="padding:12px;border:1px solid var(--gold-border);border-radius:10px">
+        <input required name="postalCode" placeholder="Postnummer" class="form-control" style="padding:12px;border:1px solid var(--gold-border);border-radius:10px">
+        <input required name="city" placeholder="Poststed" class="form-control" style="padding:12px;border:1px solid var(--gold-border);border-radius:10px">
+        <input name="country" value="Norge" placeholder="Land" class="form-control" style="padding:12px;border:1px solid var(--gold-border);border-radius:10px">
+        <textarea name="notes" placeholder="Kommentar til bestilling (valgfritt)" class="form-control" style="padding:12px;border:1px solid var(--gold-border);border-radius:10px;grid-column:1/-1;min-height:92px"></textarea>
+        <div style="grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap">
+          <strong id="cartTotal">Total: 0,00 NOK</strong>
+          <button class="btn btn--gold" type="submit">Send bestilling</button>
+        </div>
+      </form>
+    </div>
   </div>
 </section>
 
 <script>
 const navToggle = document.getElementById('navToggle');
 const mobileMenu = document.getElementById('mobileMenu');
-if (navToggle && mobileMenu) {
-  navToggle.addEventListener('click', () => mobileMenu.classList.toggle('open'));
+if (navToggle && mobileMenu) navToggle.addEventListener('click', () => mobileMenu.classList.toggle('open'));
+
+const productGrid = document.getElementById('productGrid');
+const shopError = document.getElementById('shopError');
+const orderForm = document.getElementById('orderForm');
+const cartTotal = document.getElementById('cartTotal');
+
+let products = [];
+const cart = new Map();
+
+function formatNok(ore) {
+  return `${(ore / 100).toFixed(2).replace('.', ',')} NOK`;
 }
 
-async function startCheckout(productId) {
-  try {
-    const res = await fetch('/api/checkout', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ productId, quantity: 1 })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Checkout feilet');
-    window.location.href = data.url;
-  } catch (err) {
-    alert(err.message || 'Kunne ikke starte checkout');
+function updateTotal() {
+  const total = products.reduce((sum, product) => {
+    const qty = cart.get(product.id) || 0;
+    return sum + (qty * Number(product.price_nok || 0));
+  }, 0);
+  cartTotal.textContent = `Total: ${formatNok(total)}`;
+}
+
+function setQty(productId, qty) {
+  const safeQty = Math.max(0, Math.min(20, Number(qty) || 0));
+  if (safeQty === 0) cart.delete(productId);
+  else cart.set(productId, safeQty);
+  const input = document.querySelector(`[data-qty-id="${productId}"]`);
+  if (input) input.value = safeQty;
+  updateTotal();
+}
+
+function renderProducts() {
+  if (!products.length) {
+    productGrid.innerHTML = '<div class="feature-card"><h3>Ingen produkter tilgjengelig</h3><p>Kontakt oss hvis du ønsker å bestille merch.</p></div>';
+    return;
   }
+
+  productGrid.innerHTML = products.map((product) => `
+    <article class="feature-card" style="display:flex;flex-direction:column;gap:12px">
+      <img src="${product.image_url || '/images/logo.png'}" alt="${product.name}" style="width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:12px">
+      <h3>${product.name}</h3>
+      <p>${product.description || ''}</p>
+      <p style="font-weight:700">${formatNok(product.price_nok)}</p>
+      <label style="font-weight:600">Antall</label>
+      <div style="display:flex;align-items:center;gap:8px">
+        <button type="button" class="btn btn--outline" onclick="setQty(${product.id}, (Number(document.querySelector('[data-qty-id=&quot;${product.id}&quot;]').value || 0) - 1))">-</button>
+        <input data-qty-id="${product.id}" type="number" min="0" max="20" value="0" style="width:72px;padding:10px;border:1px solid var(--gold-border);border-radius:10px" oninput="setQty(${product.id}, this.value)">
+        <button type="button" class="btn btn--outline" onclick="setQty(${product.id}, (Number(document.querySelector('[data-qty-id=&quot;${product.id}&quot;]').value || 0) + 1))">+</button>
+      </div>
+    </article>
+  `).join('');
+
+  updateTotal();
 }
 
 async function loadProducts() {
-  const grid = document.getElementById('productGrid');
-  const errorNode = document.getElementById('shopError');
-  errorNode.style.display = 'none';
+  shopError.style.display = 'none';
   try {
     const res = await fetch('/api/webshop/products');
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Kunne ikke laste produkter');
-    if (data.warning) {
-      errorNode.style.display = 'block';
-      errorNode.textContent = data.warning;
-
-      let statusData = data.status;
-      if (!statusData || !Array.isArray(statusData.checks)) {
-        try {
-          const statusRes = await fetch('/api/webshop/status');
-          statusData = await statusRes.json();
-        } catch (_) {
-          // Ignorer ekstra statusfeil, behold hovedmelding.
-        }
-      }
-
-      if (Array.isArray(statusData?.checks)) {
-        const details = statusData.checks
-          .map((check) => `${check.name}: ${check.detail}`)
-          .join(' · ');
-        errorNode.textContent = `${data.warning} (${details})`;
-      }
-    }
-    if (!data.products?.length) {
-      grid.innerHTML = '<div class="feature-card"><h3>Ingen produkter ennå</h3><p>Kom tilbake snart.</p></div>';
-      return;
-    }
-
-    grid.innerHTML = data.products.map((product) => `
-      <article class="feature-card" style="display:flex;flex-direction:column;gap:12px">
-        <img src="${product.image_url || '/images/logo.png'}" alt="${product.name}" style="width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:12px">
-        <h3>${product.name}</h3>
-        <p>${product.description || ''}</p>
-        <p style="font-weight:700">${(product.price_nok / 100).toFixed(2)} ${product.currency}</p>
-        <button class="btn btn--gold" onclick="startCheckout('${product.id}')">Kjøp nå</button>
-      </article>
-    `).join('');
-  } catch (err) {
-    errorNode.style.display = 'block';
-    errorNode.textContent = err.message;
+    if (!res.ok) throw new Error(data.error || 'Kunne ikke hente produkter');
+    products = data.products || [];
+    renderProducts();
+  } catch (error) {
+    shopError.style.display = 'block';
+    shopError.textContent = error.message;
   }
 }
 
+orderForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const formData = new FormData(orderForm);
+  const items = [...cart.entries()].map(([productId, quantity]) => ({ productId, quantity })).filter((item) => item.quantity > 0);
+
+  if (!items.length) {
+    alert('Velg minst ett produkt før du sender bestilling.');
+    return;
+  }
+
+  const payload = {
+    customer: {
+      name: formData.get('name'),
+      email: formData.get('email'),
+      phone: formData.get('phone'),
+      address: formData.get('address'),
+      postalCode: formData.get('postalCode'),
+      city: formData.get('city'),
+      country: formData.get('country')
+    },
+    notes: formData.get('notes'),
+    items
+  };
+
+  try {
+    const submitButton = orderForm.querySelector('button[type="submit"]');
+    submitButton.disabled = true;
+    submitButton.textContent = 'Sender...';
+
+    const res = await fetch('/api/webshop/order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Kunne ikke sende bestilling');
+
+    window.location.href = data.redirectUrl || '/webshop/success';
+  } catch (error) {
+    alert(error.message || 'Noe gikk galt under bestilling');
+  } finally {
+    const submitButton = orderForm.querySelector('button[type="submit"]');
+    submitButton.disabled = false;
+    submitButton.textContent = 'Send bestilling';
+  }
+});
+
+window.setQty = setQty;
 loadProducts();
 </script>
 </body>
