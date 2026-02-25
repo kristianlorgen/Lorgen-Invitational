@@ -80,17 +80,21 @@ async function loadProducts() {
       errorNode.style.display = 'block';
       errorNode.textContent = data.warning;
 
-      try {
-        const statusRes = await fetch('/api/webshop/status');
-        const statusData = await statusRes.json();
-        if (Array.isArray(statusData.checks)) {
-          const details = statusData.checks
-            .map((check) => `${check.name}: ${check.detail}`)
-            .join(' · ');
-          errorNode.textContent = `${data.warning} (${details})`;
+      let statusData = data.status;
+      if (!statusData || !Array.isArray(statusData.checks)) {
+        try {
+          const statusRes = await fetch('/api/webshop/status');
+          statusData = await statusRes.json();
+        } catch (_) {
+          // Ignorer ekstra statusfeil, behold hovedmelding.
         }
-      } catch (_) {
-        // Ignorer ekstra statusfeil, behold hovedmelding.
+      }
+
+      if (Array.isArray(statusData?.checks)) {
+        const details = statusData.checks
+          .map((check) => `${check.name}: ${check.detail}`)
+          .join(' · ');
+        errorNode.textContent = `${data.warning} (${details})`;
       }
     }
     if (!data.products?.length) {
