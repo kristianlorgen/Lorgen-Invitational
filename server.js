@@ -1767,264 +1767,165 @@ app.get('/api/instagram-qr', (req, res) => {
 });
 
 // ── Webshop APIs ─────────────────────────────────────────────────────────────
-app.get('/api/webshop/products', async (req, res) => {
-  const hasSupabaseUrl = hasEnv('SUPABASE_URL');
-  const hasAnonKey = hasEnv('SUPABASE_ANON_KEY');
-  const hasServiceKey = hasEnv('SUPABASE_SERVICE_ROLE_KEY');
+function formatOrderReference(orderId) {
+  const year = new Date().getFullYear();
+  return `LI-${year}-${String(orderId).padStart(5, '0')}`;
+}
 
-  if (!hasSupabaseUrl || (!hasAnonKey && !hasServiceKey)) {
-    return res.json({
-      products: [],
-      warning: 'Webshop er ikke konfigurert enda.',
-      status: await getWebshopStatusChecks()
+function parseOrderItems(inputItems = []) {
+  if (!Array.isArray(inputItems) || !inputItems.length) {
+    throw new Error('Du må velge minst ett produkt');
+  }
+
+  const productStmt = db.prepare(`
+    SELECT id, name, description, image_url, price_nok, currency
+    FROM webshop_products
+    WHERE id = ? AND is_active = 1
+  `);
+
+  const items = [];
+  for (const rawItem of inputItems) {
+    const productId = Number(rawItem?.productId);
+    const quantity = Number(rawItem?.quantity || 0);
+    if (!Number.isInteger(productId) || !Number.isInteger(quantity) || quantity < 1 || quantity > 20) {
+      throw new Error('Ugyldig produkt eller antall');
+    }
+
+    const product = productStmt.get(productId);
+    if (!product) throw new Error(`Produkt med id ${productId} finnes ikke`);
+
+    items.push({
+      product_id: product.id,
+      product_name: product.name,
+      unit_price_nok: Number(product.price_nok),
+      quantity,
+      line_total_nok: Number(product.price_nok) * quantity
     });
   }
 
+  return items;
+}
+
+app.get('/api/webshop/products', (req, res) => {
   try {
-    const products = await supabaseRequestWithFallback('products', {
-      query: '?select=id,name,description,image_url,price_nok,currency,is_active&is_active=eq.true&order=created_at.desc'
-    });
-    res.json({ products: products || [] });
+    const products = db.prepare(`
+      SELECT id, name, description, image_url, price_nok, currency
+      FROM webshop_products
+      WHERE is_active = 1
+      ORDER BY sort_order ASC, id ASC
+    `).all();
+    res.json({ products });
   } catch (error) {
     console.error('webshop products error:', error.message);
-    res.json({
-      products: [],
-      warning: 'Webshop er midlertidig utilgjengelig. Prøv igjen litt senere.',
-      status: await getWebshopStatusChecks()
-    });
+    res.status(500).json({ error: 'Kunne ikke hente produkter' });
   }
 });
 
-async function checkApiEndpoint(name, endpoint, { headers = {}, method = 'GET', enabled = true } = {}) {
-  if (!enabled) return { name, configured: false, reachable: false, status: null, detail: 'Mangler miljøvariabler' };
+app.get('/api/webshop/status', (req, res) => {
+  res.json({
+    mode: 'lokal',
+    message: 'Webshop kjører lokalt med SQLite-ordre.',
+    checks: [{ name: 'database', configured: true, reachable: true, status: 200, detail: 'OK' }]
+  });
+});
 
+app.post('/api/webshop/order', (req, res) => {
   try {
-    const response = await fetchWithTimeout(endpoint, {
-      method,
-      headers
-    }, 5000);
-    return {
-      name,
-      configured: true,
-      reachable: response.ok,
-      status: response.status,
-      detail: response.ok ? 'OK' : `HTTP ${response.status}`
-    };
-  } catch (error) {
-    const detail = error?.name === 'AbortError'
-      ? `Timeout etter ${5000}ms`
-      : (error?.message || 'Ukjent nettverksfeil');
-    return {
-      name,
-      configured: true,
-      reachable: false,
-      status: null,
-      detail
-    };
-  }
-}
+    const customer = req.body?.customer || {};
+    const customerName = String(customer.name || '').trim();
+    const customerEmail = String(customer.email || '').trim();
+    const customerPhone = String(customer.phone || '').trim();
+    const shippingAddress = String(customer.address || '').trim();
+    const postalCode = String(customer.postalCode || '').trim();
+    const city = String(customer.city || '').trim();
+    const country = String(customer.country || 'Norge').trim();
+    const notes = String(req.body?.notes || '').trim();
 
-async function getWebshopStatusChecks() {
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseAnon = process.env.SUPABASE_ANON_KEY;
-  const supabaseService = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const stripeSecret = process.env.STRIPE_SECRET_KEY;
-  const printifyToken = process.env.PRINTIFY_API_TOKEN;
+    if (!customerName || !customerEmail || !shippingAddress || !postalCode || !city) {
+      return res.status(400).json({ error: 'Fyll ut navn, e-post og komplett leveringsadresse' });
+    }
 
-  const checks = await Promise.all([
-    checkApiEndpoint(
-      'supabase',
-      `${String(supabaseUrl || '').replace(/\/$/, '')}/rest/v1/products?select=id&limit=1`,
-      {
-        enabled: Boolean(supabaseUrl && (supabaseService || supabaseAnon)),
-        headers: {
-          apikey: supabaseService || supabaseAnon || '',
-          Authorization: `Bearer ${supabaseService || supabaseAnon || ''}`
-        }
+    const items = parseOrderItems(req.body?.items || []);
+    const totalNok = items.reduce((sum, item) => sum + item.line_total_nok, 0);
+
+    const createOrder = db.transaction(() => {
+      const orderResult = db.prepare(`
+        INSERT INTO webshop_orders (
+          reference, customer_name, customer_email, customer_phone, shipping_address,
+          postal_code, city, country, notes, status, total_nok
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'mottatt', ?)
+      `).run(
+        'PENDING',
+        customerName,
+        customerEmail,
+        customerPhone,
+        shippingAddress,
+        postalCode,
+        city,
+        country,
+        notes,
+        totalNok
+      );
+
+      const orderId = Number(orderResult.lastInsertRowid);
+      const reference = formatOrderReference(orderId);
+      db.prepare('UPDATE webshop_orders SET reference = ? WHERE id = ?').run(reference, orderId);
+
+      const insertItem = db.prepare(`
+        INSERT INTO webshop_order_items (
+          order_id, product_id, product_name, unit_price_nok, quantity, line_total_nok
+        ) VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      for (const item of items) {
+        insertItem.run(
+          orderId,
+          item.product_id,
+          item.product_name,
+          item.unit_price_nok,
+          item.quantity,
+          item.line_total_nok
+        );
       }
-    ),
-    checkApiEndpoint('stripe', 'https://api.stripe.com/v1/account', {
-      enabled: Boolean(stripeSecret),
-      headers: { Authorization: `Bearer ${stripeSecret || ''}` }
-    }),
-    checkApiEndpoint('printify', 'https://api.printify.com/v1/shops.json', {
-      enabled: Boolean(printifyToken),
-      headers: { Authorization: `Bearer ${printifyToken || ''}` }
-    })
-  ]);
 
-  return {
-    ok: checks.every(check => !check.configured || check.reachable),
-    timeout_ms: 5000,
-    checks
-  };
-}
-
-app.get('/api/webshop/status', async (req, res) => {
-  res.json(await getWebshopStatusChecks());
-});
-
-app.post('/api/checkout', async (req, res) => {
-  try {
-    const { productId, quantity } = req.body || {};
-    const qty = Number(quantity);
-    if (!productId || !Number.isInteger(qty) || qty < 1 || qty > 5) {
-      return res.status(400).json({ error: 'Ugyldig input. quantity må være 1-5.' });
-    }
-
-    const products = await supabaseRequestWithFallback('products', {
-      query: `?select=*&id=eq.${encodeURIComponent(productId)}&is_active=eq.true&limit=1`
-    });
-    const product = products?.[0];
-    if (!product) return res.status(404).json({ error: 'Produkt ikke funnet' });
-
-    const session = await stripeRequest('/checkout/sessions', {
-      mode: 'payment',
-      'success_url': `${SITE_URL}/webshop/success?session_id={CHECKOUT_SESSION_ID}`,
-      'cancel_url': `${SITE_URL}/webshop/cancel`,
-      'line_items[0][quantity]': qty,
-      'line_items[0][price_data][currency]': (product.currency || 'NOK').toLowerCase(),
-      'line_items[0][price_data][unit_amount]': product.price_nok,
-      'line_items[0][price_data][product_data][name]': product.name,
-      'line_items[0][price_data][product_data][description]': product.description || '',
-      'shipping_address_collection[allowed_countries][0]': 'NO',
-      'metadata[productId]': product.id,
-      'metadata[quantity]': qty
+      return { id: orderId, reference, total_nok: totalNok, items };
     });
 
-    res.json({ url: session.url });
+    const order = createOrder();
+    res.status(201).json({
+      message: 'Bestilling mottatt',
+      order,
+      redirectUrl: `/webshop/success?reference=${encodeURIComponent(order.reference)}`
+    });
   } catch (error) {
-    console.error('checkout error:', error.message);
-    res.status(500).json({ error: 'Kunne ikke starte checkout' });
+    console.error('webshop order error:', error.message);
+    res.status(400).json({ error: error.message || 'Kunne ikke opprette bestilling' });
   }
 });
 
-app.post('/api/stripe/webhook', async (req, res) => {
-  const secret = process.env.STRIPE_WEBHOOK_SECRET;
-  if (!secret) return res.status(500).json({ error: 'Webhook ikke konfigurert' });
-
+app.get('/api/orders/by-reference', (req, res) => {
   try {
-    const rawBody = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : String(req.body || '');
-    verifyStripeSignature(rawBody, req.headers['stripe-signature'], secret);
-    const event = JSON.parse(rawBody);
+    const reference = String(req.query.reference || '').trim();
+    if (!reference) return res.status(400).json({ error: 'reference er påkrevd' });
 
-    if (event.type !== 'checkout.session.completed') return res.json({ received: true });
+    const order = db.prepare(`
+      SELECT id, reference, customer_name, customer_email, customer_phone,
+             shipping_address, postal_code, city, country, notes, status,
+             total_nok, created_at
+      FROM webshop_orders
+      WHERE reference = ?
+      LIMIT 1
+    `).get(reference);
 
-    const session = event.data?.object || {};
-    const productId = session.metadata?.productId;
-    const quantity = Number(session.metadata?.quantity || 1);
-    if (!productId || !Number.isInteger(quantity) || quantity < 1) {
-      return res.status(400).json({ error: 'Manglende metadata' });
-    }
-
-    const existingOrderRows = await supabaseRequest('orders', {
-      query: `?select=*&stripe_session_id=eq.${encodeURIComponent(session.id)}&limit=1`
-    });
-    const existingOrder = existingOrderRows?.[0];
-    if (existingOrder?.printify_order_id) {
-      console.log('stripe webhook duplicate skipped', event.id, existingOrder.id);
-      return res.json({ received: true, duplicate: true });
-    }
-
-    const productRows = await supabaseRequest('products', {
-      query: `?select=*&id=eq.${encodeURIComponent(productId)}&limit=1`
-    });
-    const product = productRows?.[0];
-    if (!product) return res.status(404).json({ error: 'Produkt ikke funnet' });
-
-    const fullName = session.shipping_details?.name || '';
-    const [firstName, ...lastParts] = fullName.split(' ').filter(Boolean);
-    const shippingAddress = {
-      first_name: firstName || 'Kunde',
-      last_name: lastParts.join(' ') || 'Lorgen',
-      address1: session.shipping_details?.address?.line1 || '',
-      address2: session.shipping_details?.address?.line2 || '',
-      city: session.shipping_details?.address?.city || '',
-      zip: session.shipping_details?.address?.postal_code || '',
-      region: session.shipping_details?.address?.state || '',
-      country: session.shipping_details?.address?.country || 'NO'
-    };
-
-    const orderPayload = {
-      email: session.customer_details?.email || null,
-      amount_nok: Number(session.amount_total || product.price_nok * quantity),
-      currency: (session.currency || 'nok').toUpperCase(),
-      status: 'paid',
-      stripe_session_id: session.id,
-      stripe_payment_intent_id: session.payment_intent || null,
-      shipping_name: fullName || null,
-      shipping_address_json: session.shipping_details?.address || null,
-      items_json: [{ product_id: product.id, quantity, unit_price_nok: product.price_nok, name: product.name }]
-    };
-
-    let order;
-    if (existingOrder) {
-      const updated = await supabaseRequest('orders', {
-        method: 'PATCH',
-        query: `?id=eq.${existingOrder.id}&select=*`,
-        body: orderPayload
-      });
-      order = updated?.[0] || existingOrder;
-    } else {
-      const inserted = await supabaseRequest('orders', {
-        method: 'POST',
-        query: '?select=*',
-        body: orderPayload
-      });
-      order = inserted?.[0];
-    }
-
-    console.log('stripe webhook processed', event.id, order?.id);
-
-    if (!order) return res.status(500).json({ error: 'Kunne ikke lagre ordre' });
-    if (order.printify_order_id) return res.json({ received: true, duplicate: true });
-
-    try {
-      const printifyOrder = await createPrintifyOrder({
-        orderId: order.id,
-        product,
-        quantity,
-        email: order.email || '',
-        shippingAddress
-      });
-
-      await supabaseRequest('orders', {
-        method: 'PATCH',
-        query: `?id=eq.${order.id}`,
-        body: {
-          status: 'submitted',
-          printify_order_id: String(printifyOrder.id)
-        }
-      });
-      console.log('printify order submitted', event.id, order.id, printifyOrder.id);
-    } catch (printifyError) {
-      console.error('printify submit error:', printifyError.message);
-      await supabaseRequest('orders', {
-        method: 'PATCH',
-        query: `?id=eq.${order.id}`,
-        body: { status: 'failed' }
-      });
-    }
-
-    res.json({ received: true });
-  } catch (error) {
-    console.error('stripe webhook error:', error.message);
-    res.status(400).json({ error: 'Webhook validation feilet' });
-  }
-});
-
-app.get('/api/orders/by-session', async (req, res) => {
-  try {
-    const sessionId = String(req.query.session_id || '');
-    if (!sessionId) return res.status(400).json({ error: 'session_id er påkrevd' });
-
-    const rows = await supabaseRequest('orders', {
-      query: `?select=id,created_at,email,status,amount_nok,currency,shipping_name,items_json,stripe_session_id&stripe_session_id=eq.${encodeURIComponent(sessionId)}&limit=1`
-    });
-
-    const order = rows?.[0];
     if (!order) return res.status(404).json({ error: 'Ordre ikke funnet' });
-    res.json({ order });
+
+    const items = db.prepare(`
+      SELECT product_name, quantity, unit_price_nok, line_total_nok
+      FROM webshop_order_items
+      WHERE order_id = ?
+      ORDER BY id ASC
+    `).all(order.id);
+
+    res.json({ order: { ...order, items } });
   } catch (error) {
     console.error('order lookup error:', error.message);
     res.status(500).json({ error: 'Kunne ikke hente ordre' });

@@ -161,6 +161,46 @@ db.exec(`
     FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
     UNIQUE(tournament_id, placement, slot_key)
   );
+
+  CREATE TABLE IF NOT EXISTS webshop_products (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    image_url TEXT DEFAULT '',
+    price_nok INTEGER NOT NULL,
+    currency TEXT NOT NULL DEFAULT 'NOK',
+    is_active INTEGER NOT NULL DEFAULT 1,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS webshop_orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    reference TEXT NOT NULL UNIQUE,
+    customer_name TEXT NOT NULL,
+    customer_email TEXT NOT NULL,
+    customer_phone TEXT DEFAULT '',
+    shipping_address TEXT NOT NULL,
+    postal_code TEXT NOT NULL,
+    city TEXT NOT NULL,
+    country TEXT NOT NULL DEFAULT 'Norge',
+    notes TEXT DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'mottatt',
+    total_nok INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS webshop_order_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id INTEGER NOT NULL,
+    product_id INTEGER NOT NULL,
+    product_name TEXT NOT NULL,
+    unit_price_nok INTEGER NOT NULL,
+    quantity INTEGER NOT NULL,
+    line_total_nok INTEGER NOT NULL,
+    FOREIGN KEY (order_id) REFERENCES webshop_orders(id) ON DELETE CASCADE,
+    FOREIGN KEY (product_id) REFERENCES webshop_products(id)
+  );
 `);
 
 // Migrate existing databases
@@ -201,3 +241,23 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS chat_messages (
   image_path TEXT DEFAULT '',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`); } catch(_) {}
+
+const webshopProductCount = db.prepare('SELECT COUNT(*) AS count FROM webshop_products').get()?.count || 0;
+if (!webshopProductCount) {
+  const seedProducts = db.prepare(`
+    INSERT INTO webshop_products (name, description, image_url, price_nok, sort_order)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+
+  const defaults = [
+    ['Lorgen Polo', 'Komfortabel turneringspolo med brodert logo.', '/images/logo.png', 59900, 1],
+    ['Lorgen Caps', 'Caps i one-size med klassisk gulldetalj.', '/images/logo.png', 34900, 2],
+    ['Lorgen Håndkle', 'Golfhåndkle med karabinkrok og mørk marinefarge.', '/images/logo.png', 22900, 3]
+  ];
+
+  const insertMany = db.transaction((products) => {
+    for (const product of products) seedProducts.run(...product);
+  });
+
+  insertMany(defaults);
+}
