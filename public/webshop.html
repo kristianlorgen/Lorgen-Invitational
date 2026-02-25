@@ -166,7 +166,7 @@ orderForm.addEventListener('submit', async (event) => {
     submitButton.disabled = true;
     submitButton.textContent = 'Sender...';
 
-    const res = await fetch('/api/webshop/order', {
+    const res = await fetch('/api/checkout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -174,7 +174,9 @@ orderForm.addEventListener('submit', async (event) => {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Kunne ikke sende bestilling');
 
-    window.location.href = data.redirectUrl || '/webshop/success';
+    if (!data.checkoutUrl) throw new Error('Mangler redirect til Stripe Checkout');
+
+    window.location.href = data.checkoutUrl;
   } catch (error) {
     alert(error.message || 'Noe gikk galt under bestilling');
   } finally {

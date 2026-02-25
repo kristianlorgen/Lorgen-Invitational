@@ -145,13 +145,14 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = EXTERNAL_API_TIME
   }
 }
 
-async function supabaseRequest(pathname, { method = 'GET', query = '', body } = {}, useService = true) {
+async function supabaseRequest(pathname, { method = 'GET', query = '', body, headers: extraHeaders = {} } = {}, useService = true) {
   const baseUrl = env('SUPABASE_URL', true);
   const key = useService ? env('SUPABASE_SERVICE_ROLE_KEY', true) : env('SUPABASE_ANON_KEY', true);
   const headers = {
     apikey: key,
     Authorization: `Bearer ${key}`,
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json',
+    ...extraHeaders
   };
 
   const url = `${baseUrl.replace(/\/$/, '')}/rest/v1/${pathname}${query}`;
@@ -246,19 +247,28 @@ function verifyStripeSignature(rawBody, sigHeader, secret) {
   if (ageSeconds > 300) throw new Error('Stripe signature timestamp too old');
 }
 
-async function createPrintifyOrder({ orderId, product, quantity, email, shippingAddress }) {
+async function createPrintifyOrder({ orderId, items, email, shippingAddress }) {
   const token = env('PRINTIFY_API_TOKEN', true);
-  const url = `https://api.printify.com/v1/shops/${product.printify_shop_id}/orders.json`;
+  if (!Array.isArray(items) || !items.length) throw new Error('Printify krever minst ett ordrelinjeprodukt');
 
-  const variantId = product.printify_variant_id || 1;
+  const firstShop = String(items[0].printify_shop_id || '').trim();
+  if (!firstShop) throw new Error('Printify shop mangler på produkt');
+
+  const mixedShop = items.some((item) => String(item.printify_shop_id || '').trim() !== firstShop);
+  if (mixedShop) throw new Error('Alle produkter i en bestilling må tilhøre samme Printify shop');
+
+  const url = `https://api.printify.com/v1/shops/${firstShop}/orders.json`;
+
+  const lineItems = items.map((item) => ({
+    product_id: item.printify_product_id,
+    variant_id: item.printify_variant_id || 1,
+    quantity: Number(item.quantity)
+  }));
+
   const body = {
     external_id: orderId,
     label: `Lorgen order ${orderId}`,
-    line_items: [{
-      product_id: product.printify_product_id,
-      variant_id: variantId,
-      quantity
-    }],
+    line_items: lineItems,
     address_to: {
       first_name: shippingAddress.first_name,
       last_name: shippingAddress.last_name,
@@ -286,7 +296,7 @@ async function createPrintifyOrder({ orderId, product, quantity, email, shipping
   const createData = await createRes.json();
   if (!createRes.ok) throw new Error(`Printify create order failed: ${JSON.stringify(createData)}`);
 
-  const submitUrl = `https://api.printify.com/v1/shops/${product.printify_shop_id}/orders/${createData.id}/send_to_production.json`;
+  const submitUrl = `https://api.printify.com/v1/shops/${firstShop}/orders/${createData.id}/send_to_production.json`;
   const submitRes = await fetchWithTimeout(submitUrl, {
     method: 'POST',
     headers: {
@@ -297,7 +307,7 @@ async function createPrintifyOrder({ orderId, product, quantity, email, shipping
   });
 
   if (!submitRes.ok) {
-    const fallbackUrl = `https://api.printify.com/v1/shops/${product.printify_shop_id}/orders/${createData.id}/submit.json`;
+    const fallbackUrl = `https://api.printify.com/v1/shops/${firstShop}/orders/${createData.id}/submit.json`;
     const fallbackRes = await fetchWithTimeout(fallbackUrl, {
       method: 'POST',
       headers: {
@@ -1806,31 +1816,64 @@ function parseOrderItems(inputItems = []) {
   return items;
 }
 
+function toPrintifyShippingAddress(rawAddress = {}) {
+  const fullName = String(rawAddress.name || '').trim();
+  const [firstName = '', ...lastNameParts] = fullName.split(' ').filter(Boolean);
+  const lastName = lastNameParts.join(' ') || firstName || 'Kunde';
+
+  return {
+    first_name: firstName || 'Kunde',
+    last_name: lastName,
+    phone: String(rawAddress.phone || '').trim(),
+    country: String(rawAddress.country || 'NO').trim().toUpperCase(),
+    region: String(rawAddress.region || '').trim(),
+    address1: String(rawAddress.line1 || rawAddress.address1 || '').trim(),
+    address2: String(rawAddress.line2 || rawAddress.address2 || '').trim(),
+    city: String(rawAddress.city || '').trim(),
+    zip: String(rawAddress.postal_code || rawAddress.zip || '').trim()
+  };
+}
+
+async function getOrderByStripeSessionId(sessionId) {
+  const rows = await supabaseRequestWithFallback('orders', {
+    query: `?select=*&stripe_session_id=eq.${encodeURIComponent(sessionId)}&limit=1`
+  });
+  return rows?.[0] || null;
+}
+
 app.get('/api/webshop/products', (req, res) => {
-  try {
-    const products = db.prepare(`
-      SELECT id, name, description, image_url, price_nok, currency
-      FROM webshop_products
-      WHERE is_active = 1
-      ORDER BY sort_order ASC, id ASC
-    `).all();
-    res.json({ products });
-  } catch (error) {
+  supabaseRequestWithFallback('products', {
+    query: '?select=id,name,description,image_url,price_nok,currency,printify_shop_id,printify_product_id,printify_variant_id&is_active=eq.true&order=created_at.asc'
+  }).then((products) => {
+    res.json({ products: products || [] });
+  }).catch((error) => {
     console.error('webshop products error:', error.message);
     res.status(500).json({ error: 'Kunne ikke hente produkter' });
-  }
-});
-
-app.get('/api/webshop/status', (req, res) => {
-  res.json({
-    mode: 'lokal',
-    message: 'Webshop kjører lokalt med SQLite-ordre.',
-    checks: [{ name: 'database', configured: true, reachable: true, status: 200, detail: 'OK' }]
   });
 });
 
-app.post('/api/webshop/order', (req, res) => {
+app.get('/api/webshop/status', (req, res) => {
+  const checks = [
+    { name: 'SUPABASE_URL', configured: hasEnv('SUPABASE_URL') },
+    { name: 'SUPABASE_SERVICE_ROLE_KEY_OR_ANON', configured: hasEnv('SUPABASE_SERVICE_ROLE_KEY') || hasEnv('SUPABASE_ANON_KEY') },
+    { name: 'STRIPE_SECRET_KEY', configured: hasEnv('STRIPE_SECRET_KEY') },
+    { name: 'STRIPE_WEBHOOK_SECRET', configured: hasEnv('STRIPE_WEBHOOK_SECRET') },
+    { name: 'PRINTIFY_API_TOKEN', configured: hasEnv('PRINTIFY_API_TOKEN') }
+  ];
+
+  const mode = checks.every((check) => check.configured) ? 'integrated' : 'partial';
+  res.json({
+    mode,
+    message: mode === 'integrated' ? 'Webshop kjører med Stripe + Supabase + Printify.' : 'Webshop mangler en eller flere integrationsnøkler.',
+    checks
+  });
+});
+
+app.post('/api/checkout', async (req, res) => {
   try {
+    env('STRIPE_SECRET_KEY', true);
+    env('SUPABASE_URL', true);
+
     const customer = req.body?.customer || {};
     const customerName = String(customer.name || '').trim();
     const customerEmail = String(customer.email || '').trim();
@@ -1845,60 +1888,185 @@ app.post('/api/webshop/order', (req, res) => {
       return res.status(400).json({ error: 'Fyll ut navn, e-post og komplett leveringsadresse' });
     }
 
-    const items = parseOrderItems(req.body?.items || []);
-    const totalNok = items.reduce((sum, item) => sum + item.line_total_nok, 0);
+    const requestedItems = req.body?.items || [];
+    if (!Array.isArray(requestedItems) || !requestedItems.length) {
+      return res.status(400).json({ error: 'Du må velge minst ett produkt' });
+    }
 
-    const createOrder = db.transaction(() => {
-      const orderResult = db.prepare(`
-        INSERT INTO webshop_orders (
-          reference, customer_name, customer_email, customer_phone, shipping_address,
-          postal_code, city, country, notes, status, total_nok
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'mottatt', ?)
-      `).run(
-        'PENDING',
-        customerName,
-        customerEmail,
-        customerPhone,
-        shippingAddress,
-        postalCode,
-        city,
-        country,
-        notes,
-        totalNok
-      );
+    const ids = [...new Set(requestedItems.map((item) => String(item?.productId || '').trim()).filter(Boolean))];
+    const filters = ids.map((id) => `id.eq.${encodeURIComponent(id)}`).join(',');
+    const products = await supabaseRequestWithFallback('products', {
+      query: `?select=id,name,description,image_url,price_nok,currency,printify_shop_id,printify_product_id,printify_variant_id&is_active=eq.true&or=(${filters})`
+    });
+    const productsById = new Map((products || []).map((product) => [String(product.id), product]));
 
-      const orderId = Number(orderResult.lastInsertRowid);
-      const reference = formatOrderReference(orderId);
-      db.prepare('UPDATE webshop_orders SET reference = ? WHERE id = ?').run(reference, orderId);
-
-      const insertItem = db.prepare(`
-        INSERT INTO webshop_order_items (
-          order_id, product_id, product_name, unit_price_nok, quantity, line_total_nok
-        ) VALUES (?, ?, ?, ?, ?, ?)
-      `);
-      for (const item of items) {
-        insertItem.run(
-          orderId,
-          item.product_id,
-          item.product_name,
-          item.unit_price_nok,
-          item.quantity,
-          item.line_total_nok
-        );
+    const items = requestedItems.map((rawItem) => {
+      const productId = String(rawItem?.productId || '').trim();
+      const quantity = Number(rawItem?.quantity || 0);
+      if (!productId || !Number.isInteger(quantity) || quantity < 1 || quantity > 20) {
+        throw new Error('Ugyldig produkt eller antall');
       }
-
-      return { id: orderId, reference, total_nok: totalNok, items };
+      const product = productsById.get(productId);
+      if (!product) throw new Error(`Produkt med id ${productId} finnes ikke`);
+      return {
+        product_id: product.id,
+        product_name: product.name,
+        product_description: product.description || '',
+        image_url: product.image_url || '',
+        unit_price_nok: Number(product.price_nok),
+        quantity,
+        line_total_nok: Number(product.price_nok) * quantity,
+        currency: (product.currency || 'NOK').toLowerCase(),
+        printify_shop_id: product.printify_shop_id,
+        printify_product_id: product.printify_product_id,
+        printify_variant_id: product.printify_variant_id
+      };
     });
 
-    const order = createOrder();
+    const totalNok = items.reduce((sum, item) => sum + item.line_total_nok, 0);
+    const lineItems = items.map((item) => ({
+      quantity: item.quantity,
+      price_data: {
+        currency: item.currency,
+        unit_amount: item.unit_price_nok,
+        product_data: {
+          name: item.product_name,
+          description: item.product_description,
+          ...(item.image_url ? { images: [item.image_url.startsWith('http') ? item.image_url : `${SITE_URL}${item.image_url}`] } : {})
+        }
+      }
+    }));
+
+    const session = await stripeRequest('/checkout/sessions', {
+      mode: 'payment',
+      success_url: `${SITE_URL}/webshop/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${SITE_URL}/webshop/cancel`,
+      customer_email: customerEmail,
+      'metadata[customer_name]': customerName,
+      'metadata[customer_phone]': customerPhone,
+      'metadata[address]': shippingAddress,
+      'metadata[postal_code]': postalCode,
+      'metadata[city]': city,
+      'metadata[country]': country,
+      'metadata[notes]': notes,
+      line_items: lineItems
+    });
+
+    await supabaseRequestWithFallback('orders', {
+      method: 'POST',
+      query: '?select=id,stripe_session_id,status',
+      headers: { Prefer: 'return=representation' },
+      body: {
+        email: customerEmail,
+        amount_nok: totalNok,
+        currency: 'NOK',
+        status: 'created',
+        stripe_session_id: session.id,
+        shipping_name: customerName,
+        shipping_address_json: {
+          name: customerName,
+          phone: customerPhone,
+          address1: shippingAddress,
+          city,
+          postal_code: postalCode,
+          country,
+          notes
+        },
+        items_json: items
+      }
+    });
+
     res.status(201).json({
-      message: 'Bestilling mottatt',
-      order,
-      redirectUrl: `/webshop/success?reference=${encodeURIComponent(order.reference)}`
+      checkoutUrl: session.url,
+      sessionId: session.id
     });
   } catch (error) {
-    console.error('webshop order error:', error.message);
-    res.status(400).json({ error: error.message || 'Kunne ikke opprette bestilling' });
+    console.error('checkout error:', error.message);
+    res.status(400).json({ error: error.message || 'Kunne ikke opprette betaling' });
+  }
+});
+
+app.post('/api/stripe/webhook', async (req, res) => {
+  try {
+    const sig = req.headers['stripe-signature'];
+    const secret = env('STRIPE_WEBHOOK_SECRET', true);
+    const rawBody = req.body?.toString('utf8') || '';
+
+    verifyStripeSignature(rawBody, sig, secret);
+
+    const event = JSON.parse(rawBody);
+    if (event.type !== 'checkout.session.completed') {
+      return res.json({ received: true, ignored: true });
+    }
+
+    const session = event.data?.object || {};
+    const sessionId = session.id;
+    if (!sessionId) return res.status(400).json({ error: 'Missing session id' });
+
+    const order = await getOrderByStripeSessionId(sessionId);
+    if (!order) return res.status(404).json({ error: 'Order not found for session' });
+
+    const shippingData = order.shipping_address_json || {};
+    const printifyItems = Array.isArray(order.items_json)
+      ? order.items_json.map((item) => ({
+          printify_shop_id: item.printify_shop_id,
+          printify_product_id: item.printify_product_id,
+          printify_variant_id: item.printify_variant_id,
+          quantity: Number(item.quantity)
+        }))
+      : [];
+
+    const shippingAddress = toPrintifyShippingAddress({
+      ...shippingData,
+      line1: shippingData.address1 || shippingData.line1,
+      zip: shippingData.postal_code || shippingData.zip,
+      country: shippingData.country
+    });
+
+    await supabaseRequestWithFallback('orders', {
+      method: 'PATCH',
+      query: `?id=eq.${encodeURIComponent(order.id)}`,
+      body: {
+        status: 'paid',
+        stripe_payment_intent_id: session.payment_intent || null
+      }
+    });
+
+    const printifyOrder = await createPrintifyOrder({
+      orderId: order.id,
+      items: printifyItems,
+      email: order.email || session.customer_details?.email || '',
+      shippingAddress
+    });
+
+    await supabaseRequestWithFallback('orders', {
+      method: 'PATCH',
+      query: `?id=eq.${encodeURIComponent(order.id)}`,
+      body: {
+        status: 'submitted',
+        printify_order_id: String(printifyOrder.id || '')
+      }
+    });
+
+    res.json({ received: true });
+  } catch (error) {
+    console.error('stripe webhook error:', error.message);
+    res.status(400).json({ error: 'Webhook handling failed' });
+  }
+});
+
+app.get('/api/orders/by-session', async (req, res) => {
+  try {
+    const sessionId = String(req.query.session_id || '').trim();
+    if (!sessionId) return res.status(400).json({ error: 'session_id er påkrevd' });
+
+    const order = await getOrderByStripeSessionId(sessionId);
+    if (!order) return res.status(404).json({ error: 'Ordre ikke funnet' });
+
+    res.json({ order });
+  } catch (error) {
+    console.error('order by session error:', error.message);
+    res.status(500).json({ error: 'Kunne ikke hente ordre' });
   }
 });
 
