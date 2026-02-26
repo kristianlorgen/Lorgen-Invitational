@@ -124,14 +124,30 @@ const STRIPE_API_BASE = 'https://api.stripe.com/v1';
 const EXTERNAL_API_TIMEOUT_MS = Number(process.env.EXTERNAL_API_TIMEOUT_MS || 8000);
 
 function env(name, required = false) {
-  const value = process.env[name];
+  const value = getEnvValue(name);
   if (required && !value) throw new Error(`Missing env var: ${name}`);
   return value;
 }
 
 function hasEnv(name) {
-  const value = process.env[name];
-  return typeof value === 'string' && value.trim() !== '';
+  return getEnvValue(name) !== '';
+}
+
+function getEnvValue(name) {
+  const raw = process.env[name];
+  if (typeof raw !== 'string') return '';
+
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+
+  // Keep the full secret value, but remove accidental surrounding quotes that
+  // often appear when copying from dashboards/CLI output.
+  let normalized = trimmed.replace(/^("|')(.*)\1$/, '$2').trim();
+
+  // Some hosting UIs persist trailing escaped newlines ("\n" / "\r\n")
+  // when pasting secrets. Strip those suffixes so API tokens stay valid.
+  normalized = normalized.replace(/(?:\\r\\n|\\n|\\r)+$/g, '').trim();
+  return normalized;
 }
 
 function hasValidHttpUrl(value) {
@@ -144,8 +160,8 @@ function hasValidHttpUrl(value) {
 }
 
 function getPrintifyToken() {
-  const token = process.env.PRINTIFY_API_TOKEN || process.env.PRINTIFY_API_TOKEN_LORGENINV;
-  if (typeof token === 'string' && token.trim() !== '') return token.trim();
+  const token = getEnvValue('PRINTIFY_API_TOKEN') || getEnvValue('PRINTIFY_API_TOKEN_LORGENINV');
+  if (token) return token;
   throw new Error('Missing required env: PRINTIFY_API_TOKEN');
 }
 
@@ -215,7 +231,7 @@ const SUPABASE_NETWORK_ERROR_COOLDOWN_MS = Number(process.env.SUPABASE_NETWORK_E
 let supabaseDisabledUntil = 0;
 
 function shouldUseSupabase() {
-  if (!hasValidHttpUrl(process.env.SUPABASE_URL)) return false;
+  if (!hasValidHttpUrl(getEnvValue('SUPABASE_URL'))) return false;
   if (!(hasEnv('SUPABASE_SERVICE_ROLE_KEY') || hasEnv('SUPABASE_ANON_KEY'))) return false;
   return Date.now() >= supabaseDisabledUntil;
 }
