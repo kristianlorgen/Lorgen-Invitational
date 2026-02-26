@@ -1911,6 +1911,64 @@ async function getOrderByStripeSessionId(sessionId) {
   `).get(sessionId) || null;
 }
 
+function getLocalOrderDetails(orderId) {
+  const order = db.prepare(`
+    SELECT id, reference, customer_name, customer_email, customer_phone,
+           shipping_address, postal_code, city, country, notes, status,
+           total_nok, stripe_session_id, stripe_payment_intent_id, printify_order_id,
+           created_at
+    FROM webshop_orders
+    WHERE id = ?
+    LIMIT 1
+  `).get(orderId);
+
+  if (!order) return null;
+
+  const items = db.prepare(`
+    SELECT oi.product_id, oi.product_name, oi.quantity, oi.unit_price_nok, oi.line_total_nok,
+           p.printify_shop_id, p.printify_product_id, p.printify_variant_id
+    FROM webshop_order_items oi
+    JOIN webshop_products p ON p.id = oi.product_id
+    WHERE oi.order_id = ?
+  `).all(order.id);
+
+  return { ...order, items };
+}
+
+function toPrintifyItemsFromLocalOrder(order = {}) {
+  return (order.items || []).map((item) => ({
+    printify_shop_id: item.printify_shop_id,
+    printify_product_id: item.printify_product_id,
+    printify_variant_id: item.printify_variant_id,
+    quantity: Number(item.quantity)
+  }));
+}
+
+
+function getMissingPrintifyFields(item = {}) {
+  const missing = [];
+  if (!String(item.printify_shop_id || '').trim()) missing.push('printify_shop_id');
+  if (!String(item.printify_product_id || '').trim()) missing.push('printify_product_id');
+  if (!Number.isInteger(Number(item.printify_variant_id)) || Number(item.printify_variant_id) < 1) {
+    missing.push('printify_variant_id');
+  }
+  return missing;
+}
+
+function collectProductsMissingPrintifyMapping(items = []) {
+  return items
+    .map((item) => {
+      const missingFields = getMissingPrintifyFields(item);
+      if (!missingFields.length) return null;
+      return {
+        product_id: item.product_id,
+        product_name: item.product_name,
+        missing_fields: missingFields
+      };
+    })
+    .filter(Boolean);
+}
+
 function getLocalWebshopProducts() {
   return db.prepare(`
     SELECT id, name, description, image_url, price_nok, currency,
@@ -2023,6 +2081,14 @@ app.post('/api/checkout', async (req, res) => {
         printify_variant_id: product.printify_variant_id
       };
     });
+
+    const missingMappings = collectProductsMissingPrintifyMapping(items);
+    if (missingMappings.length) {
+      return res.status(400).json({
+        error: 'Ett eller flere produkter mangler Printify-mapping. Oppdater produktene i webshop-oppsettet.',
+        missing_products: missingMappings
+      });
+    }
 
     const totalNok = items.reduce((sum, item) => sum + item.line_total_nok, 0);
     const lineItems = items.map((item) => ({
@@ -2188,28 +2254,42 @@ app.post('/api/stripe/webhook', async (req, res) => {
         .run('paid', String(session.payment_intent || ''), order.id);
     }
 
-    const printifyOrder = await createPrintifyOrder({
-      orderId: order.id,
-      items: printifyItems,
-      email: order.email || order.customer_email || session.customer_details?.email || '',
-      shippingAddress
-    });
-
-    if (isSupabaseOrder) {
-      await supabaseRequestWithFallback('orders', {
-        method: 'PATCH',
-        query: `?id=eq.${encodeURIComponent(order.id)}`,
-        body: {
-          status: 'submitted',
-          printify_order_id: String(printifyOrder.id || '')
-        }
+    try {
+      const printifyOrder = await createPrintifyOrder({
+        orderId: order.id,
+        items: printifyItems,
+        email: order.email || order.customer_email || session.customer_details?.email || '',
+        shippingAddress
       });
-    } else {
-      db.prepare('UPDATE webshop_orders SET status=?, printify_order_id=? WHERE id=?')
-        .run('submitted', String(printifyOrder.id || ''), order.id);
-    }
 
-    res.json({ received: true });
+      if (isSupabaseOrder) {
+        await supabaseRequestWithFallback('orders', {
+          method: 'PATCH',
+          query: `?id=eq.${encodeURIComponent(order.id)}`,
+          body: {
+            status: 'submitted',
+            printify_order_id: String(printifyOrder.id || '')
+          }
+        });
+      } else {
+        db.prepare('UPDATE webshop_orders SET status=?, printify_order_id=? WHERE id=?')
+          .run('submitted', String(printifyOrder.id || ''), order.id);
+      }
+
+      return res.json({ received: true });
+    } catch (printifyError) {
+      if (isSupabaseOrder) {
+        await supabaseRequestWithFallback('orders', {
+          method: 'PATCH',
+          query: `?id=eq.${encodeURIComponent(order.id)}`,
+          body: { status: 'failed' }
+        });
+      } else {
+        db.prepare('UPDATE webshop_orders SET status=? WHERE id=?')
+          .run('failed', order.id);
+      }
+      throw printifyError;
+    }
   } catch (error) {
     console.error('stripe webhook error:', error.message);
     res.status(400).json({ error: 'Webhook handling failed' });
@@ -2262,6 +2342,162 @@ app.get('/api/orders/by-reference', (req, res) => {
 });
 
 // ── Clean URL routing ────────────────────────────────────────────────────────
+
+app.get('/api/admin/webshop/products/mapping-missing', requireAdmin, async (req, res) => {
+  try {
+    let products = [];
+
+    if (useSupabaseWebshop()) {
+      products = await supabaseRequestWithFallback('products', {
+        query: '?select=id,name,printify_shop_id,printify_product_id,printify_variant_id&is_active=eq.true&order=created_at.asc'
+      });
+    } else {
+      products = db.prepare(`
+        SELECT id, name, printify_shop_id, printify_product_id, printify_variant_id
+        FROM webshop_products
+        WHERE is_active = 1
+        ORDER BY sort_order ASC, id ASC
+      `).all();
+    }
+
+    const missing = (products || []).map((product) => {
+      const missingFields = getMissingPrintifyFields(product);
+      if (!missingFields.length) return null;
+      return {
+        id: product.id,
+        name: product.name,
+        missing_fields: missingFields
+      };
+    }).filter(Boolean);
+
+    res.json({
+      count: missing.length,
+      products: missing
+    });
+  } catch (error) {
+    console.error('admin missing mapping error:', error.message);
+    res.status(500).json({ error: 'Kunne ikke hente produkter med manglende Printify-mapping' });
+  }
+});
+
+app.put('/api/admin/webshop/products/:id/printify-mapping', requireAdmin, (req, res) => {
+  try {
+    if (useSupabaseWebshop()) {
+      return res.status(400).json({ error: 'Dette endepunktet støtter kun lokal ordrelogg. Oppdater Supabase direkte.' });
+    }
+
+    const productId = Number(req.params.id);
+    if (!Number.isInteger(productId) || productId < 1) {
+      return res.status(400).json({ error: 'Ugyldig produkt-ID' });
+    }
+
+    const shopId = String(req.body?.printify_shop_id || '').trim();
+    const productRef = String(req.body?.printify_product_id || '').trim();
+    const variantId = Number(req.body?.printify_variant_id);
+
+    if (!shopId || !productRef || !Number.isInteger(variantId) || variantId < 1) {
+      return res.status(400).json({ error: 'printify_shop_id, printify_product_id og gyldig printify_variant_id er påkrevd' });
+    }
+
+    const existing = db.prepare('SELECT id FROM webshop_products WHERE id = ?').get(productId);
+    if (!existing) return res.status(404).json({ error: 'Produkt ikke funnet' });
+
+    db.prepare(`
+      UPDATE webshop_products
+      SET printify_shop_id = ?, printify_product_id = ?, printify_variant_id = ?
+      WHERE id = ?
+    `).run(shopId, productRef, variantId, productId);
+
+    res.json({ ok: true, product_id: productId });
+  } catch (error) {
+    console.error('admin update mapping error:', error.message);
+    res.status(500).json({ error: 'Kunne ikke oppdatere Printify-mapping' });
+  }
+});
+
+app.get('/api/admin/webshop/orders', requireAdmin, (req, res) => {
+  try {
+    const statusFilter = String(req.query.status || '').trim();
+    const limitRaw = Number(req.query.limit || 50);
+    const limit = Number.isInteger(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 50;
+
+    let query = `
+      SELECT id, reference, customer_name, customer_email, status, total_nok,
+             stripe_session_id, stripe_payment_intent_id, printify_order_id, created_at
+      FROM webshop_orders
+    `;
+    const params = [];
+
+    if (statusFilter) {
+      query += ' WHERE status = ?';
+      params.push(statusFilter);
+    }
+
+    query += ' ORDER BY id DESC LIMIT ?';
+    params.push(limit);
+
+    const orders = db.prepare(query).all(...params);
+    res.json({ orders });
+  } catch (error) {
+    console.error('admin webshop orders error:', error.message);
+    res.status(500).json({ error: 'Kunne ikke hente webshop-ordrer' });
+  }
+});
+
+app.post('/api/admin/webshop/orders/:id/retry-submit', requireAdmin, async (req, res) => {
+  try {
+    const orderId = Number(req.params.id);
+    if (!Number.isInteger(orderId) || orderId < 1) {
+      return res.status(400).json({ error: 'Ugyldig ordre-ID' });
+    }
+
+    if (useSupabaseWebshop()) {
+      return res.status(400).json({ error: 'Retry er kun tilgjengelig for lokal ordrelogg' });
+    }
+
+    const order = getLocalOrderDetails(orderId);
+    if (!order) return res.status(404).json({ error: 'Ordre ikke funnet' });
+
+    if (order.status === 'submitted') {
+      return res.status(409).json({ error: 'Ordren er allerede sendt til produksjon' });
+    }
+
+    const items = toPrintifyItemsFromLocalOrder(order);
+    if (!items.length) {
+      return res.status(400).json({ error: 'Ordren mangler ordrelinjer for Printify' });
+    }
+
+    const shippingAddress = toPrintifyShippingAddress({
+      name: order.customer_name,
+      phone: order.customer_phone,
+      address1: order.shipping_address,
+      city: order.city,
+      postal_code: order.postal_code,
+      country: order.country
+    });
+
+    const printifyOrder = await createPrintifyOrder({
+      orderId: order.id,
+      items,
+      email: order.customer_email || '',
+      shippingAddress
+    });
+
+    db.prepare('UPDATE webshop_orders SET status=?, printify_order_id=? WHERE id=?')
+      .run('submitted', String(printifyOrder.id || ''), order.id);
+
+    res.json({
+      ok: true,
+      message: 'Ordre sendt til Printify',
+      orderId: order.id,
+      printifyOrderId: String(printifyOrder.id || '')
+    });
+  } catch (error) {
+    console.error('admin retry printify error:', error.message);
+    res.status(500).json({ error: 'Kunne ikke sende ordre til Printify på nytt' });
+  }
+});
+
 app.get('/webshop/success', (req, res) => res.sendFile(path.join(__dirname, 'public/webshop-success.html')));
 app.get('/webshop/cancel', (req, res) => res.sendFile(path.join(__dirname, 'public/webshop-cancel.html')));
 

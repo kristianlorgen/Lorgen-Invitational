@@ -164,3 +164,48 @@ insert into public.products (
 ```
 
 > `price_nok` er i øre (f.eks. `34900` = 349,00 NOK).
+
+
+### Hurtigfiks for punkt 4 (Printify-mapping)
+
+For lokal ordrelogg kan admin nå bruke API for å finne og fikse manglende mapping:
+
+- `GET /api/admin/webshop/products/mapping-missing` → viser aktive produkter som mangler `printify_shop_id`, `printify_product_id` eller `printify_variant_id`
+- `PUT /api/admin/webshop/products/:id/printify-mapping` → oppdaterer mapping for ett produkt
+
+Eksempel:
+
+```bash
+curl -X PUT http://localhost:3000/api/admin/webshop/products/1/printify-mapping \
+  -H "Content-Type: application/json" \
+  -d '{
+    "printify_shop_id": "1234567",
+    "printify_product_id": "abcdef123456",
+    "printify_variant_id": 12345
+  }'
+```
+
+
+## Neste steg for ny webshop
+
+Når grunnflyten er oppe, anbefales denne prioriterte planen:
+
+1. **Verifiser ende-til-ende kjøp i testmodus**
+   - Kjør et testkjøp via Stripe Checkout.
+   - Bekreft at webhook treffer `POST /api/stripe/webhook` og at ordren får status `submitted` etter Printify-kall.
+
+2. **Klargjør produksjonsdata for produkter**
+   - Legg inn alle reelle produkter med korrekt `printify_shop_id`, `printify_product_id` og `printify_variant_id`.
+   - Dobbeltsjekk priser i `price_nok` (øre) og at `is_active = true` kun for produkter som skal vises.
+
+3. **Sett opp driftsovervåking og feilhåndtering**
+   - Følg med på webhook-feil og Printify-respons i serverlogger.
+   - Lag en enkel rutine for manuell retry av ordre som feiler (status `failed`).
+
+4. **Hardening før lansering**
+   - Rotér alle API-nøkler før go-live.
+   - Verifiser at kun nødvendige miljøvariabler er satt i produksjon og at ingen secrets ligger i repo.
+
+5. **Driftsklar lansering**
+   - Test `GET /api/webshop/status` etter deploy.
+   - Gjennomfør ett ekte kjøp (lavprisprodukt) for å validere hele kjeden i produksjon.
