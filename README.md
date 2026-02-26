@@ -73,6 +73,19 @@ Sett følgende i `.env` (ikke commit secrets):
 - `STRIPE_WEBHOOK_SECRET`
 - `PRINTIFY_API_TOKEN`
 
+### Feil: `Missing env var: STRIPE_SECRET_KEY`
+
+Hvis nettsiden viser `Missing env var: STRIPE_SECRET_KEY`, betyr det at serveren mangler Stripe-secret i runtime-miljøet.
+
+Sjekkliste:
+
+1. Legg inn `STRIPE_SECRET_KEY` i `.env` lokalt eller i secrets-panelet hos hostingleverandøren.
+2. Legg også inn `PRINTIFY_API_TOKEN` (brukes når ordre skal sendes videre til Printify).
+3. Restart serveren etter at miljøvariabler er oppdatert.
+4. Verifiser status på `GET /api/webshop/status`.
+
+Tips: Del aldri secret keys i chat eller commit dem til git.
+
 ### Supabase migrasjon
 
 Kjør SQL-migrasjonen i `supabase/migrations/20260225141000_webshop.sql`.
