@@ -50,7 +50,7 @@ npm start              # Runs on http://localhost:3000
 - **Auth**: Express-session (PIN for teams, password for admin)
 - **Frontend**: Vanilla HTML/CSS/JS
 
-## Webshop (Stripe + Printify + Supabase)
+## Webshop (Stripe + Printify, med valgfri Supabase)
 
 Webshop er nå bygget inn i nettsiden på `/webshop` med flyten:
 
@@ -58,7 +58,7 @@ Webshop er nå bygget inn i nettsiden på `/webshop` med flyten:
 2. `POST /api/checkout` oppretter Stripe Checkout Session
 3. Stripe redirecter til `/webshop/success` eller `/webshop/cancel`
 4. Stripe webhook (`POST /api/stripe/webhook`) verifiserer signatur på raw body
-5. Ordre lagres i Supabase (`orders`)
+5. Ordre lagres i Supabase (`orders`) **hvis konfigurert**, ellers i lokal SQLite (`webshop_orders`)
 6. Ordren sendes videre til Printify og oppdateres til `submitted` ved suksess
 
 ### Miljøvariabler
@@ -66,12 +66,12 @@ Webshop er nå bygget inn i nettsiden på `/webshop` med flyten:
 Sett følgende i `.env` (ikke commit secrets):
 
 - `NEXT_PUBLIC_SITE_URL`
-- `SUPABASE_URL`
-- `SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
 - `STRIPE_SECRET_KEY`
 - `STRIPE_WEBHOOK_SECRET`
 - `PRINTIFY_API_TOKEN` (eller alias `PRINTIFY_API_TOKEN_LORGENINV` under token-rotasjon)
+- `SUPABASE_URL` *(valgfri)*
+- `SUPABASE_ANON_KEY` *(valgfri)*
+- `SUPABASE_SERVICE_ROLE_KEY` *(valgfri)*
 
 ### Feil: `Missing env var: STRIPE_SECRET_KEY`
 
@@ -85,6 +85,25 @@ Sjekkliste:
 4. Verifiser status på `GET /api/webshop/status`.
 
 Tips: Del aldri secret keys i chat eller commit dem til git.
+
+### Lokal fallback (anbefalt for rask gjenoppbygging)
+
+Webshop fungerer nå uten Supabase så lenge Stripe + Printify er satt:
+
+1. Legg inn `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` og `PRINTIFY_API_TOKEN` i `.env`.
+2. Start serveren på nytt.
+3. Verifiser `GET /api/webshop/status` (skal vise integrated når Stripe/Printify er på plass).
+4. Legg inn Printify-mapping per produkt i lokal SQLite-tabell `webshop_products`:
+
+```sql
+update webshop_products
+set printify_shop_id = 'DIN_SHOP_ID',
+    printify_product_id = 'DIN_PRINTIFY_PRODUCT_ID',
+    printify_variant_id = 12345
+where id = 1;
+```
+
+> Ved checkout lagres ordre lokalt og webhook sender deretter ordren til Printify.
 
 ### Supabase migrasjon
 
