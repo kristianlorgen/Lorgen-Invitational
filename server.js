@@ -1911,6 +1911,39 @@ async function getOrderByStripeSessionId(sessionId) {
   `).get(sessionId) || null;
 }
 
+function getLocalOrderDetails(orderId) {
+  const order = db.prepare(`
+    SELECT id, reference, customer_name, customer_email, customer_phone,
+           shipping_address, postal_code, city, country, notes, status,
+           total_nok, stripe_session_id, stripe_payment_intent_id, printify_order_id,
+           created_at
+    FROM webshop_orders
+    WHERE id = ?
+    LIMIT 1
+  `).get(orderId);
+
+  if (!order) return null;
+
+  const items = db.prepare(`
+    SELECT oi.product_id, oi.product_name, oi.quantity, oi.unit_price_nok, oi.line_total_nok,
+           p.printify_shop_id, p.printify_product_id, p.printify_variant_id
+    FROM webshop_order_items oi
+    JOIN webshop_products p ON p.id = oi.product_id
+    WHERE oi.order_id = ?
+  `).all(order.id);
+
+  return { ...order, items };
+}
+
+function toPrintifyItemsFromLocalOrder(order = {}) {
+  return (order.items || []).map((item) => ({
+    printify_shop_id: item.printify_shop_id,
+    printify_product_id: item.printify_product_id,
+    printify_variant_id: item.printify_variant_id,
+    quantity: Number(item.quantity)
+  }));
+}
+
 function getLocalWebshopProducts() {
   return db.prepare(`
     SELECT id, name, description, image_url, price_nok, currency,
@@ -2188,28 +2221,42 @@ app.post('/api/stripe/webhook', async (req, res) => {
         .run('paid', String(session.payment_intent || ''), order.id);
     }
 
-    const printifyOrder = await createPrintifyOrder({
-      orderId: order.id,
-      items: printifyItems,
-      email: order.email || order.customer_email || session.customer_details?.email || '',
-      shippingAddress
-    });
-
-    if (isSupabaseOrder) {
-      await supabaseRequestWithFallback('orders', {
-        method: 'PATCH',
-        query: `?id=eq.${encodeURIComponent(order.id)}`,
-        body: {
-          status: 'submitted',
-          printify_order_id: String(printifyOrder.id || '')
-        }
+    try {
+      const printifyOrder = await createPrintifyOrder({
+        orderId: order.id,
+        items: printifyItems,
+        email: order.email || order.customer_email || session.customer_details?.email || '',
+        shippingAddress
       });
-    } else {
-      db.prepare('UPDATE webshop_orders SET status=?, printify_order_id=? WHERE id=?')
-        .run('submitted', String(printifyOrder.id || ''), order.id);
-    }
 
-    res.json({ received: true });
+      if (isSupabaseOrder) {
+        await supabaseRequestWithFallback('orders', {
+          method: 'PATCH',
+          query: `?id=eq.${encodeURIComponent(order.id)}`,
+          body: {
+            status: 'submitted',
+            printify_order_id: String(printifyOrder.id || '')
+          }
+        });
+      } else {
+        db.prepare('UPDATE webshop_orders SET status=?, printify_order_id=? WHERE id=?')
+          .run('submitted', String(printifyOrder.id || ''), order.id);
+      }
+
+      return res.json({ received: true });
+    } catch (printifyError) {
+      if (isSupabaseOrder) {
+        await supabaseRequestWithFallback('orders', {
+          method: 'PATCH',
+          query: `?id=eq.${encodeURIComponent(order.id)}`,
+          body: { status: 'failed' }
+        });
+      } else {
+        db.prepare('UPDATE webshop_orders SET status=? WHERE id=?')
+          .run('failed', order.id);
+      }
+      throw printifyError;
+    }
   } catch (error) {
     console.error('stripe webhook error:', error.message);
     res.status(400).json({ error: 'Webhook handling failed' });
@@ -2262,6 +2309,90 @@ app.get('/api/orders/by-reference', (req, res) => {
 });
 
 // ── Clean URL routing ────────────────────────────────────────────────────────
+
+app.get('/api/admin/webshop/orders', requireAdmin, (req, res) => {
+  try {
+    const statusFilter = String(req.query.status || '').trim();
+    const limitRaw = Number(req.query.limit || 50);
+    const limit = Number.isInteger(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 50;
+
+    let query = `
+      SELECT id, reference, customer_name, customer_email, status, total_nok,
+             stripe_session_id, stripe_payment_intent_id, printify_order_id, created_at
+      FROM webshop_orders
+    `;
+    const params = [];
+
+    if (statusFilter) {
+      query += ' WHERE status = ?';
+      params.push(statusFilter);
+    }
+
+    query += ' ORDER BY id DESC LIMIT ?';
+    params.push(limit);
+
+    const orders = db.prepare(query).all(...params);
+    res.json({ orders });
+  } catch (error) {
+    console.error('admin webshop orders error:', error.message);
+    res.status(500).json({ error: 'Kunne ikke hente webshop-ordrer' });
+  }
+});
+
+app.post('/api/admin/webshop/orders/:id/retry-submit', requireAdmin, async (req, res) => {
+  try {
+    const orderId = Number(req.params.id);
+    if (!Number.isInteger(orderId) || orderId < 1) {
+      return res.status(400).json({ error: 'Ugyldig ordre-ID' });
+    }
+
+    if (useSupabaseWebshop()) {
+      return res.status(400).json({ error: 'Retry er kun tilgjengelig for lokal ordrelogg' });
+    }
+
+    const order = getLocalOrderDetails(orderId);
+    if (!order) return res.status(404).json({ error: 'Ordre ikke funnet' });
+
+    if (order.status === 'submitted') {
+      return res.status(409).json({ error: 'Ordren er allerede sendt til produksjon' });
+    }
+
+    const items = toPrintifyItemsFromLocalOrder(order);
+    if (!items.length) {
+      return res.status(400).json({ error: 'Ordren mangler ordrelinjer for Printify' });
+    }
+
+    const shippingAddress = toPrintifyShippingAddress({
+      name: order.customer_name,
+      phone: order.customer_phone,
+      address1: order.shipping_address,
+      city: order.city,
+      postal_code: order.postal_code,
+      country: order.country
+    });
+
+    const printifyOrder = await createPrintifyOrder({
+      orderId: order.id,
+      items,
+      email: order.customer_email || '',
+      shippingAddress
+    });
+
+    db.prepare('UPDATE webshop_orders SET status=?, printify_order_id=? WHERE id=?')
+      .run('submitted', String(printifyOrder.id || ''), order.id);
+
+    res.json({
+      ok: true,
+      message: 'Ordre sendt til Printify',
+      orderId: order.id,
+      printifyOrderId: String(printifyOrder.id || '')
+    });
+  } catch (error) {
+    console.error('admin retry printify error:', error.message);
+    res.status(500).json({ error: 'Kunne ikke sende ordre til Printify på nytt' });
+  }
+});
+
 app.get('/webshop/success', (req, res) => res.sendFile(path.join(__dirname, 'public/webshop-success.html')));
 app.get('/webshop/cancel', (req, res) => res.sendFile(path.join(__dirname, 'public/webshop-cancel.html')));
 
