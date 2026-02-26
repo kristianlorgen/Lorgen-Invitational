@@ -134,6 +134,12 @@ function hasEnv(name) {
   return typeof value === 'string' && value.trim() !== '';
 }
 
+function getPrintifyToken() {
+  const token = process.env.PRINTIFY_API_TOKEN || process.env.PRINTIFY_API_TOKEN_LORGENINV;
+  if (typeof token === 'string' && token.trim() !== '') return token.trim();
+  throw new Error('Missing required env: PRINTIFY_API_TOKEN');
+}
+
 async function fetchWithTimeout(url, options = {}, timeoutMs = EXTERNAL_API_TIMEOUT_MS) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -248,7 +254,7 @@ function verifyStripeSignature(rawBody, sigHeader, secret) {
 }
 
 async function createPrintifyOrder({ orderId, items, email, shippingAddress }) {
-  const token = env('PRINTIFY_API_TOKEN', true);
+  const token = getPrintifyToken();
   if (!Array.isArray(items) || !items.length) throw new Error('Printify krever minst ett ordrelinjeprodukt');
 
   const firstShop = String(items[0].printify_shop_id || '').trim();
@@ -1878,7 +1884,7 @@ app.get('/api/webshop/status', (req, res) => {
     { name: 'SUPABASE_SERVICE_ROLE_KEY_OR_ANON', configured: hasEnv('SUPABASE_SERVICE_ROLE_KEY') || hasEnv('SUPABASE_ANON_KEY') },
     { name: 'STRIPE_SECRET_KEY', configured: hasEnv('STRIPE_SECRET_KEY') },
     { name: 'STRIPE_WEBHOOK_SECRET', configured: hasEnv('STRIPE_WEBHOOK_SECRET') },
-    { name: 'PRINTIFY_API_TOKEN', configured: hasEnv('PRINTIFY_API_TOKEN') }
+    { name: 'PRINTIFY_API_TOKEN', configured: hasEnv('PRINTIFY_API_TOKEN') || hasEnv('PRINTIFY_API_TOKEN_LORGENINV') }
   ];
 
   const mode = checks.every((check) => check.configured) ? 'integrated' : 'partial';
