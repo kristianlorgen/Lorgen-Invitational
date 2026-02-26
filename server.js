@@ -122,6 +122,11 @@ app.use(session({
 // ── Webshop integrations (Supabase + Stripe + Printify) ─────────────────────
 const STRIPE_API_BASE = 'https://api.stripe.com/v1';
 const EXTERNAL_API_TIMEOUT_MS = Number(process.env.EXTERNAL_API_TIMEOUT_MS || 8000);
+const ENV_ALIASES = {
+  STRIPE_SECRET_KEY: ['STRIPE_API_KEY'],
+  STRIPE_WEBHOOK_SECRET: ['STRIPE_WEBHOOK_SIGNING_SECRET'],
+  PRINTIFY_API_TOKEN: ['PRINTIFY_TOKEN', 'PRINTIFY_API_TOKEN_LORGENINV']
+};
 
 function env(name, required = false) {
   const value = getEnvValue(name);
@@ -134,7 +139,16 @@ function hasEnv(name) {
 }
 
 function getEnvValue(name) {
-  const raw = process.env[name];
+  const candidateNames = [name, ...(ENV_ALIASES[name] || [])];
+  let raw;
+
+  for (const candidateName of candidateNames) {
+    raw = process.env[candidateName];
+    if (typeof raw === 'string' && raw.trim() !== '') {
+      break;
+    }
+  }
+
   if (typeof raw !== 'string') return '';
 
   const trimmed = raw.trim();
@@ -143,6 +157,7 @@ function getEnvValue(name) {
   // Keep the full secret value, but remove accidental surrounding quotes that
   // often appear when copying from dashboards/CLI output.
   let normalized = trimmed.replace(/^("|')(.*)\1$/, '$2').trim();
+
 
   // Some hosting UIs persist trailing escaped newlines ("\n" / "\r\n")
   // when pasting secrets. Strip those suffixes so API tokens stay valid.
@@ -160,7 +175,7 @@ function hasValidHttpUrl(value) {
 }
 
 function getPrintifyToken() {
-  const token = getEnvValue('PRINTIFY_API_TOKEN') || getEnvValue('PRINTIFY_API_TOKEN_LORGENINV');
+  const token = getEnvValue('PRINTIFY_API_TOKEN');
   if (token) return token;
   throw new Error('Missing required env: PRINTIFY_API_TOKEN');
 }
@@ -2011,7 +2026,7 @@ app.get('/api/webshop/status', (req, res) => {
     { name: 'SUPABASE_SERVICE_ROLE_KEY_OR_ANON (optional)', configured: hasEnv('SUPABASE_SERVICE_ROLE_KEY') || hasEnv('SUPABASE_ANON_KEY') },
     { name: 'STRIPE_SECRET_KEY', configured: hasEnv('STRIPE_SECRET_KEY') },
     { name: 'STRIPE_WEBHOOK_SECRET', configured: hasEnv('STRIPE_WEBHOOK_SECRET') },
-    { name: 'PRINTIFY_API_TOKEN', configured: hasEnv('PRINTIFY_API_TOKEN') || hasEnv('PRINTIFY_API_TOKEN_LORGENINV') }
+    { name: 'PRINTIFY_API_TOKEN', configured: hasEnv('PRINTIFY_API_TOKEN') }
   ];
 
   const requiredChecks = checks.filter((check) => !check.name.includes('(optional)'));
