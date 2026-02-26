@@ -1954,6 +1954,31 @@ function getLocalWebshopProducts() {
   `).all();
 }
 
+function normalizePrintifyMapping(raw = {}) {
+  const shopId = String(raw.printify_shop_id || raw.shopId || '').trim();
+  const productId = String(raw.printify_product_id || raw.productId || '').trim();
+  const variantRaw = raw.printify_variant_id ?? raw.variantId;
+  const variantId = Number(variantRaw);
+
+  return {
+    printify_shop_id: shopId,
+    printify_product_id: productId,
+    printify_variant_id: Number.isInteger(variantId) && variantId > 0 ? variantId : null
+  };
+}
+
+function getMissingPrintifyMappings(items = []) {
+  return items
+    .filter((item) => {
+      const mapping = normalizePrintifyMapping(item);
+      return !mapping.printify_shop_id || !mapping.printify_product_id || !mapping.printify_variant_id;
+    })
+    .map((item) => ({
+      product_id: item.product_id,
+      product_name: item.product_name
+    }));
+}
+
 function useSupabaseWebshop() {
   return shouldUseSupabase();
 }
@@ -2058,6 +2083,14 @@ app.post('/api/checkout', async (req, res) => {
     });
 
     const totalNok = items.reduce((sum, item) => sum + item.line_total_nok, 0);
+    const missingMappings = getMissingPrintifyMappings(items);
+    if (missingMappings.length) {
+      return res.status(400).json({
+        error: 'Ett eller flere produkter mangler Printify-mapping og kan ikke bestilles',
+        missingMappings
+      });
+    }
+
     const lineItems = items.map((item) => ({
       quantity: item.quantity,
       price_data: {
@@ -2336,6 +2369,85 @@ app.get('/api/admin/webshop/orders', requireAdmin, (req, res) => {
   } catch (error) {
     console.error('admin webshop orders error:', error.message);
     res.status(500).json({ error: 'Kunne ikke hente webshop-ordrer' });
+  }
+});
+
+app.get('/api/admin/webshop/mappings', requireAdmin, async (req, res) => {
+  try {
+    if (useSupabaseWebshop()) {
+      const products = await supabaseRequestWithFallback('products', {
+        query: '?select=id,name,is_active,price_nok,currency,printify_shop_id,printify_product_id,printify_variant_id&order=created_at.asc'
+      });
+      return res.json({ products: products || [], source: 'supabase' });
+    }
+
+    const products = db.prepare(`
+      SELECT id, name, is_active, price_nok, currency,
+             printify_shop_id, printify_product_id, printify_variant_id
+      FROM webshop_products
+      ORDER BY sort_order ASC, id ASC
+    `).all();
+
+    return res.json({ products, source: 'sqlite' });
+  } catch (error) {
+    console.error('admin webshop mappings error:', error.message);
+    res.status(500).json({ error: 'Kunne ikke hente produktmappings' });
+  }
+});
+
+app.patch('/api/admin/webshop/mappings/:id', requireAdmin, async (req, res) => {
+  try {
+    const productId = String(req.params.id || '').trim();
+    if (!productId) return res.status(400).json({ error: 'Ugyldig produkt-ID' });
+
+    const mapping = normalizePrintifyMapping(req.body || {});
+
+    if (!mapping.printify_shop_id || !mapping.printify_product_id || !mapping.printify_variant_id) {
+      return res.status(400).json({
+        error: 'printify_shop_id, printify_product_id og printify_variant_id er påkrevd'
+      });
+    }
+
+    if (useSupabaseWebshop()) {
+      const updated = await supabaseRequestWithFallback('products', {
+        method: 'PATCH',
+        query: `?id=eq.${encodeURIComponent(productId)}&select=id,name,printify_shop_id,printify_product_id,printify_variant_id`,
+        headers: { Prefer: 'return=representation' },
+        body: mapping
+      });
+
+      if (!updated?.[0]) return res.status(404).json({ error: 'Produkt ikke funnet' });
+      return res.json({ ok: true, product: updated[0], source: 'supabase' });
+    }
+
+    const numericId = Number(productId);
+    if (!Number.isInteger(numericId) || numericId < 1) {
+      return res.status(400).json({ error: 'Ugyldig produkt-ID for lokal database' });
+    }
+
+    const result = db.prepare(`
+      UPDATE webshop_products
+      SET printify_shop_id = ?, printify_product_id = ?, printify_variant_id = ?
+      WHERE id = ?
+    `).run(
+      mapping.printify_shop_id,
+      mapping.printify_product_id,
+      mapping.printify_variant_id,
+      numericId
+    );
+
+    if (!result.changes) return res.status(404).json({ error: 'Produkt ikke funnet' });
+
+    const product = db.prepare(`
+      SELECT id, name, printify_shop_id, printify_product_id, printify_variant_id
+      FROM webshop_products
+      WHERE id = ?
+    `).get(numericId);
+
+    res.json({ ok: true, product, source: 'sqlite' });
+  } catch (error) {
+    console.error('admin webshop mapping update error:', error.message);
+    res.status(500).json({ error: 'Kunne ikke oppdatere produktmapping' });
   }
 });
 
