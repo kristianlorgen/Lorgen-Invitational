@@ -71,7 +71,7 @@ Sett følgende i `.env` (ikke commit secrets):
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `STRIPE_SECRET_KEY`
 - `STRIPE_WEBHOOK_SECRET`
-- `PRINTIFY_API_TOKEN`
+- `PRINTIFY_API_TOKEN` (eller alias `PRINTIFY_API_TOKEN_LORGENINV` under token-rotasjon)
 
 ### Feil: `Missing env var: STRIPE_SECRET_KEY`
 
@@ -96,7 +96,7 @@ Den oppretter tabellene `products` og `orders` + RLS policy.
 
 Hvis webshop ikke fungerer etter tidligere oppsett, kjør en «ren» restart slik:
 
-1. Oppdater `.env` med alle webshop-nøkler (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `PRINTIFY_API_TOKEN`, `NEXT_PUBLIC_SITE_URL`).
+1. Oppdater `.env` med alle webshop-nøkler (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `PRINTIFY_API_TOKEN` (evt. `PRINTIFY_API_TOKEN_LORGENINV`), `NEXT_PUBLIC_SITE_URL`).
 2. Kjør SQL fra `supabase/migrations/20260225141000_webshop.sql` på nytt i Supabase SQL Editor.
 3. Tøm gamle testordrer/produkter om nødvendig, og legg inn minst ett aktivt produkt i `public.products`.
 4. Start serveren på nytt.
