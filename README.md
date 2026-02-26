@@ -66,9 +66,9 @@ Webshop er nå bygget inn i nettsiden på `/webshop` med flyten:
 Sett følgende i `.env` (ikke commit secrets):
 
 - `NEXT_PUBLIC_SITE_URL`
-- `STRIPE_SECRET_KEY`
-- `STRIPE_WEBHOOK_SECRET`
-- `PRINTIFY_API_TOKEN` (eller alias `PRINTIFY_API_TOKEN_LORGENINV` under token-rotasjon)
+- `STRIPE_SECRET_KEY` (alias støttes: `STRIPE_API_KEY`)
+- `STRIPE_WEBHOOK_SECRET` (alias støttes: `STRIPE_WEBHOOK_SIGNING_SECRET`)
+- `PRINTIFY_API_TOKEN` (alias støttes: `PRINTIFY_TOKEN` og `PRINTIFY_API_TOKEN_LORGENINV` under token-rotasjon)
 - `SUPABASE_URL` *(valgfri)*
 - `SUPABASE_ANON_KEY` *(valgfri)*
 - `SUPABASE_SERVICE_ROLE_KEY` *(valgfri)*
@@ -79,7 +79,7 @@ Hvis nettsiden viser `Missing env var: STRIPE_SECRET_KEY`, betyr det at serveren
 
 Sjekkliste:
 
-1. Legg inn `STRIPE_SECRET_KEY` i `.env` lokalt eller i secrets-panelet hos hostingleverandøren.
+1. Legg inn `STRIPE_SECRET_KEY` i `.env` lokalt eller i secrets-panelet hos hostingleverandøren (evt. `STRIPE_API_KEY` hvis plattformen bruker det navnet).
 2. Legg også inn `PRINTIFY_API_TOKEN` (brukes når ordre skal sendes videre til Printify).
 3. Restart serveren etter at miljøvariabler er oppdatert.
 4. Verifiser status på `GET /api/webshop/status`.
