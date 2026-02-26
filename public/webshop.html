@@ -17,7 +17,7 @@
       <li><a href="/gameday" class="nav-link">Spilleregler &amp; Informasjon</a></li>
       <li><a href="/scoreboard" class="nav-link">Live Resultater</a></li>
       <li><a href="/gallery" class="nav-link">Turneringsbilder</a></li>
-      <li><a href="/legacy" class="nav-link">Hall of Fame</a></li>
+      <li><a href="/legacy" class="nav-link">Historikk</a></li>
       <li><a href="/webshop" class="nav-link active">Webshop</a></li>
       <li><a href="/enter-score" class="nav-link nav-link--cta">Scorekort</a></li>
     </ul>
@@ -29,40 +29,47 @@
   <a href="/gameday" class="nav-link">Spilleregler &amp; Informasjon</a>
   <a href="/scoreboard" class="nav-link">Live Resultater</a>
   <a href="/gallery" class="nav-link">Turneringsbilder</a>
-  <a href="/legacy" class="nav-link">Hall of Fame</a>
+  <a href="/legacy" class="nav-link">Historikk</a>
   <a href="/webshop" class="nav-link active">Webshop</a>
   <a href="/enter-score" class="nav-link">Scorekort</a>
 </div>
 
-<section class="section" style="padding-top:120px;background:var(--off-white)">
+<div class="page-hero">
   <div class="container">
-    <div class="section-header">
-      <span class="section-tag">Lorgen Shop</span>
-      <h1 class="section-title">Webshop <span>Bestilling</span></h1>
-      <p class="section-subtitle">Vi har satt opp nettbutikken på nytt med enkel bestilling direkte i løsningen.</p>
-    </div>
+    <div class="page-hero-tag"><i class="fas fa-bag-shopping"></i> Nettbutikk</div>
+    <h1 class="page-hero-title">Lorgen <span>Webshop</span></h1>
+    <p class="page-hero-sub">Bygget på nytt fra bunnen med Stripe Checkout og Printify-oppfyllelse.</p>
+  </div>
+</div>
 
-    <div id="shopStatus" class="feature-card" style="display:none;margin-bottom:18px"></div>
+<section class="section" style="padding-top:34px">
+  <div class="container">
+    <div id="shopStatus" class="webshop-status" role="status" aria-live="polite"></div>
 
-    <div id="productGrid" class="feature-grid"></div>
-    <p id="shopError" style="display:none;color:#b42318;text-align:center"></p>
+    <div class="webshop-layout">
+      <div>
+        <div id="productGrid" class="feature-grid"></div>
+        <p id="shopError" class="webshop-error" aria-live="assertive"></p>
+      </div>
 
-    <div class="feature-card" style="margin-top:28px">
-      <h2 style="margin-bottom:14px">Leveringsinformasjon</h2>
-      <form id="orderForm" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))">
-        <input required name="name" placeholder="Fullt navn" class="form-control" style="padding:12px;border:1px solid var(--gold-border);border-radius:10px">
-        <input required type="email" name="email" placeholder="E-post" class="form-control" style="padding:12px;border:1px solid var(--gold-border);border-radius:10px">
-        <input name="phone" placeholder="Telefon" class="form-control" style="padding:12px;border:1px solid var(--gold-border);border-radius:10px">
-        <input required name="address" placeholder="Adresse" class="form-control" style="padding:12px;border:1px solid var(--gold-border);border-radius:10px">
-        <input required name="postalCode" placeholder="Postnummer" class="form-control" style="padding:12px;border:1px solid var(--gold-border);border-radius:10px">
-        <input required name="city" placeholder="Poststed" class="form-control" style="padding:12px;border:1px solid var(--gold-border);border-radius:10px">
-        <input name="country" value="Norge" placeholder="Land" class="form-control" style="padding:12px;border:1px solid var(--gold-border);border-radius:10px">
-        <textarea name="notes" placeholder="Kommentar til bestilling (valgfritt)" class="form-control" style="padding:12px;border:1px solid var(--gold-border);border-radius:10px;grid-column:1/-1;min-height:92px"></textarea>
-        <div style="grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap">
-          <strong id="cartTotal">Total: 0,00 NOK</strong>
-          <button class="btn btn--gold" type="submit">Send bestilling</button>
-        </div>
-      </form>
+      <aside class="webshop-checkout-card">
+        <h2>Leveringsinformasjon</h2>
+        <p>Fyll ut informasjonen under og gå videre til sikker betaling i Stripe.</p>
+        <form id="orderForm" class="webshop-form">
+          <input required name="name" placeholder="Fullt navn">
+          <input required type="email" name="email" placeholder="E-post">
+          <input name="phone" placeholder="Telefon">
+          <input required name="address" placeholder="Adresse">
+          <input required name="postalCode" placeholder="Postnummer">
+          <input required name="city" placeholder="Poststed">
+          <input name="country" value="Norge" placeholder="Land">
+          <textarea name="notes" placeholder="Kommentar til bestilling (valgfritt)"></textarea>
+          <div class="webshop-summary-row">
+            <strong id="cartTotal">Total: 0,00 NOK</strong>
+            <button class="btn btn--gold" type="submit">Gå til betaling</button>
+          </div>
+        </form>
+      </aside>
     </div>
   </div>
 </section>
@@ -77,53 +84,68 @@ const shopError = document.getElementById('shopError');
 const orderForm = document.getElementById('orderForm');
 const cartTotal = document.getElementById('cartTotal');
 const shopStatus = document.getElementById('shopStatus');
-
-let checkoutEnabled = true;
-
-let products = [];
 const cart = new Map();
 
+let checkoutEnabled = true;
+let products = [];
+
 function formatNok(ore) {
-  return `${(ore / 100).toFixed(2).replace('.', ',')} NOK`;
+  return `${(Number(ore || 0) / 100).toFixed(2).replace('.', ',')} NOK`;
 }
 
 function updateTotal() {
   const total = products.reduce((sum, product) => {
-    const qty = cart.get(product.id) || 0;
+    const qty = cart.get(String(product.id)) || 0;
     return sum + (qty * Number(product.price_nok || 0));
   }, 0);
   cartTotal.textContent = `Total: ${formatNok(total)}`;
 }
 
 function setQty(productId, qty) {
+  const key = String(productId);
   const safeQty = Math.max(0, Math.min(20, Number(qty) || 0));
-  if (safeQty === 0) cart.delete(productId);
-  else cart.set(productId, safeQty);
-  const input = document.querySelector(`[data-qty-id="${productId}"]`);
+
+  if (safeQty === 0) cart.delete(key);
+  else cart.set(key, safeQty);
+
+  const input = document.querySelector(`[data-qty-id="${key}"]`);
   if (input) input.value = safeQty;
+
   updateTotal();
+}
+
+function adjustQty(productId, delta) {
+  const input = document.querySelector(`[data-qty-id="${productId}"]`);
+  const current = Number(input?.value || 0);
+  setQty(productId, current + delta);
 }
 
 function renderProducts() {
   if (!products.length) {
-    productGrid.innerHTML = '<div class="feature-card"><h3>Ingen produkter tilgjengelig</h3><p>Kontakt oss hvis du ønsker å bestille merch.</p></div>';
+    productGrid.innerHTML = '<div class="feature-card"><h3>Ingen produkter tilgjengelig</h3><p>Det er ikke publisert varer i nettbutikken enda.</p></div>';
     return;
   }
 
-  productGrid.innerHTML = products.map((product) => `
-    <article class="feature-card" style="display:flex;flex-direction:column;gap:12px">
-      <img src="${product.image_url || '/images/logo.png'}" alt="${product.name}" style="width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:12px">
-      <h3>${product.name}</h3>
-      <p>${product.description || ''}</p>
-      <p style="font-weight:700">${formatNok(product.price_nok)}</p>
-      <label style="font-weight:600">Antall</label>
-      <div style="display:flex;align-items:center;gap:8px">
-        <button type="button" class="btn btn--outline" onclick="setQty(${product.id}, (Number(document.querySelector('[data-qty-id=&quot;${product.id}&quot;]').value || 0) - 1))">-</button>
-        <input data-qty-id="${product.id}" type="number" min="0" max="20" value="0" style="width:72px;padding:10px;border:1px solid var(--gold-border);border-radius:10px" oninput="setQty(${product.id}, this.value)">
-        <button type="button" class="btn btn--outline" onclick="setQty(${product.id}, (Number(document.querySelector('[data-qty-id=&quot;${product.id}&quot;]').value || 0) + 1))">+</button>
-      </div>
-    </article>
-  `).join('');
+  productGrid.innerHTML = products.map((product) => {
+    const imageUrl = product.image_url || '/images/logo.png';
+    const escapedName = String(product.name || 'Produkt');
+    const escapedDescription = String(product.description || '');
+    const productId = String(product.id);
+
+    return `
+      <article class="feature-card webshop-product-card">
+        <img src="${imageUrl}" alt="${escapedName}" class="webshop-product-image">
+        <h3>${escapedName}</h3>
+        <p>${escapedDescription}</p>
+        <p class="webshop-product-price">${formatNok(product.price_nok)}</p>
+        <div class="webshop-qty-row">
+          <button type="button" class="btn btn--outline" onclick="adjustQty('${productId}', -1)">-</button>
+          <input data-qty-id="${productId}" type="number" min="0" max="20" value="0" oninput="setQty('${productId}', this.value)">
+          <button type="button" class="btn btn--outline" onclick="adjustQty('${productId}', 1)">+</button>
+        </div>
+      </article>
+    `;
+  }).join('');
 
   updateTotal();
 }
@@ -132,7 +154,7 @@ function setCheckoutEnabled(enabled) {
   checkoutEnabled = enabled;
   const submitButton = orderForm.querySelector('button[type="submit"]');
   submitButton.disabled = !enabled;
-  submitButton.textContent = enabled ? 'Send bestilling' : 'Bestilling midlertidig utilgjengelig';
+  submitButton.textContent = enabled ? 'Gå til betaling' : 'Betaling er utilgjengelig';
 }
 
 async function loadStatus() {
@@ -142,22 +164,27 @@ async function loadStatus() {
     if (!res.ok) throw new Error(data.error || 'Kunne ikke hente webshop-status');
 
     if (data.mode === 'integrated') {
-      shopStatus.style.display = 'none';
+      shopStatus.className = 'webshop-status webshop-status--ok';
+      shopStatus.innerHTML = `<strong>Klar for bestilling.</strong> ${data.message}`;
       setCheckoutEnabled(true);
       return;
     }
 
-    const missing = (data.checks || []).filter((check) => !check.configured).map((check) => `<li>${check.name}</li>`).join('');
-    shopStatus.style.display = 'block';
+    const missing = (data.checks || [])
+      .filter((check) => !check.configured)
+      .map((check) => `<li>${check.name}</li>`)
+      .join('');
+
+    shopStatus.className = 'webshop-status webshop-status--warn';
     shopStatus.innerHTML = `
-      <h3 style="margin-bottom:8px">Webshop er delvis konfigurert</h3>
-      <p style="margin-bottom:8px">Produkter kan vises, men checkout virker ikke før disse nøklene er satt:</p>
-      <ul style="margin-left:18px">${missing || '<li>Ukjent konfigurasjonsfeil</li>'}</ul>
+      <strong>Webshop er ikke ferdig konfigurert.</strong>
+      <p>Disse nøklene mangler i miljøet:</p>
+      <ul>${missing || '<li>Ukjent konfigurasjonsfeil</li>'}</ul>
     `;
     setCheckoutEnabled(false);
   } catch (error) {
-    shopStatus.style.display = 'block';
-    shopStatus.innerHTML = `<p>Kunne ikke sjekke webshop-status: ${error.message}</p>`;
+    shopStatus.className = 'webshop-status webshop-status--warn';
+    shopStatus.innerHTML = `<strong>Kunne ikke sjekke status.</strong> <p>${error.message}</p>`;
     setCheckoutEnabled(false);
   }
 }
@@ -168,29 +195,32 @@ async function loadProducts() {
     const res = await fetch('/api/webshop/products');
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Kunne ikke hente produkter');
-    products = data.products || [];
+    products = Array.isArray(data.products) ? data.products : [];
     renderProducts();
   } catch (error) {
-    shopError.style.display = 'block';
     shopError.textContent = error.message;
+    shopError.style.display = 'block';
   }
 }
 
 orderForm.addEventListener('submit', async (event) => {
   event.preventDefault();
-  const formData = new FormData(orderForm);
-  const items = [...cart.entries()].map(([productId, quantity]) => ({ productId, quantity })).filter((item) => item.quantity > 0);
 
   if (!checkoutEnabled) {
-    alert('Checkout er ikke tilgjengelig før webshop-integrasjonene er konfigurert.');
+    alert('Betaling er ikke tilgjengelig før alle API-nøkler er lagt inn på serveren.');
     return;
   }
+
+  const items = [...cart.entries()]
+    .map(([productId, quantity]) => ({ productId, quantity }))
+    .filter((item) => item.quantity > 0);
 
   if (!items.length) {
-    alert('Velg minst ett produkt før du sender bestilling.');
+    alert('Velg minst ett produkt før du går videre til betaling.');
     return;
   }
 
+  const formData = new FormData(orderForm);
   const payload = {
     customer: {
       name: formData.get('name'),
@@ -205,32 +235,30 @@ orderForm.addEventListener('submit', async (event) => {
     items
   };
 
-  try {
-    const submitButton = orderForm.querySelector('button[type="submit"]');
-    submitButton.disabled = true;
-    submitButton.textContent = 'Sender...';
+  const submitButton = orderForm.querySelector('button[type="submit"]');
+  submitButton.disabled = true;
+  submitButton.textContent = 'Klargjør betaling...';
 
+  try {
     const res = await fetch('/api/checkout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Kunne ikke sende bestilling');
-
-    if (!data.checkoutUrl) throw new Error('Mangler redirect til Stripe Checkout');
+    if (!res.ok) throw new Error(data.error || 'Kunne ikke opprette checkout');
+    if (!data.checkoutUrl) throw new Error('Mangler videresending til Stripe');
 
     window.location.href = data.checkoutUrl;
   } catch (error) {
     alert(error.message || 'Noe gikk galt under bestilling');
-  } finally {
-    const submitButton = orderForm.querySelector('button[type="submit"]');
     submitButton.disabled = false;
-    submitButton.textContent = 'Send bestilling';
+    submitButton.textContent = 'Gå til betaling';
   }
 });
 
 window.setQty = setQty;
+window.adjustQty = adjustQty;
 loadStatus();
 loadProducts();
 </script>
