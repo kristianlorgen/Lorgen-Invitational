@@ -134,6 +134,15 @@ function hasEnv(name) {
   return typeof value === 'string' && value.trim() !== '';
 }
 
+function hasValidHttpUrl(value) {
+  try {
+    const parsed = new URL(String(value || '').trim());
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch (_) {
+    return false;
+  }
+}
+
 function getPrintifyToken() {
   const token = process.env.PRINTIFY_API_TOKEN || process.env.PRINTIFY_API_TOKEN_LORGENINV;
   if (typeof token === 'string' && token.trim() !== '') return token.trim();
@@ -200,6 +209,27 @@ async function supabaseRequestWithFallback(pathname, options = {}) {
   }
 
   throw lastError || new Error('Missing Supabase API key');
+}
+
+const SUPABASE_NETWORK_ERROR_COOLDOWN_MS = Number(process.env.SUPABASE_NETWORK_ERROR_COOLDOWN_MS || 5 * 60 * 1000);
+let supabaseDisabledUntil = 0;
+
+function shouldUseSupabase() {
+  if (!hasValidHttpUrl(process.env.SUPABASE_URL)) return false;
+  if (!(hasEnv('SUPABASE_SERVICE_ROLE_KEY') || hasEnv('SUPABASE_ANON_KEY'))) return false;
+  return Date.now() >= supabaseDisabledUntil;
+}
+
+function isLikelyNetworkError(error) {
+  if (!error || typeof error !== 'object') return false;
+  if (error.name === 'AbortError') return true;
+  return /fetch failed|network|timed out|econn|enotfound|eai_again/i.test(String(error.message || ''));
+}
+
+function markSupabaseTemporarilyUnavailable(error) {
+  if (!isLikelyNetworkError(error)) return;
+  supabaseDisabledUntil = Date.now() + SUPABASE_NETWORK_ERROR_COOLDOWN_MS;
+  console.warn('supabase temporarily disabled after network failure:', error.message);
 }
 
 function formUrlEncode(data) {
@@ -1841,7 +1871,7 @@ function toPrintifyShippingAddress(rawAddress = {}) {
 }
 
 async function getOrderByStripeSessionId(sessionId) {
-  const canUseSupabase = hasEnv('SUPABASE_URL') && (hasEnv('SUPABASE_SERVICE_ROLE_KEY') || hasEnv('SUPABASE_ANON_KEY'));
+  const canUseSupabase = shouldUseSupabase();
   if (canUseSupabase) {
     try {
       const rows = await supabaseRequestWithFallback('orders', {
@@ -1849,6 +1879,7 @@ async function getOrderByStripeSessionId(sessionId) {
       });
       if (rows?.[0]) return rows[0];
     } catch (error) {
+      markSupabaseTemporarilyUnavailable(error);
       console.error('supabase order lookup warning:', error.message);
     }
   }
@@ -1875,7 +1906,7 @@ function getLocalWebshopProducts() {
 }
 
 function useSupabaseWebshop() {
-  return hasEnv('SUPABASE_URL') && (hasEnv('SUPABASE_SERVICE_ROLE_KEY') || hasEnv('SUPABASE_ANON_KEY'));
+  return shouldUseSupabase();
 }
 
 app.get('/api/webshop/products', (req, res) => {
@@ -1888,6 +1919,7 @@ app.get('/api/webshop/products', (req, res) => {
   }).then((products) => {
     res.json({ products: products || [] });
   }).catch((error) => {
+    markSupabaseTemporarilyUnavailable(error);
     console.error('webshop products error:', error.message);
     try {
       const localProducts = getLocalWebshopProducts();
