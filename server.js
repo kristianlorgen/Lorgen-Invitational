@@ -120,7 +120,7 @@ app.use(session({
   cookie: { maxAge: 24 * 60 * 60 * 1000 }
 }));
 
-// ── Webshop integrations (Supabase + Stripe + Printify) ─────────────────────
+// ── Webshop integrations (Supabase + Stripe + Printful) ─────────────────────
 const STRIPE_API_BASE = 'https://api.stripe.com/v1';
 const EXTERNAL_API_TIMEOUT_MS = Number(process.env.EXTERNAL_API_TIMEOUT_MS || 8000);
 const ENV_ALIASES = {
@@ -223,7 +223,35 @@ function hasValidHttpUrl(value) {
 function getPrintifyToken() {
   const token = getEnvValue('PRINTIFY_API_TOKEN');
   if (token) return token;
-  throw new Error('Missing required env: PRINTIFY_API_TOKEN');
+  throw new Error('Missing required env: PRINTFUL_API_TOKEN');
+}
+
+function getPrintfulOauthToken() {
+  return getEnvValue('PRINTFUL_OAUTH_TOKEN');
+}
+
+function getPrintfulStoreId() {
+  return getEnvValue('PRINTFUL_STORE_ID');
+}
+
+function hasPrintfulAuth() {
+  return Boolean(getPrintfulOauthToken()) || hasEnv('PRINTFUL_API_TOKEN') || hasEnv('PRINTFUL_API_TOKEN_LORGENINV');
+}
+
+// Backwards-compatible alias used by earlier webshop status implementations.
+function hasPrintfulToken() {
+  return hasPrintfulAuth();
+}
+
+function getPrintfulAuthHeaders() {
+  const oauthToken = getPrintfulOauthToken();
+  const token = oauthToken || getPrintfulToken();
+  const storeId = getPrintfulStoreId();
+
+  return {
+    Authorization: `Bearer ${token}`,
+    ...(storeId ? { 'X-PF-Store-Id': storeId } : {})
+  };
 }
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = EXTERNAL_API_TIMEOUT_MS) {
@@ -400,82 +428,34 @@ function verifyStripeSignature(rawBody, sigHeader, secret) {
   if (ageSeconds > 300) throw new Error('Stripe signature timestamp too old');
 }
 
-async function createPrintifyOrder({ orderId, items, email, shippingAddress }) {
-  const token = getPrintifyToken();
-  if (!Array.isArray(items) || !items.length) throw new Error('Printify krever minst ett ordrelinjeprodukt');
-
-  const firstShop = String(items[0].printify_shop_id || '').trim();
-  if (!firstShop) throw new Error('Printify shop mangler på produkt');
-
-  const mixedShop = items.some((item) => String(item.printify_shop_id || '').trim() !== firstShop);
-  if (mixedShop) throw new Error('Alle produkter i en bestilling må tilhøre samme Printify shop');
-
-  const url = `https://api.printify.com/v1/shops/${firstShop}/orders.json`;
+async function createPrintfulOrder({ orderId, items, email, shippingAddress }) {
+  if (!Array.isArray(items) || !items.length) {
+    throw new Error('Printful krever minst ett ordrelinjeprodukt');
+  }
 
   const lineItems = items.map((item) => ({
-    product_id: item.printify_product_id,
-    variant_id: item.printify_variant_id || 1,
+    sync_variant_id: Number(item.printful_variant_id),
     quantity: Number(item.quantity)
   }));
 
-  const body = {
-    external_id: orderId,
-    label: `Lorgen order ${orderId}`,
-    line_items: lineItems,
-    address_to: {
-      first_name: shippingAddress.first_name,
-      last_name: shippingAddress.last_name,
+  const payload = {
+    external_id: String(orderId),
+    confirm: true,
+    recipient: {
+      name: `${shippingAddress.first_name} ${shippingAddress.last_name}`.trim(),
       email,
       phone: shippingAddress.phone || '',
-      country: shippingAddress.country,
-      region: shippingAddress.region || '',
+      country_code: shippingAddress.country,
+      state_code: shippingAddress.region || '',
       address1: shippingAddress.address1,
       address2: shippingAddress.address2 || '',
       city: shippingAddress.city,
       zip: shippingAddress.zip
     },
-    send_shipping_notification: false
+    items: lineItems
   };
 
-  const createRes = await fetchWithTimeout(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(body)
-  });
-
-  const createData = await createRes.json();
-  if (!createRes.ok) throw new Error(`Printify create order failed: ${JSON.stringify(createData)}`);
-
-  const submitUrl = `https://api.printify.com/v1/shops/${firstShop}/orders/${createData.id}/send_to_production.json`;
-  const submitRes = await fetchWithTimeout(submitUrl, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ external_id: orderId })
-  });
-
-  if (!submitRes.ok) {
-    const fallbackUrl = `https://api.printify.com/v1/shops/${firstShop}/orders/${createData.id}/submit.json`;
-    const fallbackRes = await fetchWithTimeout(fallbackUrl, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ external_id: orderId })
-    });
-    if (!fallbackRes.ok) {
-      const fallbackErr = await fallbackRes.text();
-      throw new Error(`Printify submit failed: ${fallbackErr}`);
-    }
-  }
-
-  return createData;
+  return printfulRequest('/orders', { method: 'POST', body: payload });
 }
 
 // ── Auth guards ──────────────────────────────────────────────────────────────
@@ -1969,7 +1949,7 @@ function parseOrderItems(inputItems = []) {
   return items;
 }
 
-function toPrintifyShippingAddress(rawAddress = {}) {
+function toPrintfulShippingAddress(rawAddress = {}) {
   const fullName = String(rawAddress.name || '').trim();
   const [firstName = '', ...lastNameParts] = fullName.split(' ').filter(Boolean);
   const lastName = lastNameParts.join(' ') || firstName || 'Kunde';
@@ -2004,7 +1984,7 @@ async function getOrderByStripeSessionId(sessionId) {
   return db.prepare(`
     SELECT id, reference, customer_name, customer_email, customer_phone,
            shipping_address, postal_code, city, country, notes, status,
-           total_nok, stripe_session_id, stripe_payment_intent_id, printify_order_id,
+           total_nok, stripe_session_id, stripe_payment_intent_id, printful_order_id,
            created_at
     FROM webshop_orders
     WHERE stripe_session_id = ?
@@ -2016,7 +1996,7 @@ function getLocalOrderDetails(orderId) {
   const order = db.prepare(`
     SELECT id, reference, customer_name, customer_email, customer_phone,
            shipping_address, postal_code, city, country, notes, status,
-           total_nok, stripe_session_id, stripe_payment_intent_id, printify_order_id,
+           total_nok, stripe_session_id, stripe_payment_intent_id, printful_order_id,
            created_at
     FROM webshop_orders
     WHERE id = ?
@@ -2027,7 +2007,7 @@ function getLocalOrderDetails(orderId) {
 
   const items = db.prepare(`
     SELECT oi.product_id, oi.product_name, oi.quantity, oi.unit_price_nok, oi.line_total_nok,
-           p.printify_shop_id, p.printify_product_id, p.printify_variant_id
+           p.printful_sync_product_id, p.printful_variant_id
     FROM webshop_order_items oi
     JOIN webshop_products p ON p.id = oi.product_id
     WHERE oi.order_id = ?
@@ -2036,11 +2016,10 @@ function getLocalOrderDetails(orderId) {
   return { ...order, items };
 }
 
-function toPrintifyItemsFromLocalOrder(order = {}) {
+function toPrintfulItemsFromLocalOrder(order = {}) {
   return (order.items || []).map((item) => ({
-    printify_shop_id: item.printify_shop_id,
-    printify_product_id: item.printify_product_id,
-    printify_variant_id: item.printify_variant_id,
+    printful_sync_product_id: item.printful_sync_product_id,
+    printful_variant_id: item.printful_variant_id,
     quantity: Number(item.quantity)
   }));
 }
@@ -2048,31 +2027,29 @@ function toPrintifyItemsFromLocalOrder(order = {}) {
 function getLocalWebshopProducts() {
   return db.prepare(`
     SELECT id, name, description, image_url, price_nok, currency,
-           printify_shop_id, printify_product_id, printify_variant_id
+           printful_sync_product_id, printful_variant_id
     FROM webshop_products
     WHERE is_active = 1
     ORDER BY sort_order ASC, id ASC
   `).all();
 }
 
-function normalizePrintifyMapping(raw = {}) {
-  const shopId = String(raw.printify_shop_id || raw.shopId || '').trim();
-  const productId = String(raw.printify_product_id || raw.productId || '').trim();
-  const variantRaw = raw.printify_variant_id ?? raw.variantId;
+function normalizePrintfulMapping(raw = {}) {
+  const syncProductId = String(raw.printful_sync_product_id || raw.syncProductId || '').trim();
+  const variantRaw = raw.printful_variant_id ?? raw.variantId;
   const variantId = Number(variantRaw);
 
   return {
-    printify_shop_id: shopId,
-    printify_product_id: productId,
-    printify_variant_id: Number.isInteger(variantId) && variantId > 0 ? variantId : null
+    printful_sync_product_id: syncProductId,
+    printful_variant_id: Number.isInteger(variantId) && variantId > 0 ? variantId : null
   };
 }
 
-function getMissingPrintifyMappings(items = []) {
+function getMissingPrintfulMappings(items = []) {
   return items
     .filter((item) => {
-      const mapping = normalizePrintifyMapping(item);
-      return !mapping.printify_shop_id || !mapping.printify_product_id || !mapping.printify_variant_id;
+      const mapping = normalizePrintfulMapping(item);
+      return !mapping.printful_sync_product_id || !mapping.printful_variant_id;
     })
     .map((item) => ({
       product_id: item.product_id,
@@ -2084,29 +2061,24 @@ function useSupabaseWebshop() {
   return shouldUseSupabase();
 }
 
-app.get('/api/webshop/products', (req, res) => {
-  if (!useSupabaseWebshop()) {
-    return res.json({ products: getLocalWebshopProducts() });
-  }
-
-  supabaseRequestWithFallback('products', {
-    query: '?select=id,name,description,image_url,price_nok,currency,printify_shop_id,printify_product_id,printify_variant_id&is_active=eq.true&order=created_at.asc'
-  }).then((products) => {
-    res.json({ products: products || [] });
-  }).catch((error) => {
-    markSupabaseTemporarilyUnavailable(error);
+app.get('/api/webshop/products', async (req, res) => {
+  try {
+    const products = await fetchPrintfulProductsForMapping(100);
+    res.json({ products, source: 'printful' });
+  } catch (error) {
     console.error('webshop products error:', error.message);
-    try {
-      const localProducts = getLocalWebshopProducts();
-      res.json({ products: localProducts });
-    } catch (localError) {
-      console.error('webshop local products error:', localError.message);
-      res.status(500).json({ error: 'Kunne ikke hente produkter' });
-    }
-  });
+    res.status(500).json({
+      error: 'Kunne ikke hente produkter fra Printful',
+      details: error.message
+    });
+  }
 });
 
 app.get('/api/webshop/status', (req, res) => {
+  const printfulConfigured = typeof hasPrintfulAuth === 'function'
+    ? hasPrintfulAuth()
+    : hasPrintfulToken();
+
   const checks = [
     { name: 'SUPABASE_URL (optional)', configured: hasEnv('SUPABASE_URL') },
     { name: 'SUPABASE_SERVICE_ROLE_KEY_OR_ANON (optional)', configured: hasEnv('SUPABASE_SERVICE_ROLE_KEY') || hasEnv('SUPABASE_ANON_KEY') },
@@ -2115,12 +2087,12 @@ app.get('/api/webshop/status', (req, res) => {
     { name: 'PRINTIFY_API_TOKEN', configured: hasEnv('PRINTIFY_API_TOKEN') }
   ];
 
-  const requiredChecks = checks.filter((check) => !check.name.includes('(optional)'));
+  const requiredChecks = checks.filter((check) => !check.name.includes('(optional)') && !check.name.includes('(valgfri)'));
   const mode = requiredChecks.every((check) => check.configured) ? 'integrated' : 'partial';
   res.json({
     mode,
     message: mode === 'integrated'
-      ? (useSupabaseWebshop() ? 'Webshop kjører med Stripe + Supabase + Printify.' : 'Webshop kjører med Stripe + Printify (lokal ordrelogg).')
+      ? 'Webshop kjører med Stripe + Printful.'
       : 'Webshop mangler en eller flere integrationsnøkler.',
     checks
   });
@@ -2220,16 +2192,20 @@ app.post('/api/checkout', async (req, res) => {
       return res.status(400).json({ error: 'Du må velge minst ett produkt' });
     }
 
-    let products = [];
-    if (useSupabaseWebshop()) {
-      const ids = [...new Set(requestedItems.map((item) => String(item?.productId || '').trim()).filter(Boolean))];
-      const filters = ids.map((id) => `id.eq.${encodeURIComponent(id)}`).join(',');
-      products = await supabaseRequestWithFallback('products', {
-        query: `?select=id,name,description,image_url,price_nok,currency,printify_shop_id,printify_product_id,printify_variant_id&is_active=eq.true&or=(${filters})`
-      });
-    } else {
-      products = getLocalWebshopProducts();
+    const products = await fetchPrintfulProductsForMapping(100);
+    const hasSupabaseOrders = useSupabaseWebshop();
+    let localProductsByVariantId = new Map();
+
+    if (!hasSupabaseOrders) {
+      const localProducts = db.prepare(`
+        SELECT id, printful_variant_id
+        FROM webshop_products
+        WHERE is_active = 1
+          AND printful_variant_id IS NOT NULL
+      `).all();
+      localProductsByVariantId = new Map(localProducts.map((p) => [String(p.printful_variant_id), p]));
     }
+
     const productsById = new Map((products || []).map((product) => [String(product.id), product]));
 
     const items = requestedItems.map((rawItem) => {
@@ -2240,8 +2216,15 @@ app.post('/api/checkout', async (req, res) => {
       }
       const product = productsById.get(productId);
       if (!product) throw new Error(`Produkt med id ${productId} finnes ikke`);
+
+      const variantKey = String(product.printful_variant_id || '');
+      const localProduct = hasSupabaseOrders ? null : localProductsByVariantId.get(variantKey);
+      if (!hasSupabaseOrders && !localProduct) {
+        throw new Error('Lokal produktmapping mangler for ett eller flere Printful-produkter. Kjør import først i admin.');
+      }
+
       return {
-        product_id: product.id,
+        product_id: hasSupabaseOrders ? product.id : localProduct.id,
         product_name: product.name,
         product_description: product.description || '',
         image_url: product.image_url || '',
@@ -2249,17 +2232,16 @@ app.post('/api/checkout', async (req, res) => {
         quantity,
         line_total_nok: Number(product.price_nok) * quantity,
         currency: (product.currency || 'NOK').toLowerCase(),
-        printify_shop_id: product.printify_shop_id,
-        printify_product_id: product.printify_product_id,
-        printify_variant_id: product.printify_variant_id
+        printful_sync_product_id: product.printful_sync_product_id,
+        printful_variant_id: product.printful_variant_id
       };
     });
 
     const totalNok = items.reduce((sum, item) => sum + item.line_total_nok, 0);
-    const missingMappings = getMissingPrintifyMappings(items);
+    const missingMappings = getMissingPrintfulMappings(items);
     if (missingMappings.length) {
       return res.status(400).json({
-        error: 'Ett eller flere produkter mangler Printify-mapping og kan ikke bestilles',
+        error: 'Ett eller flere produkter mangler Printful-mapping og kan ikke bestilles',
         missingMappings
       });
     }
@@ -2292,7 +2274,7 @@ app.post('/api/checkout', async (req, res) => {
       line_items: lineItems
     });
 
-    if (useSupabaseWebshop()) {
+    if (hasSupabaseOrders) {
       await supabaseRequestWithFallback('orders', {
         method: 'POST',
         query: '?select=id,stripe_session_id,status',
@@ -2383,30 +2365,28 @@ app.post('/api/stripe/webhook', async (req, res) => {
           country: order.country
         };
 
-    let printifyItems = [];
+    let printfulItems = [];
     if (isSupabaseOrder) {
-      printifyItems = order.items_json.map((item) => ({
-        printify_shop_id: item.printify_shop_id,
-        printify_product_id: item.printify_product_id,
-        printify_variant_id: item.printify_variant_id,
+      printfulItems = order.items_json.map((item) => ({
+        printful_sync_product_id: item.printful_sync_product_id,
+        printful_variant_id: item.printful_variant_id,
         quantity: Number(item.quantity)
       }));
     } else {
       const localItems = db.prepare(`
-        SELECT oi.quantity, p.printify_shop_id, p.printify_product_id, p.printify_variant_id
+        SELECT oi.quantity, p.printful_sync_product_id, p.printful_variant_id
         FROM webshop_order_items oi
         JOIN webshop_products p ON p.id = oi.product_id
         WHERE oi.order_id = ?
       `).all(order.id);
-      printifyItems = localItems.map((item) => ({
-        printify_shop_id: item.printify_shop_id,
-        printify_product_id: item.printify_product_id,
-        printify_variant_id: item.printify_variant_id,
+      printfulItems = localItems.map((item) => ({
+        printful_sync_product_id: item.printful_sync_product_id,
+        printful_variant_id: item.printful_variant_id,
         quantity: Number(item.quantity)
       }));
     }
 
-    const shippingAddress = toPrintifyShippingAddress({
+    const shippingAddress = toPrintfulShippingAddress({
       ...shippingData,
       line1: shippingData.address1 || shippingData.line1,
       zip: shippingData.postal_code || shippingData.zip,
@@ -2428,9 +2408,9 @@ app.post('/api/stripe/webhook', async (req, res) => {
     }
 
     try {
-      const printifyOrder = await createPrintifyOrder({
+      const printfulOrder = await createPrintfulOrder({
         orderId: order.id,
-        items: printifyItems,
+        items: printfulItems,
         email: order.email || order.customer_email || session.customer_details?.email || '',
         shippingAddress
       });
@@ -2441,16 +2421,16 @@ app.post('/api/stripe/webhook', async (req, res) => {
           query: `?id=eq.${encodeURIComponent(order.id)}`,
           body: {
             status: 'submitted',
-            printify_order_id: String(printifyOrder.id || '')
+            printful_order_id: String(printfulOrder.id || '')
           }
         });
       } else {
-        db.prepare('UPDATE webshop_orders SET status=?, printify_order_id=? WHERE id=?')
-          .run('submitted', String(printifyOrder.id || ''), order.id);
+        db.prepare('UPDATE webshop_orders SET status=?, printful_order_id=? WHERE id=?')
+          .run('submitted', String(printfulOrder.id || ''), order.id);
       }
 
       return res.json({ received: true });
-    } catch (printifyError) {
+    } catch (printfulError) {
       if (isSupabaseOrder) {
         await supabaseRequestWithFallback('orders', {
           method: 'PATCH',
@@ -2461,7 +2441,7 @@ app.post('/api/stripe/webhook', async (req, res) => {
         db.prepare('UPDATE webshop_orders SET status=? WHERE id=?')
           .run('failed', order.id);
       }
-      throw printifyError;
+      throw printfulError;
     }
   } catch (error) {
     console.error('stripe webhook error:', error.message);
@@ -2524,7 +2504,7 @@ app.get('/api/admin/webshop/orders', requireAdmin, (req, res) => {
 
     let query = `
       SELECT id, reference, customer_name, customer_email, status, total_nok,
-             stripe_session_id, stripe_payment_intent_id, printify_order_id, created_at
+             stripe_session_id, stripe_payment_intent_id, printful_order_id, created_at
       FROM webshop_orders
     `;
     const params = [];
@@ -2593,14 +2573,14 @@ app.get('/api/admin/webshop/mappings', requireAdmin, async (req, res) => {
   try {
     if (useSupabaseWebshop()) {
       const products = await supabaseRequestWithFallback('products', {
-        query: '?select=id,name,is_active,price_nok,currency,printify_shop_id,printify_product_id,printify_variant_id&order=created_at.asc'
+        query: '?select=id,name,is_active,price_nok,currency,printful_sync_product_id,printful_variant_id&order=created_at.asc'
       });
       return res.json({ products: products || [], source: 'supabase' });
     }
 
     const products = db.prepare(`
       SELECT id, name, is_active, price_nok, currency,
-             printify_shop_id, printify_product_id, printify_variant_id
+             printful_sync_product_id, printful_variant_id
       FROM webshop_products
       ORDER BY sort_order ASC, id ASC
     `).all();
@@ -2617,18 +2597,18 @@ app.patch('/api/admin/webshop/mappings/:id', requireAdmin, async (req, res) => {
     const productId = String(req.params.id || '').trim();
     if (!productId) return res.status(400).json({ error: 'Ugyldig produkt-ID' });
 
-    const mapping = normalizePrintifyMapping(req.body || {});
+    const mapping = normalizePrintfulMapping(req.body || {});
 
-    if (!mapping.printify_shop_id || !mapping.printify_product_id || !mapping.printify_variant_id) {
+    if (!mapping.printful_variant_id) {
       return res.status(400).json({
-        error: 'printify_shop_id, printify_product_id og printify_variant_id er påkrevd'
+        error: 'printful_variant_id er påkrevd'
       });
     }
 
     if (useSupabaseWebshop()) {
       const updated = await supabaseRequestWithFallback('products', {
         method: 'PATCH',
-        query: `?id=eq.${encodeURIComponent(productId)}&select=id,name,printify_shop_id,printify_product_id,printify_variant_id`,
+        query: `?id=eq.${encodeURIComponent(productId)}&select=id,name,printful_sync_product_id,printful_variant_id`,
         headers: { Prefer: 'return=representation' },
         body: mapping
       });
@@ -2644,19 +2624,18 @@ app.patch('/api/admin/webshop/mappings/:id', requireAdmin, async (req, res) => {
 
     const result = db.prepare(`
       UPDATE webshop_products
-      SET printify_shop_id = ?, printify_product_id = ?, printify_variant_id = ?
+      SET printful_sync_product_id = ?, printful_variant_id = ?
       WHERE id = ?
     `).run(
-      mapping.printify_shop_id,
-      mapping.printify_product_id,
-      mapping.printify_variant_id,
+      mapping.printful_sync_product_id,
+      mapping.printful_variant_id,
       numericId
     );
 
     if (!result.changes) return res.status(404).json({ error: 'Produkt ikke funnet' });
 
     const product = db.prepare(`
-      SELECT id, name, printify_shop_id, printify_product_id, printify_variant_id
+      SELECT id, name, printful_sync_product_id, printful_variant_id
       FROM webshop_products
       WHERE id = ?
     `).get(numericId);
@@ -2686,12 +2665,12 @@ app.post('/api/admin/webshop/orders/:id/retry-submit', requireAdmin, async (req,
       return res.status(409).json({ error: 'Ordren er allerede sendt til produksjon' });
     }
 
-    const items = toPrintifyItemsFromLocalOrder(order);
+    const items = toPrintfulItemsFromLocalOrder(order);
     if (!items.length) {
-      return res.status(400).json({ error: 'Ordren mangler ordrelinjer for Printify' });
+      return res.status(400).json({ error: 'Ordren mangler ordrelinjer for Printful' });
     }
 
-    const shippingAddress = toPrintifyShippingAddress({
+    const shippingAddress = toPrintfulShippingAddress({
       name: order.customer_name,
       phone: order.customer_phone,
       address1: order.shipping_address,
@@ -2700,25 +2679,25 @@ app.post('/api/admin/webshop/orders/:id/retry-submit', requireAdmin, async (req,
       country: order.country
     });
 
-    const printifyOrder = await createPrintifyOrder({
+    const printfulOrder = await createPrintfulOrder({
       orderId: order.id,
       items,
       email: order.customer_email || '',
       shippingAddress
     });
 
-    db.prepare('UPDATE webshop_orders SET status=?, printify_order_id=? WHERE id=?')
-      .run('submitted', String(printifyOrder.id || ''), order.id);
+    db.prepare('UPDATE webshop_orders SET status=?, printful_order_id=? WHERE id=?')
+      .run('submitted', String(printfulOrder.id || ''), order.id);
 
     res.json({
       ok: true,
-      message: 'Ordre sendt til Printify',
+      message: 'Ordre sendt til Printful',
       orderId: order.id,
-      printifyOrderId: String(printifyOrder.id || '')
+      printfulOrderId: String(printfulOrder.id || '')
     });
   } catch (error) {
-    console.error('admin retry printify error:', error.message);
-    res.status(500).json({ error: 'Kunne ikke sende ordre til Printify på nytt' });
+    console.error('admin retry printful error:', error.message);
+    res.status(500).json({ error: 'Kunne ikke sende ordre til Printful på nytt' });
   }
 });
 
