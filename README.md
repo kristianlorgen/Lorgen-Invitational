@@ -69,6 +69,8 @@ Sett følgende i `.env` (ikke commit secrets):
 - `STRIPE_SECRET_KEY`
 - `STRIPE_WEBHOOK_SECRET`
 - `PRINTFUL_API_TOKEN` (eller alias `PRINTFUL_API_TOKEN_LORGENINV` under token-rotasjon)
+- `PRINTFUL_OAUTH_TOKEN` *(valgfri, men nødvendig dersom Printful svarer at endpoint krever OAuth)*
+- `PRINTFUL_STORE_ID` *(valgfri, nyttig ved flere Printful stores)*
 - `SUPABASE_URL` *(valgfri)*
 - `SUPABASE_ANON_KEY` *(valgfri)*
 - `SUPABASE_SERVICE_ROLE_KEY` *(valgfri)*
@@ -135,7 +137,9 @@ Bruk `whsec_...` fra CLI/dashboard i `STRIPE_WEBHOOK_SECRET`.
 ### How to add products (V1)
 
 1. Opprett produkt i Printful UI.
-2. Finn `sync_product_id` og `sync_variant_id` i Printful (fra API).
+2. Finn `sync_product_id` og `sync_variant_id` i Printful.
+   - Hvis API-kall gir `This endpoint requires Oauth authentication!`, bruk `PRINTFUL_OAUTH_TOKEN`.
+   - Du kan også importere produkter via admin-endepunktet `POST /api/admin/webshop/import-printful`.
 3. Sett inn produkt i Supabase `products`:
 
 ```sql

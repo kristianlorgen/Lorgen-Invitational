@@ -288,24 +288,77 @@ async function stripeRequest(pathname, payload) {
 }
 
 async function printfulRequest(pathname, { method = 'GET', body } = {}) {
-  const token = getPrintfulToken();
   const url = `https://api.printful.com${pathname}`;
+  const authHeaders = getPrintfulAuthHeaders();
 
   const res = await fetchWithTimeout(url, {
     method,
     headers: {
-      Authorization: `Bearer ${token}`,
+      ...authHeaders,
       'Content-Type': 'application/json'
     },
     body: body ? JSON.stringify(body) : undefined
   });
 
-  const data = await res.json();
+  const raw = await res.text();
+  let data;
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch (_) {
+    data = { result: raw, code: res.ok ? 200 : res.status, error: { message: raw } };
+  }
+
   if (!res.ok || data.code !== 200) {
     throw new Error(`Printful ${method} ${pathname} feilet: ${data?.error?.message || data?.result || res.statusText}`);
   }
 
   return data.result;
+}
+
+async function fetchPrintfulProductsForMapping(limit = 20) {
+  const max = Math.max(1, Math.min(Number(limit) || 20, 100));
+  let list = [];
+  let detailPath = '/store/products/';
+
+  try {
+    list = await printfulRequest('/store/products');
+  } catch (error) {
+    if (!/oauth authentication/i.test(String(error.message || ''))) throw error;
+    list = await printfulRequest('/sync/products');
+    detailPath = '/sync/products/';
+  }
+
+  const rawProducts = (Array.isArray(list) ? list : []).slice(0, max);
+  const details = await Promise.all(rawProducts.map(async (product) => {
+    try {
+      return await printfulRequest(`${detailPath}${product.id}`);
+    } catch (_) {
+      return null;
+    }
+  }));
+
+  const mapped = [];
+  details.forEach((detail) => {
+    if (!detail) return;
+    const syncProduct = detail.sync_product || detail;
+    const variants = Array.isArray(detail.sync_variants) ? detail.sync_variants : [];
+
+    variants.forEach((variant) => {
+      const retailPrice = Number.parseFloat(String(variant.retail_price || '0'));
+      if (!Number.isFinite(retailPrice) || retailPrice <= 0) return;
+      mapped.push({
+        name: syncProduct.name || variant.name || 'Printful produkt',
+        description: variant.name || syncProduct.name || '',
+        image_url: variant.files?.[0]?.preview_url || syncProduct.thumbnail_url || '/images/logo.png',
+        price_nok: Math.round(retailPrice * 100),
+        currency: 'NOK',
+        printful_sync_product_id: String(syncProduct.id || ''),
+        printful_variant_id: Number(variant.id) || null
+      });
+    });
+  });
+
+  return mapped;
 }
 
 function verifyStripeSignature(rawBody, sigHeader, secret) {
@@ -1985,10 +2038,11 @@ app.get('/api/webshop/status', (req, res) => {
     { name: 'SUPABASE_SERVICE_ROLE_KEY_OR_ANON (optional)', configured: hasEnv('SUPABASE_SERVICE_ROLE_KEY') || hasEnv('SUPABASE_ANON_KEY') },
     { name: 'STRIPE_SECRET_KEY', configured: hasEnv('STRIPE_SECRET_KEY') },
     { name: 'STRIPE_WEBHOOK_SECRET', configured: hasEnv('STRIPE_WEBHOOK_SECRET') },
-    { name: 'PRINTFUL_API_TOKEN', configured: hasPrintfulToken() }
+    { name: 'PRINTFUL_API_TOKEN eller PRINTFUL_OAUTH_TOKEN', configured: hasPrintfulAuth() },
+    { name: 'PRINTFUL_STORE_ID (valgfri)', configured: hasEnv('PRINTFUL_STORE_ID') }
   ];
 
-  const requiredChecks = checks.filter((check) => !check.name.includes('(optional)'));
+  const requiredChecks = checks.filter((check) => !check.name.includes('(optional)') && !check.name.includes('(valgfri)'));
   const mode = requiredChecks.every((check) => check.configured) ? 'integrated' : 'partial';
   res.json({
     mode,
@@ -2340,6 +2394,67 @@ app.get('/api/admin/webshop/orders', requireAdmin, (req, res) => {
   } catch (error) {
     console.error('admin webshop orders error:', error.message);
     res.status(500).json({ error: 'Kunne ikke hente webshop-ordrer' });
+  }
+});
+
+app.post('/api/admin/webshop/import-printful', requireAdmin, async (req, res) => {
+  try {
+    const limit = Math.max(1, Math.min(Number(req.body?.limit || 20), 100));
+    const dryRun = Boolean(req.body?.dryRun);
+    const importedProducts = await fetchPrintfulProductsForMapping(limit);
+
+    if (dryRun) {
+      return res.json({ ok: true, dryRun: true, count: importedProducts.length, products: importedProducts });
+    }
+
+    if (useSupabaseWebshop()) {
+      const created = [];
+      for (const product of importedProducts) {
+        const rows = await supabaseRequestWithFallback('products', {
+          method: 'POST',
+          query: '?select=id,name,printful_sync_product_id,printful_variant_id',
+          headers: { Prefer: 'return=representation' },
+          body: {
+            ...product,
+            is_active: true
+          }
+        });
+        if (rows?.[0]) created.push(rows[0]);
+      }
+
+      return res.json({ ok: true, source: 'supabase', count: created.length, products: created });
+    }
+
+    const insert = db.prepare(`
+      INSERT INTO webshop_products (
+        name, description, image_url, price_nok, currency,
+        printful_sync_product_id, printful_variant_id, is_active, sort_order
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
+    `);
+
+    const tx = db.transaction((products) => {
+      products.forEach((product, index) => {
+        insert.run(
+          product.name,
+          product.description,
+          product.image_url,
+          product.price_nok,
+          product.currency,
+          product.printful_sync_product_id,
+          product.printful_variant_id,
+          index + 1
+        );
+      });
+    });
+
+    tx(importedProducts);
+    res.json({ ok: true, source: 'sqlite', count: importedProducts.length });
+  } catch (error) {
+    console.error('admin printful import error:', error.message);
+    res.status(500).json({
+      error: 'Kunne ikke importere produkter fra Printful',
+      details: error.message
+    });
   }
 });
 
