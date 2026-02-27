@@ -2434,6 +2434,12 @@ app.post('/api/admin/webshop/import-printful', requireAdmin, async (req, res) =>
     const limit = Math.max(1, Math.min(Number(req.body?.limit || 20), 100));
     const dryRun = Boolean(req.body?.dryRun);
     const importedProducts = await fetchPrintfulProductsForMapping(limit);
+
+    const validProducts = importedProducts.filter((product) => {
+      const syncProductId = String(product.printful_sync_product_id || '').trim();
+      const variantId = Number(product.printful_variant_id);
+      return Boolean(syncProductId) && Number.isInteger(variantId) && variantId > 0;
+    });
     const validProducts = importedProducts.filter((product) => (
       String(product.printful_sync_product_id || '').trim()
       && Number.isInteger(Number(product.printful_variant_id))
@@ -2454,6 +2460,7 @@ app.post('/api/admin/webshop/import-printful', requireAdmin, async (req, res) =>
 
     if (useSupabaseWebshop()) {
       const synced = [];
+
       for (const product of validProducts) {
         const variantId = Number(product.printful_variant_id);
         const existing = await supabaseRequestWithFallback('products', {
@@ -2495,6 +2502,13 @@ app.post('/api/admin/webshop/import-printful', requireAdmin, async (req, res) =>
         if (inserted?.[0]) synced.push(inserted[0]);
       }
 
+      return res.json({
+        ok: true,
+        source: 'supabase',
+        count: synced.length,
+        skippedCount,
+        products: synced
+      });
       return res.json({ ok: true, source: 'supabase', count: synced.length, skippedCount, products: synced });
         if (rows?.[0]) created.push(rows[0]);
       }
@@ -2549,6 +2563,10 @@ app.post('/api/admin/webshop/import-printful', requireAdmin, async (req, res) =>
     });
 
     tx(validProducts);
+    return res.json({ ok: true, source: 'sqlite', count: validProducts.length, skippedCount });
+  } catch (error) {
+    console.error('admin printful import error:', error.message);
+    return res.status(500).json({
     res.json({ ok: true, source: 'sqlite', count: validProducts.length, skippedCount });
     tx(importedProducts);
     res.json({ ok: true, source: 'sqlite', count: importedProducts.length });
