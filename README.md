@@ -66,11 +66,9 @@ Webshop er nå bygget inn i nettsiden på `/webshop` med flyten:
 Sett følgende i `.env` (ikke commit secrets):
 
 - `NEXT_PUBLIC_SITE_URL`
-- `STRIPE_SECRET_KEY`
-- `STRIPE_WEBHOOK_SECRET`
-- `PRINTFUL_API_TOKEN` (eller alias `PRINTFUL_API_TOKEN_LORGENINV` under token-rotasjon)
-- `PRINTFUL_OAUTH_TOKEN` *(valgfri, men nødvendig dersom Printful svarer at endpoint krever OAuth)*
-- `PRINTFUL_STORE_ID` *(valgfri, nyttig ved flere Printful stores)*
+- `STRIPE_SECRET_KEY` (alias støttes: `STRIPE_API_KEY`)
+- `STRIPE_WEBHOOK_SECRET` (alias støttes: `STRIPE_WEBHOOK_SIGNING_SECRET`)
+- `PRINTIFY_API_TOKEN` (alias støttes: `PRINTIFY_TOKEN` og `PRINTIFY_API_TOKEN_LORGENINV` under token-rotasjon)
 - `SUPABASE_URL` *(valgfri)*
 - `SUPABASE_ANON_KEY` *(valgfri)*
 - `SUPABASE_SERVICE_ROLE_KEY` *(valgfri)*
@@ -81,10 +79,11 @@ Hvis nettsiden viser `Missing env var: STRIPE_SECRET_KEY`, betyr det at serveren
 
 Sjekkliste:
 
-1. Legg inn `STRIPE_SECRET_KEY` i `.env` lokalt eller i secrets-panelet hos hostingleverandøren.
-2. Legg også inn `PRINTFUL_API_TOKEN` (brukes når ordre skal sendes videre til Printful).
+1. Legg inn `STRIPE_SECRET_KEY` i `.env` lokalt eller i secrets-panelet hos hostingleverandøren (evt. `STRIPE_API_KEY` hvis plattformen bruker det navnet).
+2. Legg også inn `PRINTIFY_API_TOKEN` (brukes når ordre skal sendes videre til Printify).
 3. Restart serveren etter at miljøvariabler er oppdatert.
 4. Verifiser status på `GET /api/webshop/status`.
+5. Kjør `GET /api/webshop/diagnostics` for å teste Stripe-/Printify-tilkobling og sjekke manglende produktmapping.
 
 Tips: Del aldri secret keys i chat eller commit dem til git.
 
@@ -94,8 +93,9 @@ Webshop fungerer nå uten Supabase så lenge Stripe + Printful er satt:
 
 1. Legg inn `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` og `PRINTFUL_API_TOKEN` i `.env`.
 2. Start serveren på nytt.
-3. Verifiser `GET /api/webshop/status` (skal vise integrated når Stripe/Printful er på plass).
-4. Legg inn Printful-mapping per produkt i lokal SQLite-tabell `webshop_products`:
+3. Verifiser `GET /api/webshop/status` (skal vise integrated når Stripe/Printify er på plass).
+4. Kjør `GET /api/webshop/diagnostics` for detaljert feilsøk av API-nøkler og produktmapping.
+5. Legg inn Printify-mapping per produkt i lokal SQLite-tabell `webshop_products`:
 
 ```sql
 update webshop_products
@@ -123,6 +123,31 @@ Hvis webshop ikke fungerer etter tidligere oppsett, kjør en «ren» restart sli
 5. Verifiser status på `GET /api/webshop/status` (alle konfigurerte checks skal være `OK`).
 
 > Backend prioriterer nå `SUPABASE_SERVICE_ROLE_KEY` for webshop-APIene, slik at webshop fortsatt fungerer selv om anon-key/policy-oppsett ikke er helt riktig.
+
+
+### Lagre webshop-nøkler via admin-API (fallback når deploy-secrets mangler)
+
+Hvis hosten ikke injiserer miljøvariabler riktig, kan admin lagre nøkler lokalt på serveren:
+
+```bash
+curl -X PUT http://localhost:3000/api/admin/webshop/runtime-secrets \
+  -H 'Content-Type: application/json' \
+  -H 'Cookie: connect.sid=DIN_ADMIN_SESSION' \
+  -d '{
+    "STRIPE_SECRET_KEY": "sk_live_...",
+    "STRIPE_WEBHOOK_SECRET": "whsec_...",
+    "PRINTIFY_API_TOKEN": "..."
+  }'
+```
+
+Sjekk om nøklene er aktivert:
+
+```bash
+curl http://localhost:3000/api/admin/webshop/runtime-secrets/status \
+  -H 'Cookie: connect.sid=DIN_ADMIN_SESSION'
+```
+
+> Nøklene lagres i `data/runtime-secrets.json` (ikke versjonert). Dette er kun en fallback for drift.
 
 ### Stripe webhook setup
 

@@ -12,6 +12,7 @@ const app  = express();
 const PORT = process.env.PORT || 3000;
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || `http://localhost:${PORT}`;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'LorgenAdmin2025';
+const RUNTIME_SECRETS_PATH = path.join(__dirname, 'data/runtime-secrets.json');
 
 const allowedImageExtensions = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.heic', '.heif', '.avif']);
 
@@ -122,6 +123,56 @@ app.use(session({
 // ── Webshop integrations (Supabase + Stripe + Printful) ─────────────────────
 const STRIPE_API_BASE = 'https://api.stripe.com/v1';
 const EXTERNAL_API_TIMEOUT_MS = Number(process.env.EXTERNAL_API_TIMEOUT_MS || 8000);
+const ENV_ALIASES = {
+  STRIPE_SECRET_KEY: ['STRIPE_API_KEY'],
+  STRIPE_WEBHOOK_SECRET: ['STRIPE_WEBHOOK_SIGNING_SECRET'],
+  PRINTIFY_API_TOKEN: ['PRINTIFY_TOKEN', 'PRINTIFY_API_TOKEN_LORGENINV']
+};
+
+
+function readRuntimeSecrets() {
+  try {
+    if (!fs.existsSync(RUNTIME_SECRETS_PATH)) return {};
+    const raw = fs.readFileSync(RUNTIME_SECRETS_PATH, 'utf8');
+    const parsed = JSON.parse(raw || '{}');
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return parsed;
+  } catch (_) {
+    return {};
+  }
+}
+
+function writeRuntimeSecrets(nextSecrets = {}) {
+  const current = readRuntimeSecrets();
+  const merged = {
+    ...current,
+    ...nextSecrets
+  };
+
+  const normalized = {};
+  for (const [key, value] of Object.entries(merged)) {
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (!trimmed) continue;
+    normalized[key] = trimmed;
+  }
+
+  fs.mkdirSync(path.dirname(RUNTIME_SECRETS_PATH), { recursive: true });
+  fs.writeFileSync(RUNTIME_SECRETS_PATH, `${JSON.stringify(normalized, null, 2)}
+`, { mode: 0o600 });
+  return normalized;
+}
+
+function getRawEnvLikeValue(name) {
+  const processValue = process.env[name];
+  if (typeof processValue === 'string' && processValue.trim() !== '') return processValue;
+
+  const runtimeSecrets = readRuntimeSecrets();
+  const runtimeValue = runtimeSecrets[name];
+  if (typeof runtimeValue === 'string' && runtimeValue.trim() !== '') return runtimeValue;
+
+  return undefined;
+}
 
 function env(name, required = false) {
   const value = getEnvValue(name);
@@ -134,7 +185,16 @@ function hasEnv(name) {
 }
 
 function getEnvValue(name) {
-  const raw = process.env[name];
+  const candidateNames = [name, ...(ENV_ALIASES[name] || [])];
+  let raw;
+
+  for (const candidateName of candidateNames) {
+    raw = getRawEnvLikeValue(candidateName);
+    if (typeof raw === 'string' && raw.trim() !== '') {
+      break;
+    }
+  }
+
   if (typeof raw !== 'string') return '';
 
   const trimmed = raw.trim();
@@ -143,6 +203,7 @@ function getEnvValue(name) {
   // Keep the full secret value, but remove accidental surrounding quotes that
   // often appear when copying from dashboards/CLI output.
   let normalized = trimmed.replace(/^("|')(.*)\1$/, '$2').trim();
+
 
   // Some hosting UIs persist trailing escaped newlines ("\n" / "\r\n")
   // when pasting secrets. Strip those suffixes so API tokens stay valid.
@@ -159,8 +220,8 @@ function hasValidHttpUrl(value) {
   }
 }
 
-function getPrintfulToken() {
-  const token = getEnvValue('PRINTFUL_API_TOKEN') || getEnvValue('PRINTFUL_API_TOKEN_LORGENINV');
+function getPrintifyToken() {
+  const token = getEnvValue('PRINTIFY_API_TOKEN');
   if (token) return token;
   throw new Error('Missing required env: PRINTFUL_API_TOKEN');
 }
@@ -311,79 +372,44 @@ async function stripeRequest(pathname, payload) {
   return data;
 }
 
-async function printfulRequest(pathname, { method = 'GET', body } = {}) {
-  const url = `https://api.printful.com${pathname}`;
-  const authHeaders = getPrintfulAuthHeaders();
 
-  const res = await fetchWithTimeout(url, {
-    method,
-    headers: {
-      ...authHeaders,
-      'Content-Type': 'application/json'
-    },
-    body: body ? JSON.stringify(body) : undefined
+async function stripeHealthCheck() {
+  const secret = env('STRIPE_SECRET_KEY', true);
+  const res = await fetchWithTimeout(`${STRIPE_API_BASE}/account`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${secret}` }
   });
 
-  const raw = await res.text();
-  let data;
-  try {
-    data = raw ? JSON.parse(raw) : {};
-  } catch (_) {
-    data = { result: raw, code: res.ok ? 200 : res.status, error: { message: raw } };
-  }
+  const data = await res.json();
+  if (!res.ok) throw new Error(`Stripe error: ${data?.error?.message || res.statusText}`);
 
-  if (!res.ok || data.code !== 200) {
-    throw new Error(`Printful ${method} ${pathname} feilet: ${data?.error?.message || data?.result || res.statusText}`);
-  }
-
-  return data.result;
+  return {
+    ok: true,
+    accountId: data.id || null,
+    country: data.country || null
+  };
 }
 
-async function fetchPrintfulProductsForMapping(limit = 20) {
-  const max = Math.max(1, Math.min(Number(limit) || 20, 100));
-  let list = [];
-  let detailPath = '/store/products/';
-
-  try {
-    list = await printfulRequest('/store/products');
-  } catch (error) {
-    if (!/oauth authentication/i.test(String(error.message || ''))) throw error;
-    list = await printfulRequest('/sync/products');
-    detailPath = '/sync/products/';
-  }
-
-  const rawProducts = (Array.isArray(list) ? list : []).slice(0, max);
-  const details = await Promise.all(rawProducts.map(async (product) => {
-    try {
-      return await printfulRequest(`${detailPath}${product.id}`);
-    } catch (_) {
-      return null;
-    }
-  }));
-
-  const mapped = [];
-  details.forEach((detail) => {
-    if (!detail) return;
-    const syncProduct = detail.sync_product || detail;
-    const variants = Array.isArray(detail.sync_variants) ? detail.sync_variants : [];
-
-    variants.forEach((variant) => {
-      const retailPrice = Number.parseFloat(String(variant.retail_price || '0'));
-      if (!Number.isFinite(retailPrice) || retailPrice <= 0) return;
-      mapped.push({
-        id: String(variant.id || ''),
-        name: syncProduct.name || variant.name || 'Printful produkt',
-        description: variant.name || syncProduct.name || '',
-        image_url: variant.files?.[0]?.preview_url || syncProduct.thumbnail_url || '/images/logo.png',
-        price_nok: Math.round(retailPrice * 100),
-        currency: 'NOK',
-        printful_sync_product_id: String(syncProduct.id || ''),
-        printful_variant_id: Number(variant.id) || null
-      });
-    });
+async function printifyHealthCheck() {
+  const token = getPrintifyToken();
+  const res = await fetchWithTimeout('https://api.printify.com/v1/shops.json', {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` }
   });
 
-  return mapped;
+  const data = await res.json();
+  if (!res.ok) {
+    const message = data?.message || data?.error || res.statusText;
+    throw new Error(`Printify error: ${message}`);
+  }
+
+  const firstShop = Array.isArray(data) ? data[0] : null;
+  return {
+    ok: true,
+    shops: Array.isArray(data) ? data.length : 0,
+    firstShopId: firstShop?.id ? String(firstShop.id) : null,
+    firstShopTitle: firstShop?.title || null
+  };
 }
 
 function verifyStripeSignature(rawBody, sigHeader, secret) {
@@ -2058,8 +2084,7 @@ app.get('/api/webshop/status', (req, res) => {
     { name: 'SUPABASE_SERVICE_ROLE_KEY_OR_ANON (optional)', configured: hasEnv('SUPABASE_SERVICE_ROLE_KEY') || hasEnv('SUPABASE_ANON_KEY') },
     { name: 'STRIPE_SECRET_KEY', configured: hasEnv('STRIPE_SECRET_KEY') },
     { name: 'STRIPE_WEBHOOK_SECRET', configured: hasEnv('STRIPE_WEBHOOK_SECRET') },
-    { name: 'PRINTFUL_API_TOKEN eller PRINTFUL_OAUTH_TOKEN', configured: printfulConfigured },
-    { name: 'PRINTFUL_STORE_ID (valgfri)', configured: hasEnv('PRINTFUL_STORE_ID') }
+    { name: 'PRINTIFY_API_TOKEN', configured: hasEnv('PRINTIFY_API_TOKEN') }
   ];
 
   const requiredChecks = checks.filter((check) => !check.name.includes('(optional)') && !check.name.includes('(valgfri)'));
@@ -2071,6 +2096,78 @@ app.get('/api/webshop/status', (req, res) => {
       : 'Webshop mangler en eller flere integrationsnøkler.',
     checks
   });
+});
+
+
+app.get('/api/webshop/diagnostics', async (req, res) => {
+  const checks = {
+    stripeSecretConfigured: hasEnv('STRIPE_SECRET_KEY'),
+    stripeWebhookConfigured: hasEnv('STRIPE_WEBHOOK_SECRET'),
+    printifyTokenConfigured: hasEnv('PRINTIFY_API_TOKEN')
+  };
+
+  const diagnostics = {
+    stripe: { ok: false, message: 'Ikke testet' },
+    printify: { ok: false, message: 'Ikke testet' },
+    products: { ok: true, missingMappings: 0, totalProducts: 0 }
+  };
+
+  try {
+    const products = getLocalWebshopProducts();
+    const missingMappings = products.filter((product) => {
+      const mapping = normalizePrintifyMapping(product);
+      return !mapping.printify_shop_id || !mapping.printify_product_id || !mapping.printify_variant_id;
+    });
+
+    diagnostics.products = {
+      ok: missingMappings.length === 0,
+      totalProducts: products.length,
+      missingMappings: missingMappings.length,
+      missingProductIds: missingMappings.slice(0, 10).map((product) => product.id),
+      missingProductNames: missingMappings.slice(0, 10).map((product) => product.name),
+      message: missingMappings.length
+        ? `Mangler Printify-mapping på ${missingMappings.length} av ${products.length} produkter.`
+        : `Alle ${products.length} produkter har Printify-mapping.`
+    };
+  } catch (error) {
+    diagnostics.products = { ok: false, message: `Kunne ikke validere produkter: ${error.message}` };
+  }
+
+  if (checks.stripeSecretConfigured) {
+    try {
+      const stripe = await stripeHealthCheck();
+      diagnostics.stripe = {
+        ok: true,
+        message: 'Stripe API-nøkkel fungerer.',
+        accountId: stripe.accountId,
+        country: stripe.country
+      };
+    } catch (error) {
+      diagnostics.stripe = { ok: false, message: isLikelyNetworkError(error) ? 'Stripe-feil: Nettverk/utgående trafikk blokkert fra servermiljøet.' : `Stripe-feil: ${error.message}` };
+    }
+  } else {
+    diagnostics.stripe = { ok: false, message: 'Mangler STRIPE_SECRET_KEY i miljøet.' };
+  }
+
+  if (checks.printifyTokenConfigured) {
+    try {
+      const printify = await printifyHealthCheck();
+      diagnostics.printify = {
+        ok: true,
+        message: `Printify token fungerer. Fant ${printify.shops} shop(s).`,
+        shops: printify.shops,
+        firstShopId: printify.firstShopId,
+        firstShopTitle: printify.firstShopTitle
+      };
+    } catch (error) {
+      diagnostics.printify = { ok: false, message: isLikelyNetworkError(error) ? 'Printify-feil: Nettverk/utgående trafikk blokkert fra servermiljøet.' : `Printify-feil: ${error.message}` };
+    }
+  } else {
+    diagnostics.printify = { ok: false, message: 'Mangler PRINTIFY_API_TOKEN i miljøet.' };
+  }
+
+  const ok = diagnostics.stripe.ok && diagnostics.printify.ok && diagnostics.products.ok;
+  return res.status(ok ? 200 : 503).json({ ok, checks, diagnostics });
 });
 
 app.post('/api/checkout', async (req, res) => {
@@ -2428,125 +2525,47 @@ app.get('/api/admin/webshop/orders', requireAdmin, (req, res) => {
   }
 });
 
-app.post('/api/admin/webshop/import-printful', requireAdmin, async (req, res) => {
+
+app.get('/api/admin/webshop/runtime-secrets/status', requireAdmin, (req, res) => {
+  const checks = [
+    { name: 'STRIPE_SECRET_KEY', configured: hasEnv('STRIPE_SECRET_KEY') },
+    { name: 'STRIPE_WEBHOOK_SECRET', configured: hasEnv('STRIPE_WEBHOOK_SECRET') },
+    { name: 'PRINTIFY_API_TOKEN', configured: hasEnv('PRINTIFY_API_TOKEN') }
+  ];
+
+  res.json({ checks });
+});
+
+app.put('/api/admin/webshop/runtime-secrets', requireAdmin, (req, res) => {
   try {
-    const limit = Math.max(1, Math.min(Number(req.body?.limit || 20), 100));
-    const dryRun = Boolean(req.body?.dryRun);
-    const importedProducts = await fetchPrintfulProductsForMapping(limit);
+    const payload = req.body || {};
+    const allowedKeys = ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'PRINTIFY_API_TOKEN'];
+    const nextSecrets = {};
 
-    const mappableProducts = importedProducts.filter((product) => {
-      const syncProductId = String(product.printful_sync_product_id || '').trim();
-      const variantId = Number(product.printful_variant_id);
-      return Boolean(syncProductId) && Number.isInteger(variantId) && variantId > 0;
-    });
-
-    const skippedCount = importedProducts.length - mappableProducts.length;
-
-    if (dryRun) {
-      return res.json({
-        ok: true,
-        dryRun: true,
-        count: mappableProducts.length,
-        skippedCount,
-        products: mappableProducts
-      });
-    }
-
-    if (useSupabaseWebshop()) {
-      const synced = [];
-
-      for (const product of mappableProducts) {
-        const variantId = Number(product.printful_variant_id);
-        const existing = await supabaseRequestWithFallback('products', {
-          query: `?select=id,name,printful_sync_product_id,printful_variant_id&printful_variant_id=eq.${encodeURIComponent(variantId)}&limit=1`
-        });
-
-        if (existing?.[0]) {
-          const updated = await supabaseRequestWithFallback('products', {
-            method: 'PATCH',
-            query: `?id=eq.${encodeURIComponent(existing[0].id)}&select=id,name,printful_sync_product_id,printful_variant_id`,
-            headers: { Prefer: 'return=representation' },
-            body: {
-              ...product,
-              is_active: true
-            }
-          });
-          if (updated?.[0]) synced.push(updated[0]);
-          continue;
-        }
-
-        const inserted = await supabaseRequestWithFallback('products', {
-          method: 'POST',
-          query: '?select=id,name,printful_sync_product_id,printful_variant_id',
-          headers: { Prefer: 'return=representation' },
-          body: {
-            ...product,
-            is_active: true
-          }
-        });
-        if (inserted?.[0]) synced.push(inserted[0]);
+    allowedKeys.forEach((key) => {
+      const value = payload[key] ?? payload[key.toLowerCase()];
+      if (typeof value === 'string' && value.trim()) {
+        nextSecrets[key] = value;
       }
+    });
 
-      return res.json({
-        ok: true,
-        source: 'supabase',
-        count: synced.length,
-        skippedCount,
-        products: synced
-      });
+    if (!Object.keys(nextSecrets).length) {
+      return res.status(400).json({ error: 'Ingen gyldige secrets ble sendt inn' });
     }
 
-    const insert = db.prepare(`
-      INSERT INTO webshop_products (
-        name, description, image_url, price_nok, currency,
-        printful_sync_product_id, printful_variant_id, is_active, sort_order
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
-    `);
+    writeRuntimeSecrets(nextSecrets);
 
-    const updateByVariant = db.prepare(`
-      UPDATE webshop_products
-      SET name = ?, description = ?, image_url = ?, price_nok = ?, currency = ?,
-          printful_sync_product_id = ?, printful_variant_id = ?, is_active = 1
-      WHERE printful_variant_id = ?
-    `);
-
-    const tx = db.transaction((products) => {
-      products.forEach((product, index) => {
-        const variantId = Number(product.printful_variant_id);
-        const updated = updateByVariant.run(
-          product.name,
-          product.description,
-          product.image_url,
-          product.price_nok,
-          product.currency,
-          product.printful_sync_product_id,
-          variantId,
-          variantId
-        );
-
-        if (updated.changes) return;
-
-        insert.run(
-          product.name,
-          product.description,
-          product.image_url,
-          product.price_nok,
-          product.currency,
-          product.printful_sync_product_id,
-          variantId,
-          index + 1
-        );
-      });
+    return res.json({
+      message: 'Webshop-secrets lagret lokalt på serveren',
+      configured: {
+        STRIPE_SECRET_KEY: hasEnv('STRIPE_SECRET_KEY'),
+        STRIPE_WEBHOOK_SECRET: hasEnv('STRIPE_WEBHOOK_SECRET'),
+        PRINTIFY_API_TOKEN: hasEnv('PRINTIFY_API_TOKEN')
+      }
     });
-
-    tx(mappableProducts);
-    return res.json({ ok: true, source: 'sqlite', count: mappableProducts.length, skippedCount });
   } catch (error) {
-    console.error('admin printful import error:', error.message);
-    return res.status(500).json({
-      error: 'Kunne ikke importere produkter fra Printful',
-      details: error.message
-    });
+    console.error('runtime secrets update error:', error.message);
+    return res.status(500).json({ error: 'Kunne ikke lagre webshop-secrets' });
   }
 });
 
