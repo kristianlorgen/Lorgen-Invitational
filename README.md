@@ -140,6 +140,8 @@ Bruk `whsec_...` fra CLI/dashboard i `STRIPE_WEBHOOK_SECRET`.
 2. Finn `sync_product_id` og `sync_variant_id` i Printful.
    - Hvis API-kall gir `This endpoint requires Oauth authentication!`, bruk `PRINTFUL_OAUTH_TOKEN`.
    - Du kan også importere produkter via admin-endepunktet `POST /api/admin/webshop/import-printful`.
+   - Kjør først med `{"dryRun":true}` for forhåndsvisning, deretter uten `dryRun` for lagring.
+   - Importen er idempotent (oppdaterer eksisterende produkter på `printful_variant_id`, oppretter nye hvis de mangler).
 3. Sett inn produkt i Supabase `products`:
 
 ```sql
