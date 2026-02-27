@@ -1,0 +1,584 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Lorgen Invitational API",
+    "version": "1.0.0",
+    "description": "OpenAPI-spesifikasjon for offentlige, team- og admin-endepunkter i Lorgen Invitational."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Samme origin som web-applikasjonen"
+    }
+  ],
+  "tags": [
+    { "name": "Health" },
+    { "name": "Public" },
+    { "name": "Auth" },
+    { "name": "Team" },
+    { "name": "Gallery" },
+    { "name": "Admin" },
+    { "name": "Webshop" }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "Helsesjekk",
+        "responses": {
+          "200": {
+            "description": "Serveren er oppe",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HealthResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "API-helsesjekk",
+        "responses": {
+          "200": {
+            "description": "API er oppe",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HealthResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/version": {
+      "get": {
+        "tags": ["Public"],
+        "summary": "Hent versjon",
+        "responses": {
+          "200": {
+            "description": "Versjonsinformasjon",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "version": { "type": "string" },
+                    "uptime": { "type": "number" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tournament": {
+      "get": {
+        "tags": ["Public"],
+        "summary": "Hent aktiv turnering",
+        "responses": {
+          "200": {
+            "description": "Aktiv turnering",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Tournament" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/scoreboard": {
+      "get": {
+        "tags": ["Public"],
+        "summary": "Hent live resultattavle",
+        "responses": {
+          "200": {
+            "description": "Liste over lag med poeng",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/ScoreboardRow" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/legacy": {
+      "get": {
+        "tags": ["Public"],
+        "summary": "Hent historikk / æresgalleri",
+        "responses": {
+          "200": {
+            "description": "Historikkposter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/LegacyEntry" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/events": {
+      "get": {
+        "tags": ["Public"],
+        "summary": "Server-Sent Events-strøm",
+        "responses": {
+          "200": {
+            "description": "text/event-stream med live-oppdateringer",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "example": "data: {\"type\":\"score_updated\",\"data\":{},\"ts\":1730000000000}"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/team-login": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Logg inn lag",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["pin"],
+                "properties": {
+                  "pin": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Innlogging vellykket" },
+          "401": { "description": "Ugyldig PIN" }
+        }
+      }
+    },
+    "/api/auth/admin-login": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Logg inn admin",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["password"],
+                "properties": {
+                  "password": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Innlogging vellykket" },
+          "401": { "description": "Ugyldig passord" }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Logg ut",
+        "responses": {
+          "200": { "description": "Utlogget" }
+        }
+      }
+    },
+    "/api/auth/status": {
+      "get": {
+        "tags": ["Auth"],
+        "summary": "Hent autentiseringsstatus",
+        "responses": {
+          "200": {
+            "description": "Aktiv sesjon",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "loggedIn": { "type": "boolean" },
+                    "role": { "type": "string", "enum": ["team", "admin", "none"] }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/team/scorecard": {
+      "get": {
+        "tags": ["Team"],
+        "summary": "Hent scorekort for innlogget lag",
+        "responses": {
+          "200": {
+            "description": "Scorekort",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TeamScorecard" }
+              }
+            }
+          },
+          "401": { "description": "Ikke innlogget lag" }
+        },
+        "security": [{ "cookieAuth": [] }]
+      }
+    },
+    "/api/team/submit-score": {
+      "post": {
+        "tags": ["Team"],
+        "summary": "Registrer score for hull",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["hole", "strokes"],
+                "properties": {
+                  "hole": { "type": "integer", "minimum": 1, "maximum": 18 },
+                  "strokes": { "type": "integer", "minimum": 1 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Score lagret" },
+          "401": { "description": "Ikke innlogget lag" }
+        },
+        "security": [{ "cookieAuth": [] }]
+      }
+    },
+    "/api/team/upload-photo/{hole}": {
+      "post": {
+        "tags": ["Team"],
+        "summary": "Last opp foto for hull",
+        "parameters": [
+          {
+            "name": "hole",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 18 }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": ["photo"],
+                "properties": {
+                  "photo": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Foto lastet opp" },
+          "400": { "description": "Ugyldig bilde" },
+          "401": { "description": "Ikke innlogget lag" }
+        },
+        "security": [{ "cookieAuth": [] }]
+      }
+    },
+    "/api/gallery": {
+      "get": {
+        "tags": ["Gallery"],
+        "summary": "Hent publiserte bilder",
+        "responses": {
+          "200": {
+            "description": "Galleriinnhold",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/GalleryItem" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gallery/vote": {
+      "post": {
+        "tags": ["Gallery"],
+        "summary": "Stem på bilde",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["photoId"],
+                "properties": {
+                  "photoId": { "type": "integer" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Stem registrert" },
+          "400": { "description": "Ugyldig stemme" }
+        }
+      }
+    },
+    "/api/admin/tournaments": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Hent alle turneringer",
+        "responses": {
+          "200": {
+            "description": "Turneringsliste",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Tournament" }
+                }
+              }
+            }
+          },
+          "401": { "description": "Ikke admin" }
+        },
+        "security": [{ "cookieAuth": [] }]
+      }
+    },
+    "/api/admin/tournament": {
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Opprett turnering",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/TournamentInput" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Turnering opprettet" },
+          "401": { "description": "Ikke admin" }
+        },
+        "security": [{ "cookieAuth": [] }]
+      }
+    },
+    "/api/admin/team": {
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Opprett lag",
+        "responses": {
+          "200": { "description": "Lag opprettet" },
+          "401": { "description": "Ikke admin" }
+        },
+        "security": [{ "cookieAuth": [] }]
+      }
+    },
+    "/api/admin/legacy": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Hent alle legacy-poster",
+        "responses": {
+          "200": { "description": "Legacy-liste" },
+          "401": { "description": "Ikke admin" }
+        },
+        "security": [{ "cookieAuth": [] }]
+      },
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Opprett legacy-post",
+        "responses": {
+          "200": { "description": "Legacy-post opprettet" },
+          "401": { "description": "Ikke admin" }
+        },
+        "security": [{ "cookieAuth": [] }]
+      }
+    },
+    "/api/webshop/products": {
+      "get": {
+        "tags": ["Webshop"],
+        "summary": "Hent produkter",
+        "responses": {
+          "200": {
+            "description": "Produktliste",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/WebshopProduct" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/checkout": {
+      "post": {
+        "tags": ["Webshop"],
+        "summary": "Opprett checkout-sesjon",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["items", "customer"],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": ["variantId", "quantity"],
+                      "properties": {
+                        "variantId": { "type": "string" },
+                        "quantity": { "type": "integer", "minimum": 1 }
+                      }
+                    }
+                  },
+                  "customer": {
+                    "type": "object",
+                    "properties": {
+                      "email": { "type": "string", "format": "email" },
+                      "name": { "type": "string" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Checkout opprettet" },
+          "400": { "description": "Ugyldig input" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "cookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "connect.sid"
+      }
+    },
+    "schemas": {
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "ok"
+          }
+        }
+      },
+      "Tournament": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" },
+          "date": { "type": "string", "format": "date" },
+          "course": { "type": "string" },
+          "description": { "type": "string" },
+          "status": { "type": "string" },
+          "gameday_info": { "type": "string" }
+        }
+      },
+      "TournamentInput": {
+        "type": "object",
+        "required": ["name", "date", "course"],
+        "properties": {
+          "name": { "type": "string" },
+          "date": { "type": "string", "format": "date" },
+          "course": { "type": "string" },
+          "description": { "type": "string" },
+          "status": { "type": "string" }
+        }
+      },
+      "ScoreboardRow": {
+        "type": "object",
+        "properties": {
+          "team_id": { "type": "integer" },
+          "team_name": { "type": "string" },
+          "total_score": { "type": "integer" },
+          "holes_completed": { "type": "integer" }
+        }
+      },
+      "LegacyEntry": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "year": { "type": "integer" },
+          "champion_team": { "type": "string" },
+          "score": { "type": "integer" },
+          "course": { "type": "string" }
+        }
+      },
+      "TeamScorecard": {
+        "type": "object",
+        "properties": {
+          "team": { "type": "object" },
+          "holes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "hole": { "type": "integer" },
+                "par": { "type": "integer" },
+                "score": { "type": "integer", "nullable": true }
+              }
+            }
+          }
+        }
+      },
+      "GalleryItem": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "url": { "type": "string" },
+          "caption": { "type": "string" },
+          "votes": { "type": "integer" }
+        }
+      },
+      "WebshopProduct": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "price": { "type": "integer" },
+          "currency": { "type": "string" }
+        }
+      }
+    }
+  }
+}
