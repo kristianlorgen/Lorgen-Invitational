@@ -8,9 +8,8 @@ create table if not exists public.products (
   image_url text,
   price_nok int not null,
   currency text not null default 'NOK',
-  printify_shop_id text not null,
-  printify_product_id text not null,
-  printify_variant_id int,
+  printful_sync_product_id text,
+  printful_variant_id int,
   is_active boolean not null default true
 );
 
@@ -23,7 +22,7 @@ create table if not exists public.orders (
   status text not null check (status in ('created', 'paid', 'submitted', 'failed')),
   stripe_session_id text unique,
   stripe_payment_intent_id text,
-  printify_order_id text,
+  printful_order_id text,
   shipping_name text,
   shipping_address_json jsonb,
   items_json jsonb
