@@ -371,6 +371,7 @@ async function fetchPrintfulProductsForMapping(limit = 20) {
       const retailPrice = Number.parseFloat(String(variant.retail_price || '0'));
       if (!Number.isFinite(retailPrice) || retailPrice <= 0) return;
       mapped.push({
+        id: String(variant.id || ''),
         name: syncProduct.name || variant.name || 'Printful produkt',
         description: variant.name || syncProduct.name || '',
         image_url: variant.files?.[0]?.preview_url || syncProduct.thumbnail_url || '/images/logo.png',
@@ -2035,25 +2036,16 @@ function useSupabaseWebshop() {
 }
 
 app.get('/api/webshop/products', async (req, res) => {
-  if (!useSupabaseWebshop()) {
-    return res.json({ products: getLocalWebshopProducts(), source: 'sqlite' });
-  }
-
-  supabaseRequestWithFallback('products', {
-    query: '?select=id,name,description,image_url,price_nok,currency,printful_sync_product_id,printful_variant_id&is_active=eq.true&order=created_at.asc'
-  }).then((products) => {
-    res.json({ products: products || [], source: 'supabase' });
-  }).catch((error) => {
-    markSupabaseTemporarilyUnavailable(error);
+  try {
+    const products = await fetchPrintfulProductsForMapping(100);
+    res.json({ products, source: 'printful' });
+  } catch (error) {
     console.error('webshop products error:', error.message);
-    try {
-      const localProducts = getLocalWebshopProducts();
-      res.json({ products: localProducts, source: 'sqlite' });
-    } catch (localError) {
-      console.error('webshop local products error:', localError.message);
-      res.status(500).json({ error: 'Kunne ikke hente produkter' });
-    }
-  });
+    res.status(500).json({
+      error: 'Kunne ikke hente produkter fra Printful',
+      details: error.message
+    });
+  }
 });
 
 app.get('/api/webshop/status', (req, res) => {
@@ -2075,7 +2067,7 @@ app.get('/api/webshop/status', (req, res) => {
   res.json({
     mode,
     message: mode === 'integrated'
-      ? (useSupabaseWebshop() ? 'Webshop kjører med Stripe + Supabase + Printful.' : 'Webshop kjører med Stripe + Printful (lokal ordrelogg).')
+      ? 'Webshop kjører med Stripe + Printful.'
       : 'Webshop mangler en eller flere integrationsnøkler.',
     checks
   });
@@ -2103,16 +2095,20 @@ app.post('/api/checkout', async (req, res) => {
       return res.status(400).json({ error: 'Du må velge minst ett produkt' });
     }
 
-    let products = [];
-    if (useSupabaseWebshop()) {
-      const ids = [...new Set(requestedItems.map((item) => String(item?.productId || '').trim()).filter(Boolean))];
-      const filters = ids.map((id) => `id.eq.${encodeURIComponent(id)}`).join(',');
-      products = await supabaseRequestWithFallback('products', {
-        query: `?select=id,name,description,image_url,price_nok,currency,printful_sync_product_id,printful_variant_id&is_active=eq.true&or=(${filters})`
-      });
-    } else {
-      products = getLocalWebshopProducts();
+    const products = await fetchPrintfulProductsForMapping(100);
+    const hasSupabaseOrders = useSupabaseWebshop();
+    let localProductsByVariantId = new Map();
+
+    if (!hasSupabaseOrders) {
+      const localProducts = db.prepare(`
+        SELECT id, printful_variant_id
+        FROM webshop_products
+        WHERE is_active = 1
+          AND printful_variant_id IS NOT NULL
+      `).all();
+      localProductsByVariantId = new Map(localProducts.map((p) => [String(p.printful_variant_id), p]));
     }
+
     const productsById = new Map((products || []).map((product) => [String(product.id), product]));
 
     const items = requestedItems.map((rawItem) => {
@@ -2123,8 +2119,15 @@ app.post('/api/checkout', async (req, res) => {
       }
       const product = productsById.get(productId);
       if (!product) throw new Error(`Produkt med id ${productId} finnes ikke`);
+
+      const variantKey = String(product.printful_variant_id || '');
+      const localProduct = hasSupabaseOrders ? null : localProductsByVariantId.get(variantKey);
+      if (!hasSupabaseOrders && !localProduct) {
+        throw new Error('Lokal produktmapping mangler for ett eller flere Printful-produkter. Kjør import først i admin.');
+      }
+
       return {
-        product_id: product.id,
+        product_id: hasSupabaseOrders ? product.id : localProduct.id,
         product_name: product.name,
         product_description: product.description || '',
         image_url: product.image_url || '',
@@ -2174,7 +2177,7 @@ app.post('/api/checkout', async (req, res) => {
       line_items: lineItems
     });
 
-    if (useSupabaseWebshop()) {
+    if (hasSupabaseOrders) {
       await supabaseRequestWithFallback('orders', {
         method: 'POST',
         query: '?select=id,stripe_session_id,status',

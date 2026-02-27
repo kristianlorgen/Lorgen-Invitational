@@ -54,7 +54,7 @@ npm start              # Runs on http://localhost:3000
 
 Webshop er nå bygget inn i nettsiden på `/webshop` med flyten:
 
-1. Kunde velger produkt i webshop
+1. Kunde velger produkt i webshop (hentes direkte fra Printful)
 2. `POST /api/checkout` oppretter Stripe Checkout Session
 3. Stripe redirecter til `/webshop/success` eller `/webshop/cancel`
 4. Stripe webhook (`POST /api/stripe/webhook`) verifiserer signatur på raw body
@@ -142,7 +142,8 @@ Bruk `whsec_...` fra CLI/dashboard i `STRIPE_WEBHOOK_SECRET`.
    - Du kan også importere produkter via admin-endepunktet `POST /api/admin/webshop/import-printful`.
    - Kjør først med `{"dryRun":true}` for forhåndsvisning, deretter uten `dryRun` for lagring.
    - Importen er idempotent (oppdaterer eksisterende produkter på `printful_variant_id`, oppretter nye hvis de mangler).
-3. Sett inn produkt i Supabase `products`:
+3. Hvis du bruker lokal ordrelogg (uten Supabase): kjør Printful-import i admin først slik at lokale produkt-IDer/mapping er synkronisert.
+4. Hvis du bruker Supabase: sett inn produkt i `public.products` manuelt ved behov:
 
 ```sql
 insert into public.products (
