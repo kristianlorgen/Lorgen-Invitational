@@ -191,6 +191,8 @@ function getPrintfulAuthHeaders() {
     Authorization: `Bearer ${token}`,
     ...(storeId ? { 'X-PF-Store-Id': storeId } : {})
   };
+function hasPrintfulToken() {
+  return hasEnv('PRINTFUL_API_TOKEN') || hasEnv('PRINTFUL_API_TOKEN_LORGENINV');
 }
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = EXTERNAL_API_TIMEOUT_MS) {
@@ -2023,6 +2025,7 @@ function getMissingPrintfulMappings(items = []) {
     .filter((item) => {
       const mapping = normalizePrintfulMapping(item);
       return !mapping.printful_sync_product_id || !mapping.printful_variant_id;
+      return !mapping.printful_variant_id;
     })
     .map((item) => ({
       product_id: item.product_id,
@@ -2067,6 +2070,7 @@ app.get('/api/webshop/status', (req, res) => {
     { name: 'STRIPE_SECRET_KEY', configured: hasEnv('STRIPE_SECRET_KEY') },
     { name: 'STRIPE_WEBHOOK_SECRET', configured: hasEnv('STRIPE_WEBHOOK_SECRET') },
     { name: 'PRINTFUL_API_TOKEN eller PRINTFUL_OAUTH_TOKEN', configured: printfulConfigured },
+    { name: 'PRINTFUL_API_TOKEN eller PRINTFUL_OAUTH_TOKEN', configured: hasPrintfulAuth() },
     { name: 'PRINTFUL_STORE_ID (valgfri)', configured: hasEnv('PRINTFUL_STORE_ID') }
   ];
 
@@ -2471,6 +2475,15 @@ app.post('/api/admin/webshop/import-printful', requireAdmin, async (req, res) =>
         }
 
         const inserted = await supabaseRequestWithFallback('products', {
+
+    if (dryRun) {
+      return res.json({ ok: true, dryRun: true, count: importedProducts.length, products: importedProducts });
+    }
+
+    if (useSupabaseWebshop()) {
+      const created = [];
+      for (const product of importedProducts) {
+        const rows = await supabaseRequestWithFallback('products', {
           method: 'POST',
           query: '?select=id,name,printful_sync_product_id,printful_variant_id',
           headers: { Prefer: 'return=representation' },
@@ -2483,6 +2496,10 @@ app.post('/api/admin/webshop/import-printful', requireAdmin, async (req, res) =>
       }
 
       return res.json({ ok: true, source: 'supabase', count: synced.length, skippedCount, products: synced });
+        if (rows?.[0]) created.push(rows[0]);
+      }
+
+      return res.json({ ok: true, source: 'supabase', count: created.length, products: created });
     }
 
     const insert = db.prepare(`
@@ -2515,6 +2532,8 @@ app.post('/api/admin/webshop/import-printful', requireAdmin, async (req, res) =>
 
         if (updated.changes) return;
 
+    const tx = db.transaction((products) => {
+      products.forEach((product, index) => {
         insert.run(
           product.name,
           product.description,
@@ -2523,6 +2542,7 @@ app.post('/api/admin/webshop/import-printful', requireAdmin, async (req, res) =>
           product.currency,
           product.printful_sync_product_id,
           variantId,
+          product.printful_variant_id,
           index + 1
         );
       });
@@ -2530,6 +2550,8 @@ app.post('/api/admin/webshop/import-printful', requireAdmin, async (req, res) =>
 
     tx(validProducts);
     res.json({ ok: true, source: 'sqlite', count: validProducts.length, skippedCount });
+    tx(importedProducts);
+    res.json({ ok: true, source: 'sqlite', count: importedProducts.length });
   } catch (error) {
     console.error('admin printful import error:', error.message);
     res.status(500).json({
