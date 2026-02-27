@@ -38,7 +38,7 @@
   <div class="container">
     <div class="page-hero-tag"><i class="fas fa-bag-shopping"></i> Nettbutikk</div>
     <h1 class="page-hero-title">Lorgen <span>Webshop</span></h1>
-    <p class="page-hero-sub">Bygget på nytt fra bunnen med Stripe Checkout og Printify-oppfyllelse.</p>
+    <p class="page-hero-sub">Bygget på nytt fra bunnen med Stripe Checkout og støtte for Printful.</p>
   </div>
 </div>
 
@@ -88,6 +88,7 @@ const cart = new Map();
 
 let checkoutEnabled = true;
 let products = [];
+let productSource = 'sqlite';
 
 function formatNok(ore) {
   return `${(Number(ore || 0) / 100).toFixed(2).replace('.', ',')} NOK`;
@@ -157,6 +158,11 @@ function setCheckoutEnabled(enabled) {
   submitButton.textContent = enabled ? 'Gå til betaling' : 'Betaling er utilgjengelig';
 }
 
+function setCheckoutModeBySource(source) {
+  productSource = String(source || 'sqlite');
+  if (productSource === 'printful' && checkoutEnabled) return;
+}
+
 async function loadStatus() {
   try {
     const res = await fetch('/api/webshop/status');
@@ -196,6 +202,7 @@ async function loadProducts() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Kunne ikke hente produkter');
     products = Array.isArray(data.products) ? data.products : [];
+    setCheckoutModeBySource(data.source);
     renderProducts();
   } catch (error) {
     shopError.textContent = error.message;

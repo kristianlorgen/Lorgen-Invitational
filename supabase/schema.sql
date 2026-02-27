@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS awards (
 
 
 -- ============================================================
--- Webshop (Stripe + Printify)
+-- Webshop (Stripe + Printful)
 -- ============================================================
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
@@ -68,9 +68,8 @@ CREATE TABLE IF NOT EXISTS public.products (
   image_url TEXT,
   price_nok INTEGER NOT NULL,
   currency TEXT NOT NULL DEFAULT 'NOK',
-  printify_shop_id TEXT NOT NULL,
-  printify_product_id TEXT NOT NULL,
-  printify_variant_id INTEGER,
+  printful_sync_product_id TEXT,
+  printful_variant_id INTEGER,
   is_active BOOLEAN NOT NULL DEFAULT TRUE
 );
 
@@ -83,7 +82,7 @@ CREATE TABLE IF NOT EXISTS public.orders (
   status TEXT NOT NULL CHECK (status IN ('created', 'paid', 'submitted', 'failed')),
   stripe_session_id TEXT UNIQUE,
   stripe_payment_intent_id TEXT,
-  printify_order_id TEXT,
+  printful_order_id TEXT,
   shipping_name TEXT,
   shipping_address_json JSONB,
   items_json JSONB

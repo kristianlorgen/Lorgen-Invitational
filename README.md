@@ -50,16 +50,16 @@ npm start              # Runs on http://localhost:3000
 - **Auth**: Express-session (PIN for teams, password for admin)
 - **Frontend**: Vanilla HTML/CSS/JS
 
-## Webshop (Stripe + Printify, med valgfri Supabase)
+## Webshop (Stripe + Printful, med valgfri Supabase)
 
 Webshop er nå bygget inn i nettsiden på `/webshop` med flyten:
 
-1. Kunde velger produkt i webshop
+1. Kunde velger produkt i webshop (hentes direkte fra Printful)
 2. `POST /api/checkout` oppretter Stripe Checkout Session
 3. Stripe redirecter til `/webshop/success` eller `/webshop/cancel`
 4. Stripe webhook (`POST /api/stripe/webhook`) verifiserer signatur på raw body
 5. Ordre lagres i Supabase (`orders`) **hvis konfigurert**, ellers i lokal SQLite (`webshop_orders`)
-6. Ordren sendes videre til Printify og oppdateres til `submitted` ved suksess
+6. Ordren sendes videre til Printful og oppdateres til `submitted` ved suksess
 
 ### Miljøvariabler
 
@@ -68,7 +68,9 @@ Sett følgende i `.env` (ikke commit secrets):
 - `NEXT_PUBLIC_SITE_URL`
 - `STRIPE_SECRET_KEY`
 - `STRIPE_WEBHOOK_SECRET`
-- `PRINTIFY_API_TOKEN` (eller alias `PRINTIFY_API_TOKEN_LORGENINV` under token-rotasjon)
+- `PRINTFUL_API_TOKEN` (eller alias `PRINTFUL_API_TOKEN_LORGENINV` under token-rotasjon)
+- `PRINTFUL_OAUTH_TOKEN` *(valgfri, men nødvendig dersom Printful svarer at endpoint krever OAuth)*
+- `PRINTFUL_STORE_ID` *(valgfri, nyttig ved flere Printful stores)*
 - `SUPABASE_URL` *(valgfri)*
 - `SUPABASE_ANON_KEY` *(valgfri)*
 - `SUPABASE_SERVICE_ROLE_KEY` *(valgfri)*
@@ -80,7 +82,7 @@ Hvis nettsiden viser `Missing env var: STRIPE_SECRET_KEY`, betyr det at serveren
 Sjekkliste:
 
 1. Legg inn `STRIPE_SECRET_KEY` i `.env` lokalt eller i secrets-panelet hos hostingleverandøren.
-2. Legg også inn `PRINTIFY_API_TOKEN` (brukes når ordre skal sendes videre til Printify).
+2. Legg også inn `PRINTFUL_API_TOKEN` (brukes når ordre skal sendes videre til Printful).
 3. Restart serveren etter at miljøvariabler er oppdatert.
 4. Verifiser status på `GET /api/webshop/status`.
 
@@ -88,22 +90,21 @@ Tips: Del aldri secret keys i chat eller commit dem til git.
 
 ### Lokal fallback (anbefalt for rask gjenoppbygging)
 
-Webshop fungerer nå uten Supabase så lenge Stripe + Printify er satt:
+Webshop fungerer nå uten Supabase så lenge Stripe + Printful er satt:
 
-1. Legg inn `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` og `PRINTIFY_API_TOKEN` i `.env`.
+1. Legg inn `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` og `PRINTFUL_API_TOKEN` i `.env`.
 2. Start serveren på nytt.
-3. Verifiser `GET /api/webshop/status` (skal vise integrated når Stripe/Printify er på plass).
-4. Legg inn Printify-mapping per produkt i lokal SQLite-tabell `webshop_products`:
+3. Verifiser `GET /api/webshop/status` (skal vise integrated når Stripe/Printful er på plass).
+4. Legg inn Printful-mapping per produkt i lokal SQLite-tabell `webshop_products`:
 
 ```sql
 update webshop_products
-set printify_shop_id = 'DIN_SHOP_ID',
-    printify_product_id = 'DIN_PRINTIFY_PRODUCT_ID',
-    printify_variant_id = 12345
+set printful_sync_product_id = 'DIN_SYNC_PRODUCT_ID',
+    printful_variant_id = 12345
 where id = 1;
 ```
 
-> Ved checkout lagres ordre lokalt og webhook sender deretter ordren til Printify.
+> Ved checkout lagres ordre lokalt og webhook sender deretter ordren til Printful.
 
 ### Supabase migrasjon
 
@@ -115,7 +116,7 @@ Den oppretter tabellene `products` og `orders` + RLS policy.
 
 Hvis webshop ikke fungerer etter tidligere oppsett, kjør en «ren» restart slik:
 
-1. Oppdater `.env` med alle webshop-nøkler (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `PRINTIFY_API_TOKEN` (evt. `PRINTIFY_API_TOKEN_LORGENINV`), `NEXT_PUBLIC_SITE_URL`).
+1. Oppdater `.env` med alle webshop-nøkler (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `PRINTFUL_API_TOKEN` (evt. `PRINTFUL_API_TOKEN_LORGENINV`), `NEXT_PUBLIC_SITE_URL`).
 2. Kjør SQL fra `supabase/migrations/20260225141000_webshop.sql` på nytt i Supabase SQL Editor.
 3. Tøm gamle testordrer/produkter om nødvendig, og legg inn minst ett aktivt produkt i `public.products`.
 4. Start serveren på nytt.
@@ -135,9 +136,14 @@ Bruk `whsec_...` fra CLI/dashboard i `STRIPE_WEBHOOK_SECRET`.
 
 ### How to add products (V1)
 
-1. Opprett produkt i Printify UI.
-2. Finn `shop_id` og `product_id` i Printify (fra URL/API).
-3. Sett inn produkt i Supabase `products`:
+1. Opprett produkt i Printful UI.
+2. Finn `sync_product_id` og `sync_variant_id` i Printful.
+   - Hvis API-kall gir `This endpoint requires Oauth authentication!`, bruk `PRINTFUL_OAUTH_TOKEN`.
+   - Du kan også importere produkter via admin-endepunktet `POST /api/admin/webshop/import-printful`.
+   - Kjør først med `{"dryRun":true}` for forhåndsvisning, deretter uten `dryRun` for lagring.
+   - Importen er idempotent (oppdaterer eksisterende produkter på `printful_variant_id`, oppretter nye hvis de mangler).
+3. Hvis du bruker lokal ordrelogg (uten Supabase): kjør Printful-import i admin først slik at lokale produkt-IDer/mapping er synkronisert.
+4. Hvis du bruker Supabase: sett inn produkt i `public.products` manuelt ved behov:
 
 ```sql
 insert into public.products (
@@ -146,9 +152,8 @@ insert into public.products (
   image_url,
   price_nok,
   currency,
-  printify_shop_id,
-  printify_product_id,
-  printify_variant_id,
+  printful_sync_product_id,
+  printful_variant_id,
   is_active
 ) values (
   'Lorgen Cap',
@@ -157,7 +162,6 @@ insert into public.products (
   34900,
   'NOK',
   '1234567',
-  'abcdef123456',
   12345,
   true
 );
@@ -171,14 +175,14 @@ Når grunnflyten er oppe, anbefales denne prioriterte planen:
 
 1. **Verifiser ende-til-ende kjøp i testmodus**
    - Kjør et testkjøp via Stripe Checkout.
-   - Bekreft at webhook treffer `POST /api/stripe/webhook` og at ordren får status `submitted` etter Printify-kall.
+   - Bekreft at webhook treffer `POST /api/stripe/webhook` og at ordren får status `submitted` etter Printful-kall.
 
 2. **Klargjør produksjonsdata for produkter**
-   - Legg inn alle reelle produkter med korrekt `printify_shop_id`, `printify_product_id` og `printify_variant_id`.
+   - Legg inn alle reelle produkter med korrekt `printful_sync_product_id` og `printful_variant_id`.
    - Dobbeltsjekk priser i `price_nok` (øre) og at `is_active = true` kun for produkter som skal vises.
 
 3. **Sett opp driftsovervåking og feilhåndtering**
-   - Følg med på webhook-feil og Printify-respons i serverlogger.
+   - Følg med på webhook-feil og Printful-respons i serverlogger.
    - Lag en enkel rutine for manuell retry av ordre som feiler (status `failed`).
 
 4. **Hardening før lansering**
