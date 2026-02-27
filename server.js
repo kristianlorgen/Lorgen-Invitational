@@ -165,27 +165,8 @@ function getPrintfulToken() {
   throw new Error('Missing required env: PRINTFUL_API_TOKEN');
 }
 
-function getPrintfulOauthToken() {
-  return getEnvValue('PRINTFUL_OAUTH_TOKEN');
-}
-
-function getPrintfulStoreId() {
-  return getEnvValue('PRINTFUL_STORE_ID');
-}
-
-function hasPrintfulAuth() {
-  return Boolean(getPrintfulOauthToken()) || hasEnv('PRINTFUL_API_TOKEN') || hasEnv('PRINTFUL_API_TOKEN_LORGENINV');
-}
-
-function getPrintfulAuthHeaders() {
-  const oauthToken = getPrintfulOauthToken();
-  const token = oauthToken || getPrintfulToken();
-  const storeId = getPrintfulStoreId();
-
-  return {
-    Authorization: `Bearer ${token}`,
-    ...(storeId ? { 'X-PF-Store-Id': storeId } : {})
-  };
+function hasPrintfulToken() {
+  return hasEnv('PRINTFUL_API_TOKEN') || hasEnv('PRINTFUL_API_TOKEN_LORGENINV');
 }
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = EXTERNAL_API_TIMEOUT_MS) {
