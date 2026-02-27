@@ -1,0 +1,115 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "version": "1.0",
+    "title": "API Documentation | Printful",
+    "description": "Printful API OpenAPI spec (lite)."
+  },
+  "servers": [
+    {
+      "url": "https://api.printful.com",
+      "description": "Printful API"
+    }
+  ],
+  "paths": {
+    "/products": {
+      "get": {
+        "summary": "Get product list",
+        "operationId": "getProducts",
+        "parameters": [
+          { "name": "category_id", "in": "query", "schema": { "type": "integer" } },
+          { "name": "offset", "in": "query", "schema": { "type": "integer" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer" } }
+        ],
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/products/{id}": {
+      "get": {
+        "summary": "Get product",
+        "operationId": "getProductById",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/orders": {
+      "get": {
+        "summary": "Get orders",
+        "operationId": "getOrders",
+        "parameters": [
+          { "name": "offset", "in": "query", "schema": { "type": "integer" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer" } },
+          { "name": "status", "in": "query", "schema": { "type": "string" } },
+          { "name": "search", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "OK" } }
+      },
+      "post": {
+        "summary": "Create order",
+        "operationId": "createOrder",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object" } } } },
+        "responses": { "200": { "description": "Created" } }
+      }
+    },
+    "/orders/{id}/confirm": {
+      "post": {
+        "summary": "Confirm order",
+        "operationId": "confirmOrderById",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Confirmed" } }
+      }
+    },
+    "/orders/estimate-costs": {
+      "post": {
+        "summary": "Estimate order costs",
+        "operationId": "estimateOrderCosts",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object" } } } },
+        "responses": { "200": { "description": "Estimated" } }
+      }
+    },
+    "/shipping/rates": {
+      "post": {
+        "summary": "Get shipping rates",
+        "operationId": "getShippingRates",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object" } } } },
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/mockup-generator/create-task/{id}": {
+      "post": {
+        "summary": "Create generator task",
+        "operationId": "createGeneratorTask",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object" } } } },
+        "responses": { "200": { "description": "Task created" } }
+      }
+    },
+    "/mockup-generator/task": {
+      "get": {
+        "summary": "Get generator task result",
+        "operationId": "getGeneratorTask",
+        "parameters": [
+          { "name": "task_key", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Task result" } }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  },
+  "security": [
+    { "BearerAuth": [] }
+  ]
+}
