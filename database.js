@@ -169,9 +169,8 @@ db.exec(`
     image_url TEXT DEFAULT '',
     price_nok INTEGER NOT NULL,
     currency TEXT NOT NULL DEFAULT 'NOK',
-    printify_shop_id TEXT DEFAULT '',
-    printify_product_id TEXT DEFAULT '',
-    printify_variant_id INTEGER,
+    printful_sync_product_id TEXT DEFAULT '',
+    printful_variant_id INTEGER,
     is_active INTEGER NOT NULL DEFAULT 1,
     sort_order INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -191,7 +190,7 @@ db.exec(`
     status TEXT NOT NULL DEFAULT 'mottatt',
     stripe_session_id TEXT DEFAULT '',
     stripe_payment_intent_id TEXT DEFAULT '',
-    printify_order_id TEXT DEFAULT '',
+    printful_order_id TEXT DEFAULT '',
     total_nok INTEGER NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
@@ -235,12 +234,18 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS photo_votes (
   voted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(tournament_id, photo_ref, voter_ip)
 )`); } catch(_) {}
-try { db.exec(`ALTER TABLE webshop_products ADD COLUMN printify_shop_id TEXT DEFAULT ''`); } catch(_) {}
-try { db.exec(`ALTER TABLE webshop_products ADD COLUMN printify_product_id TEXT DEFAULT ''`); } catch(_) {}
-try { db.exec(`ALTER TABLE webshop_products ADD COLUMN printify_variant_id INTEGER`); } catch(_) {}
+try { db.exec(`ALTER TABLE webshop_products ADD COLUMN printful_sync_product_id TEXT DEFAULT ''`); } catch(_) {}
+try { db.exec(`ALTER TABLE webshop_products ADD COLUMN printful_variant_id INTEGER`); } catch(_) {}
+try { db.exec(`UPDATE webshop_products
+               SET printful_sync_product_id = COALESCE(NULLIF(printful_sync_product_id, ''), printify_product_id, ''),
+                   printful_variant_id = COALESCE(printful_variant_id, printify_variant_id)
+            `); } catch(_) {}
 try { db.exec(`ALTER TABLE webshop_orders ADD COLUMN stripe_session_id TEXT DEFAULT ''`); } catch(_) {}
 try { db.exec(`ALTER TABLE webshop_orders ADD COLUMN stripe_payment_intent_id TEXT DEFAULT ''`); } catch(_) {}
-try { db.exec(`ALTER TABLE webshop_orders ADD COLUMN printify_order_id TEXT DEFAULT ''`); } catch(_) {}
+try { db.exec(`ALTER TABLE webshop_orders ADD COLUMN printful_order_id TEXT DEFAULT ''`); } catch(_) {}
+try { db.exec(`UPDATE webshop_orders
+               SET printful_order_id = COALESCE(NULLIF(printful_order_id, ''), printify_order_id, '')
+            `); } catch(_) {}
 
 module.exports = db;
 
