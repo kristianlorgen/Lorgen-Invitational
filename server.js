@@ -12,6 +12,7 @@ const app  = express();
 const PORT = process.env.PORT || 3000;
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || `http://localhost:${PORT}`;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'LorgenAdmin2025';
+const RUNTIME_SECRETS_PATH = path.join(__dirname, 'data/runtime-secrets.json');
 
 const allowedImageExtensions = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.heic', '.heif', '.avif']);
 
@@ -122,6 +123,56 @@ app.use(session({
 // ── Webshop integrations (Supabase + Stripe + Printify) ─────────────────────
 const STRIPE_API_BASE = 'https://api.stripe.com/v1';
 const EXTERNAL_API_TIMEOUT_MS = Number(process.env.EXTERNAL_API_TIMEOUT_MS || 8000);
+const ENV_ALIASES = {
+  STRIPE_SECRET_KEY: ['STRIPE_API_KEY'],
+  STRIPE_WEBHOOK_SECRET: ['STRIPE_WEBHOOK_SIGNING_SECRET'],
+  PRINTIFY_API_TOKEN: ['PRINTIFY_TOKEN', 'PRINTIFY_API_TOKEN_LORGENINV']
+};
+
+
+function readRuntimeSecrets() {
+  try {
+    if (!fs.existsSync(RUNTIME_SECRETS_PATH)) return {};
+    const raw = fs.readFileSync(RUNTIME_SECRETS_PATH, 'utf8');
+    const parsed = JSON.parse(raw || '{}');
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return parsed;
+  } catch (_) {
+    return {};
+  }
+}
+
+function writeRuntimeSecrets(nextSecrets = {}) {
+  const current = readRuntimeSecrets();
+  const merged = {
+    ...current,
+    ...nextSecrets
+  };
+
+  const normalized = {};
+  for (const [key, value] of Object.entries(merged)) {
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (!trimmed) continue;
+    normalized[key] = trimmed;
+  }
+
+  fs.mkdirSync(path.dirname(RUNTIME_SECRETS_PATH), { recursive: true });
+  fs.writeFileSync(RUNTIME_SECRETS_PATH, `${JSON.stringify(normalized, null, 2)}
+`, { mode: 0o600 });
+  return normalized;
+}
+
+function getRawEnvLikeValue(name) {
+  const processValue = process.env[name];
+  if (typeof processValue === 'string' && processValue.trim() !== '') return processValue;
+
+  const runtimeSecrets = readRuntimeSecrets();
+  const runtimeValue = runtimeSecrets[name];
+  if (typeof runtimeValue === 'string' && runtimeValue.trim() !== '') return runtimeValue;
+
+  return undefined;
+}
 
 function env(name, required = false) {
   const value = getEnvValue(name);
@@ -134,7 +185,16 @@ function hasEnv(name) {
 }
 
 function getEnvValue(name) {
-  const raw = process.env[name];
+  const candidateNames = [name, ...(ENV_ALIASES[name] || [])];
+  let raw;
+
+  for (const candidateName of candidateNames) {
+    raw = getRawEnvLikeValue(candidateName);
+    if (typeof raw === 'string' && raw.trim() !== '') {
+      break;
+    }
+  }
+
   if (typeof raw !== 'string') return '';
 
   const trimmed = raw.trim();
@@ -143,6 +203,7 @@ function getEnvValue(name) {
   // Keep the full secret value, but remove accidental surrounding quotes that
   // often appear when copying from dashboards/CLI output.
   let normalized = trimmed.replace(/^("|')(.*)\1$/, '$2').trim();
+
 
   // Some hosting UIs persist trailing escaped newlines ("\n" / "\r\n")
   // when pasting secrets. Strip those suffixes so API tokens stay valid.
@@ -160,7 +221,7 @@ function hasValidHttpUrl(value) {
 }
 
 function getPrintifyToken() {
-  const token = getEnvValue('PRINTIFY_API_TOKEN') || getEnvValue('PRINTIFY_API_TOKEN_LORGENINV');
+  const token = getEnvValue('PRINTIFY_API_TOKEN');
   if (token) return token;
   throw new Error('Missing required env: PRINTIFY_API_TOKEN');
 }
@@ -281,6 +342,46 @@ async function stripeRequest(pathname, payload) {
   const data = await res.json();
   if (!res.ok) throw new Error(`Stripe error: ${data?.error?.message || res.statusText}`);
   return data;
+}
+
+
+async function stripeHealthCheck() {
+  const secret = env('STRIPE_SECRET_KEY', true);
+  const res = await fetchWithTimeout(`${STRIPE_API_BASE}/account`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${secret}` }
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(`Stripe error: ${data?.error?.message || res.statusText}`);
+
+  return {
+    ok: true,
+    accountId: data.id || null,
+    country: data.country || null
+  };
+}
+
+async function printifyHealthCheck() {
+  const token = getPrintifyToken();
+  const res = await fetchWithTimeout('https://api.printify.com/v1/shops.json', {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` }
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    const message = data?.message || data?.error || res.statusText;
+    throw new Error(`Printify error: ${message}`);
+  }
+
+  const firstShop = Array.isArray(data) ? data[0] : null;
+  return {
+    ok: true,
+    shops: Array.isArray(data) ? data.length : 0,
+    firstShopId: firstShop?.id ? String(firstShop.id) : null,
+    firstShopTitle: firstShop?.title || null
+  };
 }
 
 function verifyStripeSignature(rawBody, sigHeader, secret) {
@@ -2011,7 +2112,7 @@ app.get('/api/webshop/status', (req, res) => {
     { name: 'SUPABASE_SERVICE_ROLE_KEY_OR_ANON (optional)', configured: hasEnv('SUPABASE_SERVICE_ROLE_KEY') || hasEnv('SUPABASE_ANON_KEY') },
     { name: 'STRIPE_SECRET_KEY', configured: hasEnv('STRIPE_SECRET_KEY') },
     { name: 'STRIPE_WEBHOOK_SECRET', configured: hasEnv('STRIPE_WEBHOOK_SECRET') },
-    { name: 'PRINTIFY_API_TOKEN', configured: hasEnv('PRINTIFY_API_TOKEN') || hasEnv('PRINTIFY_API_TOKEN_LORGENINV') }
+    { name: 'PRINTIFY_API_TOKEN', configured: hasEnv('PRINTIFY_API_TOKEN') }
   ];
 
   const requiredChecks = checks.filter((check) => !check.name.includes('(optional)'));
@@ -2023,6 +2124,78 @@ app.get('/api/webshop/status', (req, res) => {
       : 'Webshop mangler en eller flere integrationsnøkler.',
     checks
   });
+});
+
+
+app.get('/api/webshop/diagnostics', async (req, res) => {
+  const checks = {
+    stripeSecretConfigured: hasEnv('STRIPE_SECRET_KEY'),
+    stripeWebhookConfigured: hasEnv('STRIPE_WEBHOOK_SECRET'),
+    printifyTokenConfigured: hasEnv('PRINTIFY_API_TOKEN')
+  };
+
+  const diagnostics = {
+    stripe: { ok: false, message: 'Ikke testet' },
+    printify: { ok: false, message: 'Ikke testet' },
+    products: { ok: true, missingMappings: 0, totalProducts: 0 }
+  };
+
+  try {
+    const products = getLocalWebshopProducts();
+    const missingMappings = products.filter((product) => {
+      const mapping = normalizePrintifyMapping(product);
+      return !mapping.printify_shop_id || !mapping.printify_product_id || !mapping.printify_variant_id;
+    });
+
+    diagnostics.products = {
+      ok: missingMappings.length === 0,
+      totalProducts: products.length,
+      missingMappings: missingMappings.length,
+      missingProductIds: missingMappings.slice(0, 10).map((product) => product.id),
+      missingProductNames: missingMappings.slice(0, 10).map((product) => product.name),
+      message: missingMappings.length
+        ? `Mangler Printify-mapping på ${missingMappings.length} av ${products.length} produkter.`
+        : `Alle ${products.length} produkter har Printify-mapping.`
+    };
+  } catch (error) {
+    diagnostics.products = { ok: false, message: `Kunne ikke validere produkter: ${error.message}` };
+  }
+
+  if (checks.stripeSecretConfigured) {
+    try {
+      const stripe = await stripeHealthCheck();
+      diagnostics.stripe = {
+        ok: true,
+        message: 'Stripe API-nøkkel fungerer.',
+        accountId: stripe.accountId,
+        country: stripe.country
+      };
+    } catch (error) {
+      diagnostics.stripe = { ok: false, message: isLikelyNetworkError(error) ? 'Stripe-feil: Nettverk/utgående trafikk blokkert fra servermiljøet.' : `Stripe-feil: ${error.message}` };
+    }
+  } else {
+    diagnostics.stripe = { ok: false, message: 'Mangler STRIPE_SECRET_KEY i miljøet.' };
+  }
+
+  if (checks.printifyTokenConfigured) {
+    try {
+      const printify = await printifyHealthCheck();
+      diagnostics.printify = {
+        ok: true,
+        message: `Printify token fungerer. Fant ${printify.shops} shop(s).`,
+        shops: printify.shops,
+        firstShopId: printify.firstShopId,
+        firstShopTitle: printify.firstShopTitle
+      };
+    } catch (error) {
+      diagnostics.printify = { ok: false, message: isLikelyNetworkError(error) ? 'Printify-feil: Nettverk/utgående trafikk blokkert fra servermiljøet.' : `Printify-feil: ${error.message}` };
+    }
+  } else {
+    diagnostics.printify = { ok: false, message: 'Mangler PRINTIFY_API_TOKEN i miljøet.' };
+  }
+
+  const ok = diagnostics.stripe.ok && diagnostics.printify.ok && diagnostics.products.ok;
+  return res.status(ok ? 200 : 503).json({ ok, checks, diagnostics });
 });
 
 app.post('/api/checkout', async (req, res) => {
@@ -2369,6 +2542,50 @@ app.get('/api/admin/webshop/orders', requireAdmin, (req, res) => {
   } catch (error) {
     console.error('admin webshop orders error:', error.message);
     res.status(500).json({ error: 'Kunne ikke hente webshop-ordrer' });
+  }
+});
+
+
+app.get('/api/admin/webshop/runtime-secrets/status', requireAdmin, (req, res) => {
+  const checks = [
+    { name: 'STRIPE_SECRET_KEY', configured: hasEnv('STRIPE_SECRET_KEY') },
+    { name: 'STRIPE_WEBHOOK_SECRET', configured: hasEnv('STRIPE_WEBHOOK_SECRET') },
+    { name: 'PRINTIFY_API_TOKEN', configured: hasEnv('PRINTIFY_API_TOKEN') }
+  ];
+
+  res.json({ checks });
+});
+
+app.put('/api/admin/webshop/runtime-secrets', requireAdmin, (req, res) => {
+  try {
+    const payload = req.body || {};
+    const allowedKeys = ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'PRINTIFY_API_TOKEN'];
+    const nextSecrets = {};
+
+    allowedKeys.forEach((key) => {
+      const value = payload[key] ?? payload[key.toLowerCase()];
+      if (typeof value === 'string' && value.trim()) {
+        nextSecrets[key] = value;
+      }
+    });
+
+    if (!Object.keys(nextSecrets).length) {
+      return res.status(400).json({ error: 'Ingen gyldige secrets ble sendt inn' });
+    }
+
+    writeRuntimeSecrets(nextSecrets);
+
+    return res.json({
+      message: 'Webshop-secrets lagret lokalt på serveren',
+      configured: {
+        STRIPE_SECRET_KEY: hasEnv('STRIPE_SECRET_KEY'),
+        STRIPE_WEBHOOK_SECRET: hasEnv('STRIPE_WEBHOOK_SECRET'),
+        PRINTIFY_API_TOKEN: hasEnv('PRINTIFY_API_TOKEN')
+      }
+    });
+  } catch (error) {
+    console.error('runtime secrets update error:', error.message);
+    return res.status(500).json({ error: 'Kunne ikke lagre webshop-secrets' });
   }
 });
 
