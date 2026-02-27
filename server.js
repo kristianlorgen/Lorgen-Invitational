@@ -7,12 +7,13 @@ const path    = require('path');
 const fs      = require('fs');
 const crypto  = require('crypto');
 const db      = require('./database');
-
+const shopRoutes = require('./shop-routes');
+const shopRoutes = require('./shop-routes');
 const app  = express();
 const PORT = process.env.PORT || 3000;
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || `http://localhost:${PORT}`;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'LorgenAdmin2025';
-
+app.use('/api/shop/webhook', express.raw({ type: 'application/json' }));
 const allowedImageExtensions = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.heic', '.heif', '.avif']);
 
 function isAllowedImageUpload(file = {}) {
@@ -85,6 +86,7 @@ const chatUpload = multer({
 
 // ── Middleware ───────────────────────────────────────────────────────────────
 app.use(express.json());
+app.use(shopRoutes);
 app.use(express.urlencoded({ extended: true }));
 app.use('/uploads', express.static('uploads', { fallthrough: true }));
 app.use(express.static('public', {
