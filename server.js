@@ -223,6 +223,12 @@ function hasValidHttpUrl(value) {
 function getPrintifyToken() {
   const token = getEnvValue('PRINTIFY_API_TOKEN');
   if (token) return token;
+  throw new Error('Missing required env: PRINTIFY_API_TOKEN');
+}
+
+function getPrintfulToken() {
+  const token = getEnvValue('PRINTFUL_API_TOKEN') || getEnvValue('PRINTFUL_API_TOKEN_LORGENINV');
+  if (token) return token;
   throw new Error('Missing required env: PRINTFUL_API_TOKEN');
 }
 
@@ -252,6 +258,66 @@ function getPrintfulAuthHeaders() {
     Authorization: `Bearer ${token}`,
     ...(storeId ? { 'X-PF-Store-Id': storeId } : {})
   };
+}
+
+async function printfulRequest(pathname, { method = 'GET', query = '', body } = {}) {
+  const normalizedPath = pathname.startsWith('/') ? pathname : `/${pathname}`;
+  const res = await fetchWithTimeout(`https://api.printful.com${normalizedPath}${query}`, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      ...getPrintfulAuthHeaders()
+    },
+    body: body ? JSON.stringify(body) : undefined
+  });
+
+  const text = await res.text();
+  const parsed = text ? JSON.parse(text) : {};
+
+  if (!res.ok) {
+    const reason = parsed?.error?.message || parsed?.result || text || res.statusText;
+    throw new Error(`Printful ${method} ${normalizedPath} feilet: ${res.status} ${reason}`);
+  }
+
+  if (parsed?.code && parsed.code !== 200) {
+    const reason = parsed?.error?.message || parsed?.result || 'Ukjent Printful-feil';
+    throw new Error(`Printful ${method} ${normalizedPath} feilet: ${reason}`);
+  }
+
+  return parsed?.result ?? parsed;
+}
+
+function toWebshopProductFromPrintful(product = {}) {
+  const variants = Array.isArray(product.variants) ? product.variants : [];
+  const primaryVariant = variants.find((variant) => Number(variant?.id) > 0)
+    || variants[0]
+    || {};
+
+  const id = Number(primaryVariant.id || product.id);
+  const price = Number(primaryVariant.retail_price ?? primaryVariant.price ?? product.retail_price ?? product.price ?? 0);
+
+  return {
+    id,
+    name: product.name || product.sync_product?.name || `Printful-produkt ${id}`,
+    description: product.description || product.sync_product?.description || '',
+    image_url: product.thumbnail_url || product.image || primaryVariant.files?.[0]?.preview_url || '',
+    price_nok: Number.isFinite(price) ? Math.round(price * 100) : 0,
+    currency: String(primaryVariant.currency || product.currency || 'NOK').toLowerCase(),
+    printful_sync_product_id: String(product.id || product.sync_product_id || ''),
+    printful_variant_id: Number(primaryVariant.id) || null
+  };
+}
+
+async function fetchPrintfulProductsForMapping(limit = 100) {
+  const safeLimit = Math.min(Math.max(Number(limit) || 100, 1), 100);
+  const data = await printfulRequest('/store/products', {
+    query: `?limit=${safeLimit}`
+  });
+
+  const list = Array.isArray(data) ? data : [];
+  return list
+    .map(toWebshopProductFromPrintful)
+    .filter((item) => Number.isInteger(item.id) && item.id > 0 && item.printful_variant_id);
 }
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = EXTERNAL_API_TIMEOUT_MS) {
@@ -2115,8 +2181,8 @@ app.get('/api/webshop/diagnostics', async (req, res) => {
   try {
     const products = getLocalWebshopProducts();
     const missingMappings = products.filter((product) => {
-      const mapping = normalizePrintifyMapping(product);
-      return !mapping.printify_shop_id || !mapping.printify_product_id || !mapping.printify_variant_id;
+      const mapping = normalizePrintfulMapping(product);
+      return !mapping.printful_sync_product_id || !mapping.printful_variant_id;
     });
 
     diagnostics.products = {
@@ -2126,8 +2192,8 @@ app.get('/api/webshop/diagnostics', async (req, res) => {
       missingProductIds: missingMappings.slice(0, 10).map((product) => product.id),
       missingProductNames: missingMappings.slice(0, 10).map((product) => product.name),
       message: missingMappings.length
-        ? `Mangler Printify-mapping på ${missingMappings.length} av ${products.length} produkter.`
-        : `Alle ${products.length} produkter har Printify-mapping.`
+        ? `Mangler Printful-mapping på ${missingMappings.length} av ${products.length} produkter.`
+        : `Alle ${products.length} produkter har Printful-mapping.`
     };
   } catch (error) {
     diagnostics.products = { ok: false, message: `Kunne ikke validere produkter: ${error.message}` };
