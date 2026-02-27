@@ -8,7 +8,6 @@ const fs      = require('fs');
 const crypto  = require('crypto');
 const db      = require('./database');
 const shopRoutes = require('./shop-routes');
-const shopRoutes = require('./shop-routes');
 const app  = express();
 const PORT = process.env.PORT || 3000;
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || `http://localhost:${PORT}`;
