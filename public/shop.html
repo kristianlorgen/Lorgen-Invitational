@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Shop — Lorgen Invitational</title>
+  <title>Nettbutikk — Lorgen Invitational</title>
   <link rel="icon" href="/images/logo.png" type="image/png" />
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Barlow:wght@300;400;500;600&display=swap');
@@ -305,8 +305,8 @@
       <li><a href="/gameday">Spilleregler</a></li>
       <li><a href="/scoreboard">Live</a></li>
       <li><a href="/gallery">Bilder</a></li>
-      <li><a href="/legacy">Hall of Fame</a></li>
-      <li><a href="/shop" class="active">Shop</a></li>
+      <li><a href="/legacy">Historikk</a></li>
+      <li><a href="/shop" class="active">Nettbutikk</a></li>
     </ul>
   </nav>
 
@@ -316,7 +316,7 @@
   <!-- HERO -->
   <section class="shop-hero">
     <p class="eyebrow">Lorgen Invitational</p>
-    <h1>Official Merch</h1>
+    <h1>Offisiell nettbutikk</h1>
     <div class="divider"></div>
     <p>Power · Precision · Party</p>
   </section>
@@ -336,7 +336,7 @@
 
       <!-- Info -->
       <div class="product-info">
-        <p class="category">Headwear</p>
+        <p class="category">Caps</p>
         <h2>Lorgen Invitational<br/>Flat Bill Cap</h2>
         <p class="price">400 kr</p>
         <p class="description">
@@ -354,7 +354,7 @@
         </div>
 
         <!-- Buy button -->
-        <button class="btn-buy" id="buyBtn" onclick="startCheckout()">
+        <button class="btn-buy" id="buyBtn" onclick="startCheckout()" disabled>
           <span class="btn-text">Kjøp nå — 400 kr</span>
           <span class="btn-loading"><div class="spinner"></div></span>
         </button>
@@ -382,6 +382,7 @@
         document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('selected'));
         btn.classList.add('selected');
         selectedSize = btn.dataset.size;
+        document.getElementById('buyBtn').disabled = false;
       });
     });
 
