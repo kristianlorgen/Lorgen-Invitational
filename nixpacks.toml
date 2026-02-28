@@ -6,3 +6,6 @@ cmds = []
 
 [start]
 cmd = "exec node server.js"
+
+[variables]
+NODE_ENV = "production"
