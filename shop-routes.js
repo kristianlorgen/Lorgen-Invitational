@@ -5,25 +5,43 @@ const Stripe = require('stripe');
 
 const PRINTFUL_API_KEY = process.env.PRINTFUL_API_KEY;
 const PRINTFUL_PRODUCT_ID = process.env.PRINTFUL_PRODUCT_ID;
+const ALLOWED_SIZES = new Set(['S/M', 'L/XL']);
 
 // Lazy Stripe initialization - unngår feil under bygging
 let stripe;
 function getStripe() {
+  if (!process.env.STRIPE_SECRET_KEY) {
+    throw new Error('STRIPE_SECRET_KEY mangler i miljøvariabler');
+  }
   if (!stripe) stripe = Stripe(process.env.STRIPE_SECRET_KEY);
   return stripe;
+}
+
+function getBaseUrl(req) {
+  if (process.env.BASE_URL) return process.env.BASE_URL;
+  return `${req.protocol}://${req.get('host')}`;
 }
 
 // ─────────────────────────────────────────
 // POST /api/shop/create-checkout
 // ─────────────────────────────────────────
 router.post('/api/shop/create-checkout', async (req, res) => {
-  const { size } = req.body;
+  const size = String(req.body?.size || '').trim();
 
   if (!size) {
     return res.status(400).json({ error: 'Størrelse mangler' });
   }
 
+  if (!ALLOWED_SIZES.has(size)) {
+    return res.status(400).json({ error: 'Ugyldig størrelse valgt' });
+  }
+
+  if (!PRINTFUL_PRODUCT_ID) {
+    return res.status(500).json({ error: 'PRINTFUL_PRODUCT_ID mangler i miljøvariabler' });
+  }
+
   try {
+    const baseUrl = getBaseUrl(req);
     const session = await getStripe().checkout.sessions.create({
       payment_method_types: ['card'],
       line_items: [
@@ -49,8 +67,8 @@ router.post('/api/shop/create-checkout', async (req, res) => {
         size: size,
         printful_product_id: PRINTFUL_PRODUCT_ID,
       },
-      success_url: `${process.env.BASE_URL}/shop/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.BASE_URL}/shop`,
+      success_url: `${baseUrl}/shop/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${baseUrl}/shop`,
     });
 
     res.json({ url: session.url });
@@ -64,6 +82,10 @@ router.post('/api/shop/create-checkout', async (req, res) => {
 // POST /api/shop/webhook
 // ─────────────────────────────────────────
 router.post('/api/shop/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  if (!process.env.STRIPE_WEBHOOK_SECRET) {
+    return res.status(500).send('STRIPE_WEBHOOK_SECRET mangler i miljøvariabler');
+  }
+
   const sig = req.headers['stripe-signature'];
   let event;
 
@@ -99,9 +121,14 @@ router.post('/api/shop/webhook', express.raw({ type: 'application/json' }), asyn
 // Hjelpefunksjon: Hent Printful variant ID
 // ─────────────────────────────────────────
 async function getPrintfulVariantId(productId, size) {
+  if (!PRINTFUL_API_KEY) throw new Error('PRINTFUL_API_KEY mangler i miljøvariabler');
+
   const res = await fetch(`https://api.printful.com/store/products/${productId}`, {
     headers: { 'Authorization': `Bearer ${PRINTFUL_API_KEY}` }
   });
+
+  if (!res.ok) throw new Error(`Feil ved henting av Printful-produkt (${res.status})`);
+
   const data = await res.json();
 
   if (!data.result) throw new Error('Klarte ikke hente Printful-produkt');
@@ -123,6 +150,8 @@ async function getPrintfulVariantId(productId, size) {
 // Hjelpefunksjon: Opprett Printful-ordre
 // ─────────────────────────────────────────
 async function createPrintfulOrder({ session, size, printful_product_id, shipping, customerEmail }) {
+  if (!printful_product_id) throw new Error('Printful produkt-ID mangler i metadata');
+
   const variantId = await getPrintfulVariantId(printful_product_id, size);
 
   const addr = shipping?.address;
@@ -158,6 +187,8 @@ async function createPrintfulOrder({ session, size, printful_product_id, shippin
     },
     body: JSON.stringify(order)
   });
+
+  if (!res.ok) throw new Error(`Feil ved oppretting av Printful-ordre (${res.status})`);
 
   const data = await res.json();
 
