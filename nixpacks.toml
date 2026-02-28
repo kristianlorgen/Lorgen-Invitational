@@ -1,3 +1,5 @@
+# cache-bust: 2026-02-28-v2
+
 [phases.install]
 cmds = ["npm install"]
 
@@ -6,6 +8,3 @@ cmds = []
 
 [start]
 cmd = "exec node server.js"
-
-[variables]
-NODE_ENV = "production"
