@@ -163,6 +163,61 @@ db.exec(`
   );
 
 
+  CREATE TABLE IF NOT EXISTS webshop_products (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    slug TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    image_url TEXT DEFAULT '',
+    price_nok INTEGER NOT NULL,
+    currency TEXT NOT NULL DEFAULT 'nok',
+    printful_variant_id INTEGER,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS webshop_orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    public_id TEXT NOT NULL UNIQUE,
+    email TEXT NOT NULL,
+    full_name TEXT DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending_payment',
+    currency TEXT NOT NULL DEFAULT 'nok',
+    amount_total INTEGER NOT NULL DEFAULT 0,
+    stripe_session_id TEXT DEFAULT '',
+    stripe_payment_intent_id TEXT DEFAULT '',
+    printful_order_id TEXT DEFAULT '',
+    printful_status TEXT DEFAULT '',
+    tracking_number TEXT DEFAULT '',
+    tracking_url TEXT DEFAULT '',
+    shipping_json TEXT DEFAULT '',
+    metadata_json TEXT DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS webshop_order_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id INTEGER NOT NULL,
+    product_id INTEGER NOT NULL,
+    product_name TEXT NOT NULL,
+    quantity INTEGER NOT NULL,
+    unit_price INTEGER NOT NULL,
+    printful_variant_id INTEGER,
+    FOREIGN KEY (order_id) REFERENCES webshop_orders(id) ON DELETE CASCADE,
+    FOREIGN KEY (product_id) REFERENCES webshop_products(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS webshop_webhook_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider TEXT NOT NULL,
+    event_id TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(provider, event_id)
+  );
+
+
 
 `);
 
@@ -192,6 +247,21 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS photo_votes (
   voted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(tournament_id, photo_ref, voter_ip)
 )`); } catch(_) {}
+
+
+
+try {
+  const existingProducts = db.prepare('SELECT COUNT(*) AS count FROM webshop_products').get();
+  if (!existingProducts || !existingProducts.count) {
+    const insertProduct = db.prepare(
+      `INSERT INTO webshop_products (slug, name, description, image_url, price_nok, currency, printful_variant_id, is_active)
+       VALUES (?,?,?,?,?,?,?,1)`
+    );
+    insertProduct.run('lorgen-cap', 'Lorgen Caps', 'Klassisk caps med brodert Lorgen-logo.', '/images/logo.png', 34900, 'nok', null);
+    insertProduct.run('lorgen-polo', 'Lorgen Polo', 'Komfortabel golfpolo med turneringsprofil.', '/images/logo.png', 59900, 'nok', null);
+    insertProduct.run('lorgen-hoodie', 'Lorgen Hoodie', 'Varm hoodie for kjølige kvelder på banen.', '/images/logo.png', 79900, 'nok', null);
+  }
+} catch (_) {}
 
 module.exports = db;
 

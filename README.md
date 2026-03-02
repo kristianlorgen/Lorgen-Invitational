@@ -50,3 +50,15 @@ npm start              # Runs on http://localhost:3000
 - **File Uploads**: Multer
 - **Auth**: Express-session (PIN for teams, password for admin)
 - **Frontend**: Vanilla HTML/CSS/JS
+
+## Webshop Blueprint (Stripe + Printful)
+
+Se detaljert implementeringsplan i `docs/webshop-stripe-printful-plan.md`.
+
+### Raskt svar på "Hva trenger du?"
+
+Se sjekklisten i `docs/webshop-stripe-printful-plan.md`:
+- `0) Konkret sjekkliste` (alt som må være på plass før launch)
+- `0.1) Så hva trenger du å sende meg` (hvilke inputs som trengs for implementering)
+- `0.2) Konkret input-liste` (det jeg ikke kan hente automatisk selv)
+- `0.3) Nøyaktig steg-for-steg` (helt konkret fremgangsmåte for å hente alt jeg mangler)
