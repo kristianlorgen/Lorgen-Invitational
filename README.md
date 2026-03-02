@@ -110,3 +110,8 @@ Se sjekklisten i `docs/webshop-stripe-printful-plan.md`:
 - `0.1) Så hva trenger du å sende meg` (hvilke inputs som trengs for implementering)
 - `0.2) Konkret input-liste` (det jeg ikke kan hente automatisk selv)
 - `0.3) Nøyaktig steg-for-steg` (helt konkret fremgangsmåte for å hente alt jeg mangler)
+
+## Feilsøking nettbutikk
+
+Hvis produkter ikke dukker opp i nettbutikken, bruk sjekklisten i `docs/nettbutikk-feilsok-checkliste.md`.
+
