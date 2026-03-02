@@ -259,6 +259,108 @@ function ensureDir(dirPath) {
   if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
 }
 
+function slugify(value = '') {
+  return String(value)
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+}
+
+function nokToMinorUnits(value) {
+  const amount = Number(String(value || '').replace(',', '.'));
+  if (!Number.isFinite(amount) || amount <= 0) return 0;
+  return Math.round(amount * 100);
+}
+
+const PRINTFUL_SYNC_INTERVAL_MS = 5 * 60 * 1000;
+let lastPrintfulSyncAt = 0;
+let lastPrintfulSyncError = '';
+
+async function fetchPrintfulJson(url) {
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${PRINTFUL_API_TOKEN}` }
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error?.message || `Printful API-feil (${response.status})`);
+  }
+  return data;
+}
+
+async function resolvePrintfulProduct(listItem) {
+  const result = listItem || {};
+  const variants = Array.isArray(result.sync_variants) ? result.sync_variants : [];
+  if (variants.length) return result;
+
+  const productId = Number(result.id || 0);
+  if (!productId) return result;
+
+  const details = await fetchPrintfulJson(`https://api.printful.com/store/products/${productId}`);
+  return details?.result || result;
+}
+
+async function syncPrintfulProductsFromApi(force = false) {
+  if (!PRINTFUL_API_TOKEN) return { skipped: true, reason: 'PRINTFUL_API_TOKEN mangler' };
+
+  const now = Date.now();
+  if (!force && now - lastPrintfulSyncAt < PRINTFUL_SYNC_INTERVAL_MS) {
+    return { skipped: true, reason: 'cooldown' };
+  }
+
+  const data = await fetchPrintfulJson('https://api.printful.com/store/products?limit=100');
+  const products = Array.isArray(data?.result) ? data.result : [];
+  if (!products.length) {
+    lastPrintfulSyncAt = now;
+    lastPrintfulSyncError = '';
+    return { synced: 0 };
+  }
+
+  const bySlug = db.prepare('SELECT id FROM webshop_products WHERE slug=? LIMIT 1');
+  const insert = db.prepare(
+    `INSERT INTO webshop_products (slug, name, description, image_url, price_nok, currency, printful_variant_id, is_active)
+     VALUES (?,?,?,?,?,?,?,1)`
+  );
+  const update = db.prepare(
+    `UPDATE webshop_products
+     SET name=?, description=?, image_url=?, price_nok=?, currency=?, printful_variant_id=?, is_active=1
+     WHERE id=?`
+  );
+
+  const rows = [];
+  for (const product of products) {
+    const enriched = await resolvePrintfulProduct(product);
+    const variant = Array.isArray(enriched?.sync_variants) ? enriched.sync_variants[0] : null;
+    const variantId = Number(variant?.id || 0);
+    if (!variantId) continue;
+
+    const name = String(enriched?.name || variant?.name || 'Printful produkt').trim();
+    const description = String(enriched?.sync_product?.description || enriched?.synced?.description || '').trim();
+    const image = String(enriched?.thumbnail_url || variant?.files?.[0]?.preview_url || '').trim();
+    const priceNok = nokToMinorUnits(variant?.retail_price) || 40000;
+    const slugBase = slugify(name) || `printful-${enriched.id}`;
+    const slug = `printful-${enriched.id}-${slugBase}`;
+    rows.push({ slug, name, description, image, priceNok, variantId });
+  }
+
+  const syncProduct = db.transaction((items) => {
+    for (const item of items) {
+      const existing = bySlug.get(item.slug);
+      if (existing?.id) {
+        update.run(item.name, item.description, item.image, item.priceNok, SHOP_CURRENCY, item.variantId, existing.id);
+      } else {
+        insert.run(item.slug, item.name, item.description, item.image, item.priceNok, SHOP_CURRENCY, item.variantId);
+      }
+    }
+  });
+
+  syncProduct(rows);
+  lastPrintfulSyncAt = Date.now();
+  lastPrintfulSyncError = '';
+  return { synced: rows.length };
+}
+
 function syncScorePhotoToGallery({ tournamentId, scoreId, photoPath }) {
   const existing = db.prepare(
     `SELECT id FROM gallery_photos
@@ -1737,15 +1839,30 @@ app.get('/shop', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'shop.html'));
 });
 
-app.get('/api/shop/products', (req, res) => {
+app.get('/api/shop/products', async (req, res) => {
   try {
+    try {
+      await syncPrintfulProductsFromApi();
+    } catch (syncErr) {
+      lastPrintfulSyncError = syncErr.message;
+      console.error('Printful produktsync feilet, returnerer lagrede produkter:', syncErr.message);
+    }
+
     const products = db.prepare(
       `SELECT id, slug, name, description, image_url, price_nok, currency, printful_variant_id
        FROM webshop_products
        WHERE is_active=1
        ORDER BY id ASC`
     ).all().map(p => ({ ...p, price_label: formatAmountNok(p.price_nok) }));
-    res.json({ products, currency: SHOP_CURRENCY });
+
+    res.json({
+      products,
+      currency: SHOP_CURRENCY,
+      printful_sync: {
+        last_error: lastPrintfulSyncError || null,
+        last_synced_at: lastPrintfulSyncAt || null
+      }
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
