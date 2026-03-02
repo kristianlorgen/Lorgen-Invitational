@@ -12,6 +12,12 @@ const app  = express();
 const PORT = process.env.PORT || 3000;
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || `http://localhost:${PORT}`;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'LorgenAdmin2025';
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
+const PRINTFUL_API_TOKEN = process.env.PRINTFUL_API_TOKEN || process.env.PRINTFUL_API_KEY || '';
+const PRINTFUL_WEBHOOK_SECRET = process.env.PRINTFUL_WEBHOOK_SECRET || '';
+const SHOP_CURRENCY = (process.env.SHOP_CURRENCY || 'nok').toLowerCase();
+
 
 const allowedImageExtensions = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.heic', '.heif', '.avif']);
 
@@ -84,7 +90,11 @@ const chatUpload = multer({
 });
 
 // ── Middleware ───────────────────────────────────────────────────────────────
-app.use(express.json());
+app.use(express.json({
+  verify: (req, res, buf) => {
+    if (buf?.length) req.rawBody = buf.toString('utf8');
+  }
+}));
 app.use(express.urlencoded({ extended: true }));
 app.use('/uploads', express.static('uploads', { fallthrough: true }));
 app.use(express.static('public', {
@@ -1573,6 +1583,308 @@ app.get('/api/instagram-qr', (req, res) => {
 
 ['gameday', 'scoreboard', 'legacy', 'enter-score', 'admin', 'gallery'].forEach(p => {
   app.get(`/${p}`, (req, res) => res.sendFile(path.join(__dirname, `public/${p}.html`)));
+});
+
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  WEBSHOP (Stripe + Printful)
+// ════════════════════════════════════════════════════════════════════════════
+
+function formatAmountNok(ore) {
+  return `${(Number(ore || 0) / 100).toFixed(2)} kr`;
+}
+
+function generatePublicOrderId() {
+  return `ord_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+}
+
+function verifyPrintfulSignature(rawBody = '', signature = '') {
+  if (!PRINTFUL_WEBHOOK_SECRET) return true;
+  if (!signature) return false;
+  const expected = crypto.createHmac('sha256', PRINTFUL_WEBHOOK_SECRET).update(rawBody).digest('hex');
+  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(String(signature).trim()));
+}
+
+function createPrintfulOrderFromLocalOrder(orderId) {
+  if (!PRINTFUL_API_TOKEN) return { skipped: true, reason: 'PRINTFUL_API_TOKEN mangler' };
+
+  const order = db.prepare('SELECT * FROM webshop_orders WHERE id=?').get(orderId);
+  if (!order) throw new Error('Ordre ble ikke funnet');
+
+  const items = db.prepare('SELECT * FROM webshop_order_items WHERE order_id=?').all(orderId);
+  const shipping = order.shipping_json ? JSON.parse(order.shipping_json) : {};
+
+  const recipient = {
+    name: shipping?.name || order.full_name || 'Ukjent kunde',
+    email: order.email,
+    address1: shipping?.address?.line1 || 'Mangler adresse',
+    address2: shipping?.address?.line2 || '',
+    city: shipping?.address?.city || '',
+    state_code: shipping?.address?.state || '',
+    country_code: shipping?.address?.country || 'NO',
+    zip: shipping?.address?.postal_code || ''
+  };
+
+  const payloadItems = items.map(item => {
+    if (!item.printful_variant_id) {
+      throw new Error(`Produktet ${item.product_name} mangler printful_variant_id`);
+    }
+    return {
+      sync_variant_id: item.printful_variant_id,
+      quantity: item.quantity
+    };
+  });
+
+  return fetch('https://api.printful.com/orders', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${PRINTFUL_API_TOKEN}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      external_id: order.public_id,
+      recipient,
+      items: payloadItems
+    })
+  })
+    .then(async response => {
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data?.error?.message || data?.result || 'Printful ordre feilet');
+      }
+      const result = data?.result || {};
+      db.prepare(
+        `UPDATE webshop_orders
+         SET printful_order_id=?, printful_status=?, updated_at=CURRENT_TIMESTAMP
+         WHERE id=?`
+      ).run(String(result.id || ''), String(result.status || ''), orderId);
+      return result;
+    });
+}
+
+app.get('/shop', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'shop.html'));
+});
+
+app.get('/api/shop/products', (req, res) => {
+  try {
+    const products = db.prepare(
+      `SELECT id, slug, name, description, image_url, price_nok, currency, printful_variant_id
+       FROM webshop_products
+       WHERE is_active=1
+       ORDER BY id ASC`
+    ).all().map(p => ({ ...p, price_label: formatAmountNok(p.price_nok) }));
+    res.json({ products, currency: SHOP_CURRENCY });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/checkout-session', async (req, res) => {
+  try {
+    if (!STRIPE_SECRET_KEY) return res.status(503).json({ error: 'Stripe er ikke konfigurert på serveren' });
+
+    const email = String(req.body?.email || '').trim();
+    const cart = Array.isArray(req.body?.items) ? req.body.items : [];
+    if (!email || !email.includes('@')) return res.status(400).json({ error: 'Gyldig e-post er påkrevd' });
+    if (!cart.length) return res.status(400).json({ error: 'Handlekurven er tom' });
+
+    const productById = db.prepare(
+      `SELECT id, name, price_nok, currency, printful_variant_id
+       FROM webshop_products
+       WHERE id=? AND is_active=1`
+    );
+
+    const resolved = [];
+    for (const line of cart) {
+      const productId = Number(line?.product_id);
+      const quantity = Math.max(1, Math.min(20, Number(line?.quantity || 1)));
+      const product = productById.get(productId);
+      if (!product) return res.status(400).json({ error: `Ugyldig produkt i kurv (${productId})` });
+      resolved.push({ product, quantity });
+    }
+
+    const amountTotal = resolved.reduce((sum, line) => sum + (line.product.price_nok * line.quantity), 0);
+    const publicId = generatePublicOrderId();
+
+    const orderInsert = db.prepare(
+      `INSERT INTO webshop_orders (public_id, email, status, currency, amount_total, metadata_json)
+       VALUES (?,?,?,?,?,?)`
+    ).run(publicId, email, 'pending_payment', SHOP_CURRENCY, amountTotal, JSON.stringify({ source: 'shop' }));
+
+    const insertItem = db.prepare(
+      `INSERT INTO webshop_order_items
+       (order_id, product_id, product_name, quantity, unit_price, printful_variant_id)
+       VALUES (?,?,?,?,?,?)`
+    );
+    resolved.forEach(line => {
+      insertItem.run(orderInsert.lastInsertRowid, line.product.id, line.product.name, line.quantity, line.product.price_nok, line.product.printful_variant_id || null);
+    });
+
+    const stripeResponse = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${STRIPE_SECRET_KEY}`,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: new URLSearchParams({
+        mode: 'payment',
+        customer_email: email,
+        billing_address_collection: 'required',
+        'shipping_address_collection[allowed_countries][0]': 'NO',
+        'shipping_address_collection[allowed_countries][1]': 'SE',
+        'shipping_address_collection[allowed_countries][2]': 'DK',
+        'shipping_address_collection[allowed_countries][3]': 'FI',
+        success_url: `${SITE_URL}/shop?status=suksess&order=${publicId}`,
+        cancel_url: `${SITE_URL}/shop?status=avbrutt`,
+        'metadata[public_order_id]': publicId,
+        ...Object.fromEntries(resolved.flatMap((line, idx) => ([
+          [`line_items[${idx}][quantity]`, String(line.quantity)],
+          [`line_items[${idx}][price_data][currency]`, SHOP_CURRENCY],
+          [`line_items[${idx}][price_data][unit_amount]`, String(line.product.price_nok)],
+          [`line_items[${idx}][price_data][product_data][name]`, line.product.name]
+        ])))
+      })
+    });
+
+    const session = await stripeResponse.json();
+    if (!stripeResponse.ok) throw new Error(session?.error?.message || 'Kunne ikke opprette Stripe-checkout');
+
+
+
+
+    db.prepare('UPDATE webshop_orders SET stripe_session_id=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
+      .run(session.id, orderInsert.lastInsertRowid);
+
+    res.json({ checkout_url: session.url });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/webhooks/stripe', async (req, res) => {
+  try {
+    if (!STRIPE_WEBHOOK_SECRET) return res.status(503).json({ error: 'Stripe webhook er ikke konfigurert' });
+    const signature = String(req.headers['stripe-signature'] || '');
+    const raw = req.rawBody || JSON.stringify(req.body || {});
+    const parts = Object.fromEntries(signature.split(',').map(part => part.split('=').map(v => v.trim())).filter(part => part.length === 2));
+    if (!parts.t || !parts.v1) throw new Error('Manglende Stripe-signatur');
+    const signedPayload = `${parts.t}.${raw}`;
+    const expected = crypto.createHmac('sha256', STRIPE_WEBHOOK_SECRET).update(signedPayload).digest('hex');
+    if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(parts.v1))) throw new Error('Ugyldig Stripe-signatur');
+    const event = JSON.parse(raw);
+
+    db.prepare(
+      'INSERT OR IGNORE INTO webshop_webhook_events (provider, event_id, payload_json) VALUES (?,?,?)'
+    ).run('stripe', String(event.id || crypto.randomUUID()), JSON.stringify(event));
+
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object;
+      const publicId = session?.metadata?.public_order_id;
+      const order = db.prepare('SELECT * FROM webshop_orders WHERE public_id=? OR stripe_session_id=? LIMIT 1').get(publicId, session.id);
+      if (order) {
+        db.prepare(
+          `UPDATE webshop_orders
+           SET status='paid', stripe_payment_intent_id=?, full_name=?, shipping_json=?, updated_at=CURRENT_TIMESTAMP
+           WHERE id=?`
+        ).run(
+          String(session.payment_intent || ''),
+          String(session.customer_details?.name || ''),
+          JSON.stringify(session.shipping_details || {}),
+          order.id
+        );
+
+        try {
+          await createPrintfulOrderFromLocalOrder(order.id);
+        } catch (printfulErr) {
+          db.prepare(
+            `UPDATE webshop_orders
+             SET status='paid_printful_failed', metadata_json=?, updated_at=CURRENT_TIMESTAMP
+             WHERE id=?`
+          ).run(JSON.stringify({ printful_error: printfulErr.message }), order.id);
+        }
+      }
+    }
+
+    if (event.type === 'payment_intent.payment_failed') {
+      const paymentIntent = event.data.object;
+      db.prepare(
+        `UPDATE webshop_orders
+         SET status='payment_failed', updated_at=CURRENT_TIMESTAMP
+         WHERE stripe_payment_intent_id=?`
+      ).run(String(paymentIntent.id || ''));
+    }
+
+    res.json({ received: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.post('/api/webhooks/printful', (req, res) => {
+  try {
+    const signature = req.headers['x-printful-signature'] || req.headers['x-pf-signature'] || '';
+    if (!verifyPrintfulSignature(req.rawBody || JSON.stringify(req.body || {}), signature)) {
+      return res.status(401).json({ error: 'Ugyldig webhook-signatur fra Printful' });
+    }
+
+    const event = req.body || {};
+    const eventId = String(event.id || `${event.type || 'printful'}_${Date.now()}`);
+    db.prepare(
+      'INSERT OR IGNORE INTO webshop_webhook_events (provider, event_id, payload_json) VALUES (?,?,?)'
+    ).run('printful', eventId, JSON.stringify(event));
+
+    const result = event.result || {};
+    const externalId = String(result.external_id || event.external_id || '');
+    const status = String(result.status || event.type || 'updated');
+    const trackingNumber = String(result.shipments?.[0]?.tracking_number || result.tracking_number || '');
+    const trackingUrl = String(result.shipments?.[0]?.tracking_url || result.tracking_url || '');
+
+    if (externalId) {
+      db.prepare(
+        `UPDATE webshop_orders
+         SET printful_status=?, tracking_number=?, tracking_url=?,
+             status=CASE WHEN ? LIKE 'shipped%' THEN 'shipped' ELSE status END,
+             updated_at=CURRENT_TIMESTAMP
+         WHERE public_id=?`
+      ).run(status, trackingNumber, trackingUrl, status, externalId);
+    }
+
+    res.json({ received: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.get('/api/orders/:publicId', (req, res) => {
+  try {
+    const publicId = String(req.params.publicId || '').trim();
+    const order = db.prepare(
+      `SELECT public_id, email, full_name, status, amount_total, currency, printful_status,
+              tracking_number, tracking_url, created_at, updated_at
+       FROM webshop_orders
+       WHERE public_id=?`
+    ).get(publicId);
+
+    if (!order) return res.status(404).json({ error: 'Ordre ble ikke funnet' });
+
+    const items = db.prepare(
+      `SELECT product_name, quantity, unit_price
+       FROM webshop_order_items
+       WHERE order_id=(SELECT id FROM webshop_orders WHERE public_id=?)`
+    ).all(publicId);
+
+    res.json({
+      order: {
+        ...order,
+        amount_label: formatAmountNok(order.amount_total)
+      },
+      items
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 const server = app.listen(PORT, '0.0.0.0', () => {
