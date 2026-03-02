@@ -16,6 +16,7 @@ const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
 const PRINTFUL_API_TOKEN = process.env.PRINTFUL_API_TOKEN || process.env.PRINTFUL_API_KEY || '';
 const PRINTFUL_WEBHOOK_SECRET = process.env.PRINTFUL_WEBHOOK_SECRET || '';
+const ADMIN_API_KEY = process.env.ADMIN_API_KEY || process.env.ADMIN_TOKEN || '';
 const SHOP_CURRENCY = (process.env.SHOP_CURRENCY || 'nok').toLowerCase();
 
 
@@ -134,6 +135,75 @@ const requireTeam = (req, res, next) =>
 
 const requireAdmin = (req, res, next) =>
   req.session.isAdmin ? next() : res.status(401).json({ error: 'Admininnlogging påkrevd' });
+
+function isValidStripeSecretKey(value = '') {
+  return value.startsWith('sk_test_') || value.startsWith('sk_live_');
+}
+
+function isValidStripeWebhookSecret(value = '') {
+  return value.startsWith('whsec_');
+}
+
+function getMissingPrintfulLinkProducts() {
+  return db.prepare(
+    `SELECT id, slug, name
+     FROM webshop_products
+     WHERE is_active=1 AND (printful_variant_id IS NULL OR printful_variant_id='')
+     ORDER BY id ASC`
+  ).all();
+}
+
+function getCheckoutReadiness() {
+  const issues = [];
+  const stripeSecret = String(process.env.STRIPE_SECRET_KEY || '').trim();
+  const stripeWebhookSecret = String(process.env.STRIPE_WEBHOOK_SECRET || '').trim();
+  const printfulToken = String(process.env.PRINTFUL_API_TOKEN || process.env.PRINTFUL_API_KEY || '').trim();
+  const missingLinks = getMissingPrintfulLinkProducts();
+
+  if (!stripeSecret) {
+    issues.push({ code: 'MISSING_STRIPE_SECRET_KEY', message: 'STRIPE_SECRET_KEY mangler' });
+  } else if (!isValidStripeSecretKey(stripeSecret)) {
+    issues.push({ code: 'INVALID_STRIPE_SECRET_KEY_PREFIX', message: 'STRIPE_SECRET_KEY må starte med sk_test_ eller sk_live_' });
+  }
+
+  if (!stripeWebhookSecret) {
+    issues.push({ code: 'MISSING_STRIPE_WEBHOOK_SECRET', message: 'STRIPE_WEBHOOK_SECRET mangler' });
+  } else if (!isValidStripeWebhookSecret(stripeWebhookSecret)) {
+    issues.push({ code: 'INVALID_STRIPE_WEBHOOK_SECRET_PREFIX', message: 'STRIPE_WEBHOOK_SECRET må starte med whsec_' });
+  }
+
+  if (!printfulToken) {
+    issues.push({ code: 'MISSING_PRINTFUL_API_TOKEN', message: 'PRINTFUL_API_TOKEN mangler' });
+  }
+
+  if (missingLinks.length) {
+    issues.push({
+      code: 'MISSING_PRINTFUL_LINKS',
+      message: 'En eller flere aktive produkter mangler printful_variant_id',
+      meta: {
+        product_ids: missingLinks.map(p => p.id),
+        products: missingLinks.map(p => ({ id: p.id, slug: p.slug, name: p.name }))
+      }
+    });
+  }
+
+  return {
+    ready_for_checkout: issues.length === 0,
+    issues
+  };
+}
+
+function requireAdminForApi(req, res, next) {
+  if (req.session?.isAdmin) return next();
+  if (!ADMIN_API_KEY) return res.status(401).json({ error: 'Admininnlogging påkrevd' });
+
+  const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+  const fromHeader = String(req.headers['x-admin-token'] || req.headers['x-admin-api-key'] || '').trim();
+  const token = bearer || fromHeader;
+
+  if (token && token === ADMIN_API_KEY) return next();
+  return res.status(401).json({ error: 'Ugyldig admin-token' });
+}
 
 // ── Platform health checks ──────────────────────────────────────────────────
 app.get('/health', (req, res) => {
@@ -1681,9 +1751,112 @@ app.get('/api/shop/products', (req, res) => {
   }
 });
 
+app.get('/api/shop/config', (req, res) => {
+  try {
+    const readiness = getCheckoutReadiness();
+    res.json(readiness);
+  } catch (e) {
+    res.status(500).json({ ready_for_checkout: false, issues: [{ code: 'CONFIG_CHECK_FAILED', message: e.message }] });
+  }
+});
+
+app.get('/api/admin/shop/products/missing-printful', requireAdminForApi, (req, res) => {
+  try {
+    const products = getMissingPrintfulLinkProducts();
+    res.json({ products });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/admin/shop/products/:id/link-printful', requireAdminForApi, async (req, res) => {
+  try {
+    if (!PRINTFUL_API_TOKEN) return res.status(503).json({ error: 'PRINTFUL_API_TOKEN mangler på serveren' });
+
+    const productId = Number(req.params.id);
+    if (!productId) return res.status(400).json({ error: 'Ugyldig produkt-id' });
+
+    const product = db.prepare(
+      'SELECT id, slug, name, printful_variant_id, is_active FROM webshop_products WHERE id=? LIMIT 1'
+    ).get(productId);
+    if (!product) return res.status(404).json({ error: 'Produkt ikke funnet' });
+
+    const explicitVariantId = Number(req.body?.printful_variant_id || 0);
+    if (explicitVariantId) {
+      db.prepare('UPDATE webshop_products SET printful_variant_id=? WHERE id=?').run(explicitVariantId, product.id);
+      return res.json({
+        success: true,
+        product_id: product.id,
+        linked_variant_id: explicitVariantId,
+        source: 'manual'
+      });
+    }
+
+    const response = await fetch('https://api.printful.com/store/products', {
+      headers: { Authorization: `Bearer ${PRINTFUL_API_TOKEN}` }
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return res.status(502).json({ error: payload?.error?.message || 'Klarte ikke hente produkter fra Printful' });
+    }
+
+    const candidates = Array.isArray(payload?.result) ? payload.result : [];
+    const normalizedSlug = String(product.slug || '').toLowerCase();
+    const normalizedName = String(product.name || '').toLowerCase();
+    const matchedProduct = candidates.find(item => {
+      const printfulName = String(item?.name || '').toLowerCase();
+      const externalId = String(item?.external_id || '').toLowerCase();
+      return (
+        (normalizedSlug && externalId && externalId.includes(normalizedSlug)) ||
+        (normalizedSlug && printfulName.includes(normalizedSlug.replace(/-/g, ' '))) ||
+        (normalizedName && printfulName.includes(normalizedName))
+      );
+    });
+
+    if (!matchedProduct) {
+      return res.status(404).json({
+        error: 'Fant ingen matchende Printful-produkt. Send printful_variant_id i body for manuell kobling.'
+      });
+    }
+
+    const detailsResponse = await fetch(`https://api.printful.com/store/products/${matchedProduct.id}`, {
+      headers: { Authorization: `Bearer ${PRINTFUL_API_TOKEN}` }
+    });
+    const detailsPayload = await detailsResponse.json().catch(() => ({}));
+    if (!detailsResponse.ok) {
+      return res.status(502).json({ error: detailsPayload?.error?.message || 'Klarte ikke hente Printful-variantdetaljer' });
+    }
+
+    const variant = detailsPayload?.result?.sync_variants?.[0];
+    const variantId = Number(variant?.id || 0);
+    if (!variantId) {
+      return res.status(404).json({ error: 'Fant ingen sync_variant_id på valgt Printful-produkt' });
+    }
+
+    db.prepare('UPDATE webshop_products SET printful_variant_id=? WHERE id=?').run(variantId, product.id);
+
+    res.json({
+      success: true,
+      product_id: product.id,
+      linked_variant_id: variantId,
+      printful_product_id: matchedProduct.id,
+      printful_product_name: matchedProduct.name,
+      source: 'auto'
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.post('/api/checkout-session', async (req, res) => {
   try {
-    if (!STRIPE_SECRET_KEY) return res.status(503).json({ error: 'Stripe er ikke konfigurert på serveren' });
+    const readiness = getCheckoutReadiness();
+    if (!readiness.ready_for_checkout) {
+      return res.status(503).json({
+        error: 'Checkout er ikke klar. Se issues i /api/shop/config.',
+        issues: readiness.issues
+      });
+    }
 
     const email = String(req.body?.email || '').trim();
     const cart = Array.isArray(req.body?.items) ? req.body.items : [];
@@ -1702,6 +1875,11 @@ app.post('/api/checkout-session', async (req, res) => {
       const quantity = Math.max(1, Math.min(20, Number(line?.quantity || 1)));
       const product = productById.get(productId);
       if (!product) return res.status(400).json({ error: `Ugyldig produkt i kurv (${productId})` });
+      if (!product.printful_variant_id) {
+        return res.status(400).json({
+          error: `Produkt '${product.name}' (id: ${product.id}) mangler Printful-link (printful_variant_id)`
+        });
+      }
       resolved.push({ product, quantity });
     }
 

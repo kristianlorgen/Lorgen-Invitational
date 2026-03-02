@@ -31,6 +31,8 @@ npm start              # Runs on http://localhost:3000
 | `ADMIN_PASSWORD` | `LorgenAdmin2025` | Admin panel password |
 | `STRIPE_SECRET_KEY` | _(empty)_ | Required for Stripe checkout and some webshop routes |
 | `STRIPE_WEBHOOK_SECRET` | _(empty)_ | Required for verifying Stripe webhook signatures |
+| `PRINTFUL_API_TOKEN` | _(empty)_ | Required for creating Printful orders and product auto-linking |
+| `ADMIN_API_KEY` | _(empty)_ | Optional token for admin API/script auth (Bearer or x-admin-token) |
 
 ### Railway deploy-feil: `secret STRIPE_SECRET_KEY: not found`
 
@@ -53,6 +55,28 @@ Typiske årsaker når du "har lagt den inn" men build fortsatt feiler:
 Hvis du ikke skal bruke Stripe enda, kan du midlertidig sette en dummy-verdi for `STRIPE_SECRET_KEY` for å få builden videre, og aktivere ekte nøkkel senere.
 
 > Repoet inneholder nå også en `Dockerfile` som Railway kan bygge direkte. Det omgår Railpack sin secret-resolusjon i build-steget, så deploy blir mindre sårbar for denne feilen.
+
+
+## Checkout readiness
+
+Kjør readiness-sjekk lokalt (forventer at appen kjører):
+
+```bash
+npm run ready
+```
+
+Readiness sjekker:
+- lokale env vars (Stripe/Printful)
+- `GET /api/shop/config` for maskinlesbare issues
+- liste over aktive produkter som mangler Printful-link
+
+For batch-linking av alle manglende produkter:
+
+```bash
+ADMIN_API_KEY=<din-admin-nokkel> npm run link:printful -- --all-missing
+```
+
+> Scriptet bruker `/api/admin/shop/products/missing-printful` og `POST /api/admin/shop/products/:id/link-printful`.
 
 ## Tournament Day Flow
 
