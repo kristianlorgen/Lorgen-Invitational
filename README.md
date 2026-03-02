@@ -29,6 +29,28 @@ npm start              # Runs on http://localhost:3000
 | `PORT` | `3000` | Server port |
 | `SESSION_SECRET` | `lorgen-inv-secret` | Session encryption key |
 | `ADMIN_PASSWORD` | `LorgenAdmin2025` | Admin panel password |
+| `STRIPE_SECRET_KEY` | _(empty)_ | Required for Stripe checkout and some webshop routes |
+| `STRIPE_WEBHOOK_SECRET` | _(empty)_ | Required for verifying Stripe webhook signatures |
+
+### Railway deploy-feil: `secret STRIPE_SECRET_KEY: not found`
+
+Hvis deploy-loggen stopper med `failed to solve: secret STRIPE_SECRET_KEY: not found`, er det **som regel ikke app-koden**, men at builden ser etter en Railway-secret som ikke er tilgjengelig i akkurat den tjenesten/miljøet som bygges.
+
+Sjekk dette i rekkefølge:
+
+1. Gå til **Railway → riktig service → Variables** (ikke bare prosjekt-roten).
+2. Bekreft at miljøet øverst er riktig (f.eks. `production`, ikke `staging`).
+3. Verifiser at nøkkelen heter **eksakt** `STRIPE_SECRET_KEY` (ingen mellomrom, ingen små skrivefeil).
+4. Trigger en **ny deploy** etter at variabelen er lagret.
+5. Hvis feilen fortsatt er lik, sjekk om du har en egen build-secret/reference i Railway som peker til `STRIPE_SECRET_KEY` uten at den finnes i samme scope.
+
+Typiske årsaker når du "har lagt den inn" men build fortsatt feiler:
+- variabelen er lagt på feil service
+- variabelen er lagt i feil environment
+- navnet matcher ikke 100% (`STRIPE_SECRET_KEY`)
+- deployen du ser på startet før variabelen ble lagret
+
+Hvis du ikke skal bruke Stripe enda, kan du midlertidig sette en dummy-verdi for `STRIPE_SECRET_KEY` for å få builden videre, og aktivere ekte nøkkel senere.
 
 ## Tournament Day Flow
 
