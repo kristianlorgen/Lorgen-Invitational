@@ -1,11 +1,81 @@
-const Database = require('better-sqlite3');
+const { DatabaseSync } = require('node:sqlite');
 const fs = require('fs');
 
 if (!fs.existsSync('./data')) {
   fs.mkdirSync('./data', { recursive: true });
 }
 
-const db = new Database('./data/tournament.db');
+function normalizeParams(params) {
+  if (params.length === 0) return [];
+  if (params.length === 1 && Array.isArray(params[0])) return params[0];
+  if (params.length === 1 && params[0] && typeof params[0] === 'object' && !Array.isArray(params[0])) return params[0];
+  return params;
+}
+
+class StatementCompat {
+  constructor(stmt) {
+    this.stmt = stmt;
+  }
+
+  run(...params) {
+    return this.stmt.run(normalizeParams(params));
+  }
+
+  get(...params) {
+    return this.stmt.get(normalizeParams(params));
+  }
+
+  all(...params) {
+    return this.stmt.all(normalizeParams(params));
+  }
+}
+
+class DatabaseCompat {
+  constructor(path) {
+    this.db = new DatabaseSync(path);
+    this.transactionDepth = 0;
+  }
+
+  exec(sql) {
+    return this.db.exec(sql);
+  }
+
+  pragma(statement) {
+    const value = statement.trim().replace(/;$/, '');
+    return this.db.exec(`PRAGMA ${value}`);
+  }
+
+  prepare(sql) {
+    return new StatementCompat(this.db.prepare(sql));
+  }
+
+  transaction(fn) {
+    return (...args) => {
+      const nested = this.transactionDepth > 0;
+      const savepoint = `sp_${this.transactionDepth + 1}`;
+      this.transactionDepth += 1;
+      try {
+        if (nested) this.db.exec(`SAVEPOINT ${savepoint}`);
+        else this.db.exec('BEGIN');
+
+        const result = fn(...args);
+
+        if (nested) this.db.exec(`RELEASE SAVEPOINT ${savepoint}`);
+        else this.db.exec('COMMIT');
+
+        return result;
+      } catch (err) {
+        if (nested) this.db.exec(`ROLLBACK TO SAVEPOINT ${savepoint}`);
+        else this.db.exec('ROLLBACK');
+        throw err;
+      } finally {
+        this.transactionDepth -= 1;
+      }
+    };
+  }
+}
+
+const db = new DatabaseCompat('./data/tournament.db');
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 

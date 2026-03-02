@@ -93,7 +93,7 @@ ADMIN_API_KEY=<din-admin-nokkel> npm run link:printful -- --all-missing
 ## Tech Stack
 
 - **Backend**: Node.js + Express
-- **Database**: SQLite (better-sqlite3)
+- **Database**: SQLite (node:sqlite)
 - **Live Updates**: Server-Sent Events (SSE)
 - **File Uploads**: Multer
 - **Auth**: Express-session (PIN for teams, password for admin)
