@@ -52,6 +52,8 @@ Typiske årsaker når du "har lagt den inn" men build fortsatt feiler:
 
 Hvis du ikke skal bruke Stripe enda, kan du midlertidig sette en dummy-verdi for `STRIPE_SECRET_KEY` for å få builden videre, og aktivere ekte nøkkel senere.
 
+> Repoet inneholder nå også en `Dockerfile` som Railway kan bygge direkte. Det omgår Railpack sin secret-resolusjon i build-steget, så deploy blir mindre sårbar for denne feilen.
+
 ## Tournament Day Flow
 
 1. **Admin** creates the tournament (name, date, course)
