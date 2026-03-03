@@ -22,35 +22,74 @@ const SHOP_CURRENCY = (process.env.SHOP_CURRENCY || 'nok').toLowerCase();
 const SUPABASE_URL = String(process.env.SUPABASE_URL || '').trim();
 const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
 
-function getSupabaseConfigIssue() {
-  if (!SUPABASE_URL) {
-    return {
-      code: 'MISSING_SUPABASE_URL',
-      message: 'SUPABASE_URL mangler'
-    };
+function maskSupabaseUrl(rawUrl = '') {
+  if (!rawUrl) return null;
+  try {
+    const parsed = new URL(rawUrl);
+    return `${parsed.hostname}...`;
+  } catch (_) {
+    return 'invalid_url...';
   }
-  if (SUPABASE_URL.includes('your-project-ref')) {
-    return {
-      code: 'INVALID_SUPABASE_URL',
-      message: 'SUPABASE_URL er ugyldig (inneholder your-project-ref placeholder)'
-    };
-  }
-  return null;
 }
 
-const supabaseConfigIssue = getSupabaseConfigIssue();
+function validateSupabaseEnv() {
+  if (!SUPABASE_URL) {
+    throw new Error('Missing SUPABASE_URL');
+  }
+  if (!SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY');
+  }
+  if (SUPABASE_URL.includes('your-project-ref')) {
+    throw new Error('SUPABASE_URL still placeholder');
+  }
+}
 
-if (supabaseConfigIssue) {
-  console.error('[config] Supabase URL invalid:', {
-    code: supabaseConfigIssue.code,
-    message: supabaseConfigIssue.message,
-    value: SUPABASE_URL || '(empty)'
+function createSupabaseClientFromEnv() {
+  validateSupabaseEnv();
+  const maskedUrl = maskSupabaseUrl(SUPABASE_URL);
+  console.log('[config] Supabase URL host:', maskedUrl);
+  return {
+    client: createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } }),
+    urlHost: (() => {
+      try {
+        return new URL(SUPABASE_URL).hostname;
+      } catch (_) {
+        return null;
+      }
+    })(),
+    initError: null
+  };
+}
+
+function toSupabaseConfigIssue(error) {
+  switch (error?.message) {
+    case 'Missing SUPABASE_URL':
+      return { code: 'MISSING_SUPABASE_URL', message: 'SUPABASE_URL mangler' };
+    case 'Missing SUPABASE_SERVICE_ROLE_KEY':
+      return { code: 'MISSING_SUPABASE_SERVICE_ROLE_KEY', message: 'SUPABASE_SERVICE_ROLE_KEY mangler' };
+    case 'SUPABASE_URL still placeholder':
+      return { code: 'INVALID_SUPABASE_URL', message: 'SUPABASE_URL er ugyldig (inneholder your-project-ref placeholder)' };
+    default:
+      return { code: 'SUPABASE_CONFIG_ERROR', message: error?.message || 'Ukjent Supabase-konfigurasjonsfeil' };
+  }
+}
+
+let supabaseClient = null;
+let supabaseUrlHost = null;
+let supabaseInitError = null;
+try {
+  const supabaseConfig = createSupabaseClientFromEnv();
+  supabaseClient = supabaseConfig.client;
+  supabaseUrlHost = supabaseConfig.urlHost;
+} catch (error) {
+  supabaseInitError = error;
+  console.error('[config] Supabase init failed:', {
+    message: error?.message || error,
+    masked_url: maskSupabaseUrl(SUPABASE_URL)
   });
 }
 
-const supabase = (!supabaseConfigIssue && SUPABASE_SERVICE_ROLE_KEY)
-  ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } })
-  : null;
+const supabase = supabaseClient;
 
 
 const allowedImageExtensions = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.heic', '.heif', '.avif']);
@@ -145,7 +184,11 @@ app.get('/health', (req, res) => {
 });
 
 app.get('/api/health', (req, res) => {
-  res.status(200).json({ status: 'ok' });
+  res.status(200).json({
+    ok: true,
+    supabase_configured: Boolean(supabase),
+    supabase_url_host: supabaseUrlHost
+  });
 });
 
 let sessionStore;
@@ -194,11 +237,8 @@ async function getCheckoutReadiness() {
   const stripeSecret = String(process.env.STRIPE_SECRET_KEY || '').trim();
   const stripeWebhookSecret = String(process.env.STRIPE_WEBHOOK_SECRET || '').trim();
   const printfulToken = String(process.env.PRINTFUL_API_TOKEN || process.env.PRINTFUL_API_KEY || '').trim();
-  if (supabaseConfigIssue) {
-    issues.push(supabaseConfigIssue);
-  }
-  if (!SUPABASE_SERVICE_ROLE_KEY) {
-    issues.push({ code: 'MISSING_SUPABASE_SERVICE_ROLE_KEY', message: 'SUPABASE_SERVICE_ROLE_KEY mangler' });
+  if (supabaseInitError) {
+    issues.push(toSupabaseConfigIssue(supabaseInitError));
   }
   if (!supabase) {
     return { ready_for_checkout: false, issues };
@@ -1950,15 +1990,10 @@ app.get('/shop', (req, res) => {
 
 async function handleShopProducts(req, res) {
   if (!supabase) {
-    console.error('[shop/products] Supabase URL invalid');
-    return res.status(200).json({
-      products: getStoredShopProducts(),
-      currency: SHOP_CURRENCY || 'nok',
-      printful_sync: { last_error: null, last_synced_at: null },
-      issues: supabaseConfigIssue
-        ? [supabaseConfigIssue]
-        : [{ code: 'MISSING_SUPABASE_SERVICE_ROLE_KEY', message: 'SUPABASE_SERVICE_ROLE_KEY mangler' }]
+    console.error('[shop/products] Supabase client could not initialize:', {
+      message: supabaseInitError?.message || 'unknown_config_error'
     });
+    return res.status(500).json({ error: 'supabase_not_configured' });
   }
 
   console.log('[shop/products] Henter produkter fra Supabase');
@@ -1973,7 +2008,9 @@ async function handleShopProducts(req, res) {
       message: syncErrorMessage,
       cause: syncErr?.cause || null
     });
-    await writePrintfulSyncState({ last_error: syncErrorMessage, last_synced_at: null });
+    if (supabase) {
+      await writePrintfulSyncState({ last_error: syncErrorMessage, last_synced_at: null });
+    }
   }
 
   try {
