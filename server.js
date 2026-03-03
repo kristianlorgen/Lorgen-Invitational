@@ -22,7 +22,33 @@ const SHOP_CURRENCY = (process.env.SHOP_CURRENCY || 'nok').toLowerCase();
 const SUPABASE_URL = String(process.env.SUPABASE_URL || '').trim();
 const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
 
-const supabase = (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY)
+function getSupabaseConfigIssue() {
+  if (!SUPABASE_URL) {
+    return {
+      code: 'MISSING_SUPABASE_URL',
+      message: 'SUPABASE_URL mangler'
+    };
+  }
+  if (SUPABASE_URL.includes('your-project-ref')) {
+    return {
+      code: 'INVALID_SUPABASE_URL',
+      message: 'SUPABASE_URL er ugyldig (inneholder your-project-ref placeholder)'
+    };
+  }
+  return null;
+}
+
+const supabaseConfigIssue = getSupabaseConfigIssue();
+
+if (supabaseConfigIssue) {
+  console.error('[config] Supabase URL invalid:', {
+    code: supabaseConfigIssue.code,
+    message: supabaseConfigIssue.message,
+    value: SUPABASE_URL || '(empty)'
+  });
+}
+
+const supabase = (!supabaseConfigIssue && SUPABASE_SERVICE_ROLE_KEY)
   ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } })
   : null;
 
@@ -168,8 +194,13 @@ async function getCheckoutReadiness() {
   const stripeSecret = String(process.env.STRIPE_SECRET_KEY || '').trim();
   const stripeWebhookSecret = String(process.env.STRIPE_WEBHOOK_SECRET || '').trim();
   const printfulToken = String(process.env.PRINTFUL_API_TOKEN || process.env.PRINTFUL_API_KEY || '').trim();
+  if (supabaseConfigIssue) {
+    issues.push(supabaseConfigIssue);
+  }
+  if (!SUPABASE_SERVICE_ROLE_KEY) {
+    issues.push({ code: 'MISSING_SUPABASE_SERVICE_ROLE_KEY', message: 'SUPABASE_SERVICE_ROLE_KEY mangler' });
+  }
   if (!supabase) {
-    issues.push({ code: 'MISSING_SUPABASE', message: 'SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY mangler' });
     return { ready_for_checkout: false, issues };
   }
   const missingLinks = await getMissingPrintfulLinkProducts();
@@ -429,6 +460,32 @@ function syncScorePhotoToGallery({ tournamentId, scoreId, photoPath }) {
   db.prepare(
     'INSERT INTO gallery_photos (tournament_id, photo_path, caption) VALUES (?,?,?)'
   ).run(tournamentId, photoPath, `score:${scoreId}`);
+}
+
+function getStoredShopProducts() {
+  try {
+    const rows = db.prepare(
+      `SELECT id, name, image_url, price_nok, currency, printful_variant_id
+       FROM webshop_products
+       WHERE is_active=1
+       ORDER BY id ASC`
+    ).all();
+
+    return rows.map(row => ({
+      id: row.id,
+      name: row.name,
+      price: Number(row.price_nok || 0),
+      image_url: row.image_url || '',
+      active: true,
+      printful_variant_id: row.printful_variant_id ? String(row.printful_variant_id) : null,
+      printful_product_id: null,
+      source: 'sqlite_fallback',
+      currency: String(row.currency || SHOP_CURRENCY || 'nok').toLowerCase()
+    }));
+  } catch (err) {
+    console.error('[shop/products] Kunne ikke hente fallback-produkter fra sqlite:', err?.message || err);
+    return [];
+  }
 }
 
 function rebuildPhotoDatabase(tournamentId = null) {
@@ -1893,7 +1950,15 @@ app.get('/shop', (req, res) => {
 
 async function handleShopProducts(req, res) {
   if (!supabase) {
-    return res.status(500).json({ error: 'Supabase er ikke konfigurert for shop' });
+    console.error('[shop/products] Supabase URL invalid');
+    return res.status(200).json({
+      products: getStoredShopProducts(),
+      currency: SHOP_CURRENCY || 'nok',
+      printful_sync: { last_error: null, last_synced_at: null },
+      issues: supabaseConfigIssue
+        ? [supabaseConfigIssue]
+        : [{ code: 'MISSING_SUPABASE_SERVICE_ROLE_KEY', message: 'SUPABASE_SERVICE_ROLE_KEY mangler' }]
+    });
   }
 
   console.log('[shop/products] Henter produkter fra Supabase');
@@ -1911,30 +1976,39 @@ async function handleShopProducts(req, res) {
     await writePrintfulSyncState({ last_error: syncErrorMessage, last_synced_at: null });
   }
 
-  const { data: products, error } = await supabase
-    .from('products')
-    .select('id,name,price,image_url,active,printful_variant_id,printful_product_id')
-    .eq('active', true)
-    .order('id', { ascending: true });
+  try {
+    const { data: products, error } = await supabase
+      .from('products')
+      .select('id,name,price,image_url,active,printful_variant_id,printful_product_id')
+      .eq('active', true)
+      .order('id', { ascending: true });
 
-  if (error) {
-    console.error('[shop/products] Supabase products query feilet:', {
-      message: error.message,
-      details: error.details,
-      hint: error.hint,
-      code: error.code
+    if (error) throw error;
+
+    const printfulSync = await readPrintfulSyncState();
+    console.log('[shop/products] Returnerer aktive produkter:', (products || []).length);
+
+    return res.status(200).json({
+      products: products || [],
+      currency: SHOP_CURRENCY || 'nok',
+      printful_sync: printfulSync
     });
-    return res.status(500).json({ error: error.message });
+  } catch (error) {
+    console.error('[shop/products] Supabase URL invalid');
+    console.error('[shop/products] Supabase products query feilet, bruker lagrede produkter:', {
+      message: error?.message,
+      details: error?.details,
+      hint: error?.hint,
+      code: error?.code
+    });
+
+    return res.status(200).json({
+      products: getStoredShopProducts(),
+      currency: SHOP_CURRENCY || 'nok',
+      printful_sync: await readPrintfulSyncState(),
+      issues: [{ code: 'SUPABASE_UNAVAILABLE', message: 'Supabase utilgjengelig, bruker lagrede produkter' }]
+    });
   }
-
-  const printfulSync = await readPrintfulSyncState();
-  console.log('[shop/products] Returnerer aktive produkter:', (products || []).length);
-
-  return res.status(200).json({
-    products: products || [],
-    currency: 'nok',
-    printful_sync: printfulSync
-  });
 }
 
 app.get('/api/shop/products', handleShopProducts);
