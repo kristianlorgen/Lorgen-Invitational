@@ -22,6 +22,24 @@ const SHOP_CURRENCY = (process.env.SHOP_CURRENCY || 'nok').toLowerCase();
 const SUPABASE_URL = String(process.env.SUPABASE_URL || '').trim();
 const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
 
+try {
+  const parsedSupabaseUrl = new URL(SUPABASE_URL);
+  const hostname = parsedSupabaseUrl.hostname || '';
+  const hostnameCharcodes = Array.from(hostname).map(char => char.charCodeAt(0));
+  console.log('[config] Supabase URL debug:', {
+    hostname,
+    hostname_charcodes: hostnameCharcodes,
+    url_length: SUPABASE_URL.length
+  });
+} catch (_) {
+  console.log('[config] Supabase URL debug:', {
+    hostname: null,
+    hostname_charcodes: [],
+    url_length: SUPABASE_URL.length,
+    parse_error: 'invalid_url'
+  });
+}
+
 function maskSupabaseUrl(rawUrl = '') {
   if (!rawUrl) return null;
   try {
@@ -373,40 +391,49 @@ let lastPrintfulSyncAt = 0;
 let lastPrintfulSyncError = '';
 
 async function readPrintfulSyncState() {
-  if (!supabase) return { last_error: null, last_synced_at: null };
-  const { data, error } = await supabase
-    .from('shop_sync_state')
-    .select('last_error,last_synced_at')
-    .eq('key', 'printful')
-    .maybeSingle();
+  try {
+    if (!supabase) return { last_error: null, last_synced_at: null };
+    const { data, error } = await supabase
+      .from('shop_sync_state')
+      .select('last_error,last_synced_at')
+      .eq('key', 'printful')
+      .maybeSingle();
 
-  if (error) {
-    console.error('[shop_sync_state] read feilet:', error.message);
+    if (error) {
+      console.error('[shop_sync_state] read feilet:', error.message);
+      return { last_error: 'Kunne ikke lese sync-state', last_synced_at: null };
+    }
+
+    return {
+      last_error: data?.last_error || null,
+      last_synced_at: data?.last_synced_at || null
+    };
+  } catch (error) {
+    console.error('[shop_sync_state] read exception:', error?.message || error);
     return { last_error: 'Kunne ikke lese sync-state', last_synced_at: null };
   }
-
-  return {
-    last_error: data?.last_error || null,
-    last_synced_at: data?.last_synced_at || null
-  };
 }
 
 async function writePrintfulSyncState({ last_error = null, last_synced_at = null }) {
-  if (!supabase) return;
-  const { error } = await supabase
-    .from('shop_sync_state')
-    .upsert({ key: 'printful', last_error, last_synced_at }, { onConflict: 'key' });
+  try {
+    if (!supabase) return;
+    const { error } = await supabase
+      .from('shop_sync_state')
+      .upsert({ key: 'printful', last_error, last_synced_at }, { onConflict: 'key' });
 
-  if (error) {
-    console.error('[shop_sync_state] write feilet:', error.message);
-    return;
+    if (error) {
+      console.error('[shop_sync_state] write feilet:', error.message);
+      return;
+    }
+
+    console.log('[shop_sync_state] oppdatert:', {
+      key: 'printful',
+      has_error: Boolean(last_error),
+      last_synced_at
+    });
+  } catch (error) {
+    console.error('[shop_sync_state] write exception:', error?.message || error);
   }
-
-  console.log('[shop_sync_state] oppdatert:', {
-    key: 'printful',
-    has_error: Boolean(last_error),
-    last_synced_at
-  });
 }
 
 async function fetchPrintfulJson(url) {
@@ -1993,7 +2020,12 @@ async function handleShopProducts(req, res) {
     console.error('[shop/products] Supabase client could not initialize:', {
       message: supabaseInitError?.message || 'unknown_config_error'
     });
-    return res.status(500).json({ error: 'supabase_not_configured' });
+    return res.status(200).json({
+      products: getStoredShopProducts(),
+      currency: SHOP_CURRENCY || 'nok',
+      printful_sync: await readPrintfulSyncState(),
+      issues: [{ code: 'SUPABASE_UNAVAILABLE', message: 'Supabase utilgjengelig, bruker lagrede produkter' }]
+    });
   }
 
   console.log('[shop/products] Henter produkter fra Supabase');
@@ -2009,7 +2041,7 @@ async function handleShopProducts(req, res) {
       cause: syncErr?.cause || null
     });
     if (supabase) {
-      await writePrintfulSyncState({ last_error: syncErrorMessage, last_synced_at: null });
+      void writePrintfulSyncState({ last_error: syncErrorMessage, last_synced_at: null });
     }
   }
 
