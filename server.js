@@ -20,28 +20,10 @@ const PRINTFUL_API_TOKEN = process.env.PRINTFUL_API_TOKEN || process.env.PRINTFU
 const PRINTFUL_WEBHOOK_SECRET = process.env.PRINTFUL_WEBHOOK_SECRET || '';
 const ADMIN_API_KEY = process.env.ADMIN_API_KEY || process.env.ADMIN_TOKEN || '';
 const SHOP_CURRENCY = (process.env.SHOP_CURRENCY || 'nok').toLowerCase();
-const SUPABASE_URL = String(process.env.SUPABASE_URL || '').trim();
+const RAW_SUPABASE_URL = String(process.env.SUPABASE_URL || '');
 const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
 
-try {
-  const parsedSupabaseUrl = new URL(SUPABASE_URL);
-  const hostname = parsedSupabaseUrl.hostname || '';
-  const hostnameCharcodes = Array.from(hostname).map(char => char.charCodeAt(0));
-  console.log('[config] Supabase URL debug:', {
-    hostname,
-    hostname_charcodes: hostnameCharcodes,
-    url_length: SUPABASE_URL.length
-  });
-} catch (_) {
-  console.log('[config] Supabase URL debug:', {
-    hostname: null,
-    hostname_charcodes: [],
-    url_length: SUPABASE_URL.length,
-    parse_error: 'invalid_url'
-  });
-}
-
-function maskSupabaseUrl(rawUrl = '') {
+function maskSupabaseUrl(rawUrl = null) {
   if (!rawUrl) return null;
   try {
     const parsed = new URL(rawUrl);
@@ -51,27 +33,57 @@ function maskSupabaseUrl(rawUrl = '') {
   }
 }
 
-function validateSupabaseEnv() {
-  if (!SUPABASE_URL) {
+function normalizeSupabaseUrl(raw) {
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) {
+    return {
+      url: null,
+      issue: { code: 'MISSING_SUPABASE_URL', message: 'SUPABASE_URL mangler' }
+    };
+  }
+
+  const prefixed = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  let parsed;
+
+  try {
+    parsed = new URL(prefixed);
+  } catch (_) {
+    return {
+      url: null,
+      issue: { code: 'INVALID_SUPABASE_URL', message: 'SUPABASE_URL kan ikke parses som gyldig URL' }
+    };
+  }
+
+  const hostname = String(parsed.hostname || '').toLowerCase();
+  if (!hostname || !hostname.endsWith('.supabase.co')) {
+    return {
+      url: null,
+      issue: { code: 'INVALID_SUPABASE_HOSTNAME', message: 'SUPABASE_URL må peke til *.supabase.co' }
+    };
+  }
+
+  const normalized = `${parsed.protocol}//${hostname}${parsed.port ? `:${parsed.port}` : ''}`;
+  return { url: normalized, issue: null };
+}
+
+function createSupabaseClientFromEnv(normalizedSupabaseUrl) {
+  if (!normalizedSupabaseUrl) {
     throw new Error('Missing SUPABASE_URL');
   }
   if (!SUPABASE_SERVICE_ROLE_KEY) {
     throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY');
   }
-  if (SUPABASE_URL.includes('your-project-ref')) {
+  if (normalizedSupabaseUrl.includes('your-project-ref')) {
     throw new Error('SUPABASE_URL still placeholder');
   }
-}
 
-function createSupabaseClientFromEnv() {
-  validateSupabaseEnv();
-  const maskedUrl = maskSupabaseUrl(SUPABASE_URL);
+  const maskedUrl = maskSupabaseUrl(normalizedSupabaseUrl);
   console.log('[config] Supabase URL host:', maskedUrl);
   return {
-    client: createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } }),
+    client: createClient(normalizedSupabaseUrl, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } }),
     urlHost: (() => {
       try {
-        return new URL(SUPABASE_URL).hostname;
+        return new URL(normalizedSupabaseUrl).hostname;
       } catch (_) {
         return null;
       }
@@ -81,6 +93,9 @@ function createSupabaseClientFromEnv() {
 }
 
 function toSupabaseConfigIssue(error) {
+  if (error?.code && error?.message) {
+    return { code: error.code, message: error.message };
+  }
   switch (error?.message) {
     case 'Missing SUPABASE_URL':
       return { code: 'MISSING_SUPABASE_URL', message: 'SUPABASE_URL mangler' };
@@ -95,6 +110,14 @@ function toSupabaseConfigIssue(error) {
 
 function toSupabaseRuntimeIssue(error) {
   const rootCauseCode = error?.cause?.code || error?.code || null;
+  const rootMessage = String(error?.message || '').toLowerCase();
+
+  if (rootMessage.includes('failed to parse url') || rootMessage.includes('invalid url')) {
+    return {
+      code: 'SUPABASE_INVALID_URL',
+      message: 'Supabase-URL er ugyldig (Failed to parse URL)'
+    };
+  }
 
   if (rootCauseCode === 'ENOTFOUND') {
     return {
@@ -147,15 +170,30 @@ async function verifySupabaseDnsHost() {
 let supabaseClient = null;
 let supabaseUrlHost = null;
 let supabaseInitError = null;
+let supabaseConfigIssue = null;
+let normalizedSupabaseUrl = null;
+
+const normalizedSupabase = normalizeSupabaseUrl(RAW_SUPABASE_URL);
+normalizedSupabaseUrl = normalizedSupabase.url;
+supabaseConfigIssue = normalizedSupabase.issue;
+
+console.log('[config] Supabase URL status:', {
+  valid: Boolean(normalizedSupabaseUrl),
+  host: maskSupabaseUrl(normalizedSupabaseUrl),
+  has_issue: Boolean(supabaseConfigIssue)
+});
+
 try {
-  const supabaseConfig = createSupabaseClientFromEnv();
-  supabaseClient = supabaseConfig.client;
-  supabaseUrlHost = supabaseConfig.urlHost;
+  if (!supabaseConfigIssue) {
+    const supabaseConfig = createSupabaseClientFromEnv(normalizedSupabaseUrl);
+    supabaseClient = supabaseConfig.client;
+    supabaseUrlHost = supabaseConfig.urlHost;
+  }
 } catch (error) {
   supabaseInitError = error;
   console.error('[config] Supabase init failed:', {
     message: error?.message || error,
-    masked_url: maskSupabaseUrl(SUPABASE_URL)
+    masked_url: maskSupabaseUrl(normalizedSupabaseUrl)
   });
 }
 
@@ -309,6 +347,9 @@ async function getCheckoutReadiness() {
   const stripeSecret = String(process.env.STRIPE_SECRET_KEY || '').trim();
   const stripeWebhookSecret = String(process.env.STRIPE_WEBHOOK_SECRET || '').trim();
   const printfulToken = String(process.env.PRINTFUL_API_TOKEN || process.env.PRINTFUL_API_KEY || '').trim();
+  if (supabaseConfigIssue) {
+    issues.push(toSupabaseConfigIssue(supabaseConfigIssue));
+  }
   if (supabaseInitError) {
     issues.push(toSupabaseConfigIssue(supabaseInitError));
   }
@@ -444,6 +485,17 @@ const PRINTFUL_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 let lastPrintfulSyncAt = 0;
 let lastPrintfulSyncError = '';
 
+function isSupabaseNonFatalError(error) {
+  const issue = toSupabaseRuntimeIssue(error);
+  return ['SUPABASE_INVALID_URL', 'SUPABASE_DNS_LOOKUP_FAILED', 'SUPABASE_FETCH_FAILED'].includes(issue.code);
+}
+
+function logSupabaseIoFailure(scope, error) {
+  const issue = toSupabaseRuntimeIssue(error);
+  const level = isSupabaseNonFatalError(error) ? 'warn' : 'error';
+  console[level](`[${scope}] Supabase utilgjengelig (${issue.code})`);
+}
+
 async function readPrintfulSyncState() {
   try {
     if (!supabase) return { last_error: null, last_synced_at: null };
@@ -454,7 +506,7 @@ async function readPrintfulSyncState() {
       .maybeSingle();
 
     if (error) {
-      console.error('[shop_sync_state] read feilet:', error.message);
+      logSupabaseIoFailure('shop_sync_state/read', error);
       return { last_error: 'Kunne ikke lese sync-state', last_synced_at: null };
     }
 
@@ -463,7 +515,7 @@ async function readPrintfulSyncState() {
       last_synced_at: data?.last_synced_at || null
     };
   } catch (error) {
-    console.error('[shop_sync_state] read exception:', error?.message || error);
+    logSupabaseIoFailure('shop_sync_state/read', error);
     return { last_error: 'Kunne ikke lese sync-state', last_synced_at: null };
   }
 }
@@ -476,7 +528,7 @@ async function writePrintfulSyncState({ last_error = null, last_synced_at = null
       .upsert({ key: 'printful', last_error, last_synced_at }, { onConflict: 'key' });
 
     if (error) {
-      console.error('[shop_sync_state] write feilet:', error.message);
+      logSupabaseIoFailure('shop_sync_state/write', error);
       return;
     }
 
@@ -486,7 +538,7 @@ async function writePrintfulSyncState({ last_error = null, last_synced_at = null
       last_synced_at
     });
   } catch (error) {
-    console.error('[shop_sync_state] write exception:', error?.message || error);
+    logSupabaseIoFailure('shop_sync_state/write', error);
   }
 }
 
@@ -2070,36 +2122,36 @@ app.get('/shop', (req, res) => {
 });
 
 async function handleShopProducts(req, res) {
-  if (!supabase) {
-    console.error('[shop/products] Supabase client could not initialize:', {
-      message: supabaseInitError?.message || 'unknown_config_error'
-    });
-    return res.status(200).json({
-      products: getStoredShopProducts(),
-      currency: SHOP_CURRENCY || 'nok',
-      printful_sync: await readPrintfulSyncState(),
-      issues: [{ code: 'SUPABASE_UNAVAILABLE', message: 'Supabase utilgjengelig, bruker lagrede produkter' }]
-    });
-  }
-
-  console.log('[shop/products] Henter produkter fra Supabase');
+  const issues = [];
 
   try {
-    await syncPrintfulProductsFromApi();
-  } catch (syncErr) {
-    const syncErrorMessage = syncErr?.message || 'Ukjent Printful sync-feil';
-    lastPrintfulSyncError = syncErrorMessage;
-    console.error('[shop/products] Printful sync feilet, fortsetter med lagrede produkter:', {
-      name: syncErr?.name || null,
-      message: syncErrorMessage,
-      cause: syncErr?.cause || null
-    });
-    if (supabase) {
+    if (!supabase) {
+      if (supabaseConfigIssue) issues.push(toSupabaseConfigIssue(supabaseConfigIssue));
+      if (supabaseInitError) issues.push(toSupabaseConfigIssue(supabaseInitError));
+      if (!issues.length) {
+        issues.push({ code: 'SUPABASE_UNAVAILABLE', message: 'Supabase utilgjengelig, bruker lagrede produkter' });
+      }
+
+      return res.status(200).json({
+        products: getStoredShopProducts(),
+        currency: SHOP_CURRENCY || 'nok',
+        printful_sync: await readPrintfulSyncState(),
+        issues
+      });
+    }
+
+    console.log('[shop/products] Henter produkter fra Supabase');
+
+    try {
+      await syncPrintfulProductsFromApi();
+    } catch (syncErr) {
+      const syncErrorMessage = syncErr?.message || 'Ukjent Printful sync-feil';
+      lastPrintfulSyncError = syncErrorMessage;
+      issues.push({ code: 'PRINTFUL_SYNC_FAILED', message: syncErrorMessage });
+      console.error('[shop/products] Printful sync feilet, fortsetter med lagrede produkter');
       void writePrintfulSyncState({ last_error: syncErrorMessage, last_synced_at: null });
     }
-  }
 
-  try {
     const { data: products, error } = await supabase
       .from('products')
       .select('id,name,price,image_url,active,printful_variant_id,printful_product_id')
@@ -2109,30 +2161,22 @@ async function handleShopProducts(req, res) {
     if (error) throw error;
 
     const printfulSync = await readPrintfulSyncState();
-    console.log('[shop/products] Returnerer aktive produkter:', (products || []).length);
-
     return res.status(200).json({
       products: products || [],
       currency: SHOP_CURRENCY || 'nok',
-      printful_sync: printfulSync
+      printful_sync: printfulSync,
+      ...(issues.length ? { issues } : {})
     });
   } catch (error) {
     const runtimeIssue = toSupabaseRuntimeIssue(error);
-    console.error('[shop/products] Supabase products query feilet, bruker lagrede produkter:', {
-      issue_code: runtimeIssue.code,
-      issue_message: runtimeIssue.message,
-      message: error?.message,
-      details: error?.details,
-      hint: error?.hint,
-      code: error?.code,
-      cause: error?.cause || null
-    });
+    issues.push(runtimeIssue);
+    console.error('[shop/products] Supabase query feilet, bruker sqlite fallback:', { issue_code: runtimeIssue.code });
 
     return res.status(200).json({
       products: getStoredShopProducts(),
       currency: SHOP_CURRENCY || 'nok',
       printful_sync: await readPrintfulSyncState(),
-      issues: [runtimeIssue]
+      issues
     });
   }
 }
@@ -2143,9 +2187,35 @@ app.get('/apl/shop/products', handleShopProducts);
 app.get('/api/shop/config', async (req, res) => {
   try {
     const readiness = await getCheckoutReadiness();
-    res.json(readiness);
+    const issues = [...(readiness.issues || [])];
+    if (supabaseConfigIssue) issues.push(toSupabaseConfigIssue(supabaseConfigIssue));
+    if (supabaseInitError) issues.push(toSupabaseConfigIssue(supabaseInitError));
+
+    const uniqueIssues = issues.filter((issue, idx, arr) => idx === arr.findIndex(i => i.code === issue.code));
+
+    res.json({
+      ...readiness,
+      ready_for_checkout: readiness.ready_for_checkout && uniqueIssues.length === 0,
+      issues: uniqueIssues,
+      supabase: {
+        configured: Boolean(supabase),
+        url_valid: Boolean(normalizedSupabaseUrl),
+        host: supabaseUrlHost || null,
+        has_service_role_key: Boolean(SUPABASE_SERVICE_ROLE_KEY),
+        issue_codes: uniqueIssues.filter(issue => issue.code.startsWith('SUPABASE_')).map(issue => issue.code)
+      }
+    });
   } catch (e) {
-    res.status(500).json({ ready_for_checkout: false, issues: [{ code: 'CONFIG_CHECK_FAILED', message: e.message }] });
+    res.status(500).json({
+      ready_for_checkout: false,
+      issues: [{ code: 'CONFIG_CHECK_FAILED', message: e.message }],
+      supabase: {
+        configured: Boolean(supabase),
+        url_valid: Boolean(normalizedSupabaseUrl),
+        host: supabaseUrlHost || null,
+        has_service_role_key: Boolean(SUPABASE_SERVICE_ROLE_KEY)
+      }
+    });
   }
 });
 
