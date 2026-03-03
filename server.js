@@ -6,6 +6,7 @@ const multer  = require('multer');
 const path    = require('path');
 const fs      = require('fs');
 const crypto  = require('crypto');
+const dns = require('dns').promises;
 const { createClient } = require('@supabase/supabase-js');
 const db      = require('./database');
 const shopRoutes = require('./shop-routes');
@@ -92,6 +93,57 @@ function toSupabaseConfigIssue(error) {
   }
 }
 
+function toSupabaseRuntimeIssue(error) {
+  const rootCauseCode = error?.cause?.code || error?.code || null;
+
+  if (rootCauseCode === 'ENOTFOUND') {
+    return {
+      code: 'SUPABASE_DNS_LOOKUP_FAILED',
+      message: `Kunne ikke slå opp DNS for ${supabaseUrlHost || 'Supabase-host'}`
+    };
+  }
+
+  if (rootCauseCode === 'ECONNREFUSED') {
+    return {
+      code: 'SUPABASE_CONNECTION_REFUSED',
+      message: 'Tilkobling til Supabase ble avvist (ECONNREFUSED)'
+    };
+  }
+
+  if (rootCauseCode === 'ETIMEDOUT') {
+    return {
+      code: 'SUPABASE_CONNECTION_TIMEOUT',
+      message: 'Tilkobling til Supabase tidsavbrøt (ETIMEDOUT)'
+    };
+  }
+
+  if (error?.message === 'fetch failed') {
+    return {
+      code: 'SUPABASE_FETCH_FAILED',
+      message: 'Kall mot Supabase feilet (fetch failed)'
+    };
+  }
+
+  return {
+    code: 'SUPABASE_RUNTIME_ERROR',
+    message: error?.message || 'Ukjent Supabase-kjøretidsfeil'
+  };
+}
+
+async function verifySupabaseDnsHost() {
+  if (!supabaseUrlHost) return;
+  try {
+    await dns.lookup(supabaseUrlHost);
+    console.log('[config] Supabase DNS lookup ok:', supabaseUrlHost);
+  } catch (error) {
+    console.error('[config] Supabase DNS lookup failed:', {
+      host: supabaseUrlHost,
+      code: error?.code || null,
+      message: error?.message || error
+    });
+  }
+}
+
 let supabaseClient = null;
 let supabaseUrlHost = null;
 let supabaseInitError = null;
@@ -106,6 +158,8 @@ try {
     masked_url: maskSupabaseUrl(SUPABASE_URL)
   });
 }
+
+void verifySupabaseDnsHost();
 
 const supabase = supabaseClient;
 
@@ -2063,19 +2117,22 @@ async function handleShopProducts(req, res) {
       printful_sync: printfulSync
     });
   } catch (error) {
-    console.error('[shop/products] Supabase URL invalid');
+    const runtimeIssue = toSupabaseRuntimeIssue(error);
     console.error('[shop/products] Supabase products query feilet, bruker lagrede produkter:', {
+      issue_code: runtimeIssue.code,
+      issue_message: runtimeIssue.message,
       message: error?.message,
       details: error?.details,
       hint: error?.hint,
-      code: error?.code
+      code: error?.code,
+      cause: error?.cause || null
     });
 
     return res.status(200).json({
       products: getStoredShopProducts(),
       currency: SHOP_CURRENCY || 'nok',
       printful_sync: await readPrintfulSyncState(),
-      issues: [{ code: 'SUPABASE_UNAVAILABLE', message: 'Supabase utilgjengelig, bruker lagrede produkter' }]
+      issues: [runtimeIssue]
     });
   }
 }
