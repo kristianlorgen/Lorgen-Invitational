@@ -1891,41 +1891,54 @@ app.get('/shop', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'shop.html'));
 });
 
-app.get('/api/shop/products', async (req, res) => {
-  try {
-    if (!supabase) {
-      return res.status(500).json({ error: 'Supabase er ikke konfigurert for shop' });
-    }
-
-    console.log('[shop/products] Henter produkter fra Supabase');
-
-    try {
-      await syncPrintfulProductsFromApi();
-    } catch (syncErr) {
-      lastPrintfulSyncError = syncErr.message;
-      console.error('Printful produktsync feilet, returnerer lagrede produkter:', syncErr.message);
-      await writePrintfulSyncState({ last_error: syncErr.message, last_synced_at: null });
-    }
-
-    const { data: products, error } = await supabase
-      .from('products')
-      .select('id,name,price,image_url,active,printful_variant_id,printful_product_id')
-      .eq('active', true)
-      .order('id', { ascending: true });
-    if (error) throw error;
-
-    const printfulSync = await readPrintfulSyncState();
-    console.log('[shop/products] Returnerer aktive produkter:', (products || []).length);
-
-    res.json({
-      products: products || [],
-      currency: SHOP_CURRENCY,
-      printful_sync: printfulSync
-    });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
+async function handleShopProducts(req, res) {
+  if (!supabase) {
+    return res.status(500).json({ error: 'Supabase er ikke konfigurert for shop' });
   }
-});
+
+  console.log('[shop/products] Henter produkter fra Supabase');
+
+  try {
+    await syncPrintfulProductsFromApi();
+  } catch (syncErr) {
+    const syncErrorMessage = syncErr?.message || 'Ukjent Printful sync-feil';
+    lastPrintfulSyncError = syncErrorMessage;
+    console.error('[shop/products] Printful sync feilet, fortsetter med lagrede produkter:', {
+      name: syncErr?.name || null,
+      message: syncErrorMessage,
+      cause: syncErr?.cause || null
+    });
+    await writePrintfulSyncState({ last_error: syncErrorMessage, last_synced_at: null });
+  }
+
+  const { data: products, error } = await supabase
+    .from('products')
+    .select('id,name,price,image_url,active,printful_variant_id,printful_product_id')
+    .eq('active', true)
+    .order('id', { ascending: true });
+
+  if (error) {
+    console.error('[shop/products] Supabase products query feilet:', {
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      code: error.code
+    });
+    return res.status(500).json({ error: error.message });
+  }
+
+  const printfulSync = await readPrintfulSyncState();
+  console.log('[shop/products] Returnerer aktive produkter:', (products || []).length);
+
+  return res.status(200).json({
+    products: products || [],
+    currency: 'nok',
+    printful_sync: printfulSync
+  });
+}
+
+app.get('/api/shop/products', handleShopProducts);
+app.get('/apl/shop/products', handleShopProducts);
 
 app.get('/api/shop/config', async (req, res) => {
   try {
