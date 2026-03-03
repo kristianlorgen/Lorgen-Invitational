@@ -6,6 +6,7 @@ const multer  = require('multer');
 const path    = require('path');
 const fs      = require('fs');
 const crypto  = require('crypto');
+const { createClient } = require('@supabase/supabase-js');
 const db      = require('./database');
 const shopRoutes = require('./shop-routes');
 const app  = express();
@@ -18,6 +19,12 @@ const PRINTFUL_API_TOKEN = process.env.PRINTFUL_API_TOKEN || process.env.PRINTFU
 const PRINTFUL_WEBHOOK_SECRET = process.env.PRINTFUL_WEBHOOK_SECRET || '';
 const ADMIN_API_KEY = process.env.ADMIN_API_KEY || process.env.ADMIN_TOKEN || '';
 const SHOP_CURRENCY = (process.env.SHOP_CURRENCY || 'nok').toLowerCase();
+const SUPABASE_URL = String(process.env.SUPABASE_URL || '').trim();
+const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+
+const supabase = (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY)
+  ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } })
+  : null;
 
 
 const allowedImageExtensions = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.heic', '.heif', '.avif']);
@@ -144,21 +151,33 @@ function isValidStripeWebhookSecret(value = '') {
   return value.startsWith('whsec_');
 }
 
-function getMissingPrintfulLinkProducts() {
-  return db.prepare(
-    `SELECT id, slug, name
-     FROM webshop_products
-     WHERE is_active=1 AND (printful_variant_id IS NULL OR printful_variant_id='')
-     ORDER BY id ASC`
-  ).all();
+async function getMissingPrintfulLinkProducts() {
+  if (!supabase) throw new Error('Supabase er ikke konfigurert (mangler SUPABASE_URL eller SUPABASE_SERVICE_ROLE_KEY)');
+  const { data, error } = await supabase
+    .from('products')
+    .select('id,name,printful_variant_id')
+    .eq('active', true)
+    .or('printful_variant_id.is.null,printful_variant_id.eq.')
+    .order('id', { ascending: true });
+  if (error) throw error;
+  return data || [];
 }
 
-function getCheckoutReadiness() {
+async function getCheckoutReadiness() {
   const issues = [];
   const stripeSecret = String(process.env.STRIPE_SECRET_KEY || '').trim();
   const stripeWebhookSecret = String(process.env.STRIPE_WEBHOOK_SECRET || '').trim();
   const printfulToken = String(process.env.PRINTFUL_API_TOKEN || process.env.PRINTFUL_API_KEY || '').trim();
-  const missingLinks = getMissingPrintfulLinkProducts();
+  if (!supabase) {
+    issues.push({ code: 'MISSING_SUPABASE', message: 'SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY mangler' });
+    return { ready_for_checkout: false, issues };
+  }
+  const missingLinks = await getMissingPrintfulLinkProducts();
+  const { count: activeCount, error: countError } = await supabase
+    .from('products')
+    .select('id', { count: 'exact', head: true })
+    .eq('active', true);
+  if (countError) throw countError;
 
   if (!stripeSecret) {
     issues.push({ code: 'MISSING_STRIPE_SECRET_KEY', message: 'STRIPE_SECRET_KEY mangler' });
@@ -176,13 +195,17 @@ function getCheckoutReadiness() {
     issues.push({ code: 'MISSING_PRINTFUL_API_TOKEN', message: 'PRINTFUL_API_TOKEN mangler' });
   }
 
+  if (!activeCount) {
+    issues.push({ code: 'MISSING_ACTIVE_PRODUCTS', message: 'Ingen aktive produkter i public.products' });
+  }
+
   if (missingLinks.length) {
     issues.push({
       code: 'MISSING_PRINTFUL_LINKS',
       message: 'En eller flere aktive produkter mangler printful_variant_id',
       meta: {
         product_ids: missingLinks.map(p => p.id),
-        products: missingLinks.map(p => ({ id: p.id, slug: p.slug, name: p.name }))
+        products: missingLinks.map(p => ({ id: p.id, name: p.name }))
       }
     });
   }
@@ -278,6 +301,43 @@ const PRINTFUL_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 let lastPrintfulSyncAt = 0;
 let lastPrintfulSyncError = '';
 
+async function readPrintfulSyncState() {
+  if (!supabase) return { last_error: null, last_synced_at: null };
+  const { data, error } = await supabase
+    .from('shop_sync_state')
+    .select('last_error,last_synced_at')
+    .eq('key', 'printful')
+    .maybeSingle();
+
+  if (error) {
+    console.error('[shop_sync_state] read feilet:', error.message);
+    return { last_error: 'Kunne ikke lese sync-state', last_synced_at: null };
+  }
+
+  return {
+    last_error: data?.last_error || null,
+    last_synced_at: data?.last_synced_at || null
+  };
+}
+
+async function writePrintfulSyncState({ last_error = null, last_synced_at = null }) {
+  if (!supabase) return;
+  const { error } = await supabase
+    .from('shop_sync_state')
+    .upsert({ key: 'printful', last_error, last_synced_at }, { onConflict: 'key' });
+
+  if (error) {
+    console.error('[shop_sync_state] write feilet:', error.message);
+    return;
+  }
+
+  console.log('[shop_sync_state] oppdatert:', {
+    key: 'printful',
+    has_error: Boolean(last_error),
+    last_synced_at
+  });
+}
+
 async function fetchPrintfulJson(url) {
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${PRINTFUL_API_TOKEN}` }
@@ -302,6 +362,9 @@ async function resolvePrintfulProduct(listItem) {
 }
 
 async function syncPrintfulProductsFromApi(force = false) {
+  if (!supabase) {
+    throw new Error('Supabase er ikke konfigurert (mangler SUPABASE_URL eller SUPABASE_SERVICE_ROLE_KEY)');
+  }
   if (!PRINTFUL_API_TOKEN) return { skipped: true, reason: 'PRINTFUL_API_TOKEN mangler' };
 
   const now = Date.now();
@@ -314,19 +377,9 @@ async function syncPrintfulProductsFromApi(force = false) {
   if (!products.length) {
     lastPrintfulSyncAt = now;
     lastPrintfulSyncError = '';
+    await writePrintfulSyncState({ last_error: null, last_synced_at: new Date(now).toISOString() });
     return { synced: 0 };
   }
-
-  const bySlug = db.prepare('SELECT id FROM webshop_products WHERE slug=? LIMIT 1');
-  const insert = db.prepare(
-    `INSERT INTO webshop_products (slug, name, description, image_url, price_nok, currency, printful_variant_id, is_active)
-     VALUES (?,?,?,?,?,?,?,1)`
-  );
-  const update = db.prepare(
-    `UPDATE webshop_products
-     SET name=?, description=?, image_url=?, price_nok=?, currency=?, printful_variant_id=?, is_active=1
-     WHERE id=?`
-  );
 
   const rows = [];
   for (const product of products) {
@@ -336,28 +389,27 @@ async function syncPrintfulProductsFromApi(force = false) {
     if (!variantId) continue;
 
     const name = String(enriched?.name || variant?.name || 'Printful produkt').trim();
-    const description = String(enriched?.sync_product?.description || enriched?.synced?.description || '').trim();
     const image = String(enriched?.thumbnail_url || variant?.files?.[0]?.preview_url || '').trim();
-    const priceNok = nokToMinorUnits(variant?.retail_price) || 40000;
-    const slugBase = slugify(name) || `printful-${enriched.id}`;
-    const slug = `printful-${enriched.id}-${slugBase}`;
-    rows.push({ slug, name, description, image, priceNok, variantId });
+    const price = Number(String(variant?.retail_price || '').replace(',', '.')) || 400;
+
+    rows.push({
+      name,
+      image_url: image,
+      price,
+      active: true,
+      printful_variant_id: String(variantId),
+      printful_product_id: String(enriched?.id || '') || null
+    });
   }
 
-  const syncProduct = db.transaction((items) => {
-    for (const item of items) {
-      const existing = bySlug.get(item.slug);
-      if (existing?.id) {
-        update.run(item.name, item.description, item.image, item.priceNok, SHOP_CURRENCY, item.variantId, existing.id);
-      } else {
-        insert.run(item.slug, item.name, item.description, item.image, item.priceNok, SHOP_CURRENCY, item.variantId);
-      }
-    }
-  });
+  const { error } = await supabase
+    .from('products')
+    .upsert(rows, { onConflict: 'printful_variant_id' });
+  if (error) throw error;
 
-  syncProduct(rows);
   lastPrintfulSyncAt = Date.now();
   lastPrintfulSyncError = '';
+  await writePrintfulSyncState({ last_error: null, last_synced_at: new Date(lastPrintfulSyncAt).toISOString() });
   return { synced: rows.length };
 }
 
@@ -1841,45 +1893,52 @@ app.get('/shop', (req, res) => {
 
 app.get('/api/shop/products', async (req, res) => {
   try {
+    if (!supabase) {
+      return res.status(500).json({ error: 'Supabase er ikke konfigurert for shop' });
+    }
+
+    console.log('[shop/products] Henter produkter fra Supabase');
+
     try {
       await syncPrintfulProductsFromApi();
     } catch (syncErr) {
       lastPrintfulSyncError = syncErr.message;
       console.error('Printful produktsync feilet, returnerer lagrede produkter:', syncErr.message);
+      await writePrintfulSyncState({ last_error: syncErr.message, last_synced_at: null });
     }
 
-    const products = db.prepare(
-      `SELECT id, slug, name, description, image_url, price_nok, currency, printful_variant_id
-       FROM webshop_products
-       WHERE is_active=1
-       ORDER BY id ASC`
-    ).all().map(p => ({ ...p, price_label: formatAmountNok(p.price_nok) }));
+    const { data: products, error } = await supabase
+      .from('products')
+      .select('id,name,price,image_url,active,printful_variant_id,printful_product_id')
+      .eq('active', true)
+      .order('id', { ascending: true });
+    if (error) throw error;
+
+    const printfulSync = await readPrintfulSyncState();
+    console.log('[shop/products] Returnerer aktive produkter:', (products || []).length);
 
     res.json({
-      products,
+      products: products || [],
       currency: SHOP_CURRENCY,
-      printful_sync: {
-        last_error: lastPrintfulSyncError || null,
-        last_synced_at: lastPrintfulSyncAt || null
-      }
+      printful_sync: printfulSync
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-app.get('/api/shop/config', (req, res) => {
+app.get('/api/shop/config', async (req, res) => {
   try {
-    const readiness = getCheckoutReadiness();
+    const readiness = await getCheckoutReadiness();
     res.json(readiness);
   } catch (e) {
     res.status(500).json({ ready_for_checkout: false, issues: [{ code: 'CONFIG_CHECK_FAILED', message: e.message }] });
   }
 });
 
-app.get('/api/admin/shop/products/missing-printful', requireAdminForApi, (req, res) => {
+app.get('/api/admin/shop/products/missing-printful', requireAdminForApi, async (req, res) => {
   try {
-    const products = getMissingPrintfulLinkProducts();
+    const products = await getMissingPrintfulLinkProducts();
     res.json({ products });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -1888,77 +1947,37 @@ app.get('/api/admin/shop/products/missing-printful', requireAdminForApi, (req, r
 
 app.post('/api/admin/shop/products/:id/link-printful', requireAdminForApi, async (req, res) => {
   try {
-    if (!PRINTFUL_API_TOKEN) return res.status(503).json({ error: 'PRINTFUL_API_TOKEN mangler på serveren' });
-
     const productId = Number(req.params.id);
     if (!productId) return res.status(400).json({ error: 'Ugyldig produkt-id' });
+    if (!supabase) return res.status(500).json({ error: 'Supabase er ikke konfigurert for shop' });
 
-    const product = db.prepare(
-      'SELECT id, slug, name, printful_variant_id, is_active FROM webshop_products WHERE id=? LIMIT 1'
-    ).get(productId);
+    const { data: product, error: productError } = await supabase
+      .from('products')
+      .select('id,name,printful_variant_id,active')
+      .eq('id', productId)
+      .maybeSingle();
+    if (productError) throw productError;
     if (!product) return res.status(404).json({ error: 'Produkt ikke funnet' });
 
-    const explicitVariantId = Number(req.body?.printful_variant_id || 0);
-    if (explicitVariantId) {
-      db.prepare('UPDATE webshop_products SET printful_variant_id=? WHERE id=?').run(explicitVariantId, product.id);
-      return res.json({
-        success: true,
-        product_id: product.id,
-        linked_variant_id: explicitVariantId,
-        source: 'manual'
-      });
-    }
+    const explicitVariantId = String(req.body?.printful_variant_id || '').trim();
+    const printfulProductId = String(req.body?.printful_product_id || '').trim() || null;
+    if (!explicitVariantId) return res.status(400).json({ error: 'printful_variant_id er påkrevd' });
 
-    const response = await fetch('https://api.printful.com/store/products', {
-      headers: { Authorization: `Bearer ${PRINTFUL_API_TOKEN}` }
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      return res.status(502).json({ error: payload?.error?.message || 'Klarte ikke hente produkter fra Printful' });
-    }
-
-    const candidates = Array.isArray(payload?.result) ? payload.result : [];
-    const normalizedSlug = String(product.slug || '').toLowerCase();
-    const normalizedName = String(product.name || '').toLowerCase();
-    const matchedProduct = candidates.find(item => {
-      const printfulName = String(item?.name || '').toLowerCase();
-      const externalId = String(item?.external_id || '').toLowerCase();
-      return (
-        (normalizedSlug && externalId && externalId.includes(normalizedSlug)) ||
-        (normalizedSlug && printfulName.includes(normalizedSlug.replace(/-/g, ' '))) ||
-        (normalizedName && printfulName.includes(normalizedName))
-      );
-    });
-
-    if (!matchedProduct) {
-      return res.status(404).json({
-        error: 'Fant ingen matchende Printful-produkt. Send printful_variant_id i body for manuell kobling.'
-      });
-    }
-
-    const detailsResponse = await fetch(`https://api.printful.com/store/products/${matchedProduct.id}`, {
-      headers: { Authorization: `Bearer ${PRINTFUL_API_TOKEN}` }
-    });
-    const detailsPayload = await detailsResponse.json().catch(() => ({}));
-    if (!detailsResponse.ok) {
-      return res.status(502).json({ error: detailsPayload?.error?.message || 'Klarte ikke hente Printful-variantdetaljer' });
-    }
-
-    const variant = detailsPayload?.result?.sync_variants?.[0];
-    const variantId = Number(variant?.id || 0);
-    if (!variantId) {
-      return res.status(404).json({ error: 'Fant ingen sync_variant_id på valgt Printful-produkt' });
-    }
-
-    db.prepare('UPDATE webshop_products SET printful_variant_id=? WHERE id=?').run(variantId, product.id);
+    const { error: updateError } = await supabase
+      .from('products')
+      .update({
+        printful_variant_id: explicitVariantId,
+        ...(printfulProductId ? { printful_product_id: printfulProductId } : {})
+      })
+      .eq('id', product.id);
+    if (updateError) throw updateError;
 
     res.json({
       success: true,
       product_id: product.id,
-      linked_variant_id: variantId,
-      printful_product_id: matchedProduct.id,
-      printful_product_name: matchedProduct.name,
-      source: 'auto'
+      linked_variant_id: explicitVariantId,
+      printful_product_id: printfulProductId,
+      source: 'manual'
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -1967,7 +1986,7 @@ app.post('/api/admin/shop/products/:id/link-printful', requireAdminForApi, async
 
 app.post('/api/checkout-session', async (req, res) => {
   try {
-    const readiness = getCheckoutReadiness();
+    const readiness = await getCheckoutReadiness();
     if (!readiness.ready_for_checkout) {
       return res.status(503).json({
         error: 'Checkout er ikke klar. Se issues i /api/shop/config.',
@@ -1980,17 +1999,17 @@ app.post('/api/checkout-session', async (req, res) => {
     if (!email || !email.includes('@')) return res.status(400).json({ error: 'Gyldig e-post er påkrevd' });
     if (!cart.length) return res.status(400).json({ error: 'Handlekurven er tom' });
 
-    const productById = db.prepare(
-      `SELECT id, name, price_nok, currency, printful_variant_id
-       FROM webshop_products
-       WHERE id=? AND is_active=1`
-    );
-
     const resolved = [];
     for (const line of cart) {
       const productId = Number(line?.product_id);
       const quantity = Math.max(1, Math.min(20, Number(line?.quantity || 1)));
-      const product = productById.get(productId);
+      const { data: product, error } = await supabase
+        .from('products')
+        .select('id,name,price,printful_variant_id,active')
+        .eq('id', productId)
+        .eq('active', true)
+        .maybeSingle();
+      if (error) throw error;
       if (!product) return res.status(400).json({ error: `Ugyldig produkt i kurv (${productId})` });
       if (!product.printful_variant_id) {
         return res.status(400).json({
@@ -2000,7 +2019,7 @@ app.post('/api/checkout-session', async (req, res) => {
       resolved.push({ product, quantity });
     }
 
-    const amountTotal = resolved.reduce((sum, line) => sum + (line.product.price_nok * line.quantity), 0);
+    const amountTotal = resolved.reduce((sum, line) => sum + (nokToMinorUnits(line.product.price) * line.quantity), 0);
     const publicId = generatePublicOrderId();
 
     const orderInsert = db.prepare(
@@ -2014,7 +2033,7 @@ app.post('/api/checkout-session', async (req, res) => {
        VALUES (?,?,?,?,?,?)`
     );
     resolved.forEach(line => {
-      insertItem.run(orderInsert.lastInsertRowid, line.product.id, line.product.name, line.quantity, line.product.price_nok, line.product.printful_variant_id || null);
+      insertItem.run(orderInsert.lastInsertRowid, line.product.id, line.product.name, line.quantity, nokToMinorUnits(line.product.price), line.product.printful_variant_id || null);
     });
 
     const stripeResponse = await fetch('https://api.stripe.com/v1/checkout/sessions', {
@@ -2037,7 +2056,7 @@ app.post('/api/checkout-session', async (req, res) => {
         ...Object.fromEntries(resolved.flatMap((line, idx) => ([
           [`line_items[${idx}][quantity]`, String(line.quantity)],
           [`line_items[${idx}][price_data][currency]`, SHOP_CURRENCY],
-          [`line_items[${idx}][price_data][unit_amount]`, String(line.product.price_nok)],
+          [`line_items[${idx}][price_data][unit_amount]`, String(nokToMinorUnits(line.product.price))],
           [`line_items[${idx}][price_data][product_data][name]`, line.product.name]
         ])))
       })
