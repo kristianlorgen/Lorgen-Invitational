@@ -2,11 +2,9 @@ FROM node:22-bookworm-slim
 
 WORKDIR /app
 
-# Viktig: CA-sertifikater for at HTTPS/fetch skal fungere
+# Viktig: CA-sertifikater + build tools
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends \
-     ca-certificates \
-     python3 make g++ \
+  && apt-get install -y --no-install-recommends ca-certificates python3 make g++ \
   && update-ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
@@ -16,8 +14,7 @@ RUN npm ci --omit=dev
 COPY . .
 
 ENV NODE_ENV=production
-
-# Railway bruker ofte PORT=8080. EXPOSE er mest dokumentasjon, men hold det konsistent.
-EXPOSE 8080
+ENV PORT=3000
+EXPOSE 3000
 
 CMD ["npm", "run", "start"]
