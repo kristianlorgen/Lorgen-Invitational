@@ -6,7 +6,8 @@ const multer  = require('multer');
 const path    = require('path');
 const fs      = require('fs');
 const crypto  = require('crypto');
-const dns = require('dns').promises;
+const dns = require('dns');
+const dnsPromises = require('dns').promises;
 const { createClient } = require('@supabase/supabase-js');
 const db      = require('./database');
 const shopRoutes = require('./shop-routes');
@@ -153,10 +154,28 @@ function toSupabaseRuntimeIssue(error) {
   };
 }
 
+async function fetchWithTimeout(url, ms = 5000, opts = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+
+  try {
+    const res = await fetch(url, { ...opts, signal: controller.signal });
+    const text = await res.text().catch(() => '');
+    return {
+      ok: res.ok,
+      status: res.status,
+      headers: Object.fromEntries(res.headers.entries()),
+      body_snippet: text.slice(0, 200)
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function verifySupabaseDnsHost() {
   if (!supabaseUrlHost) return;
   try {
-    await dns.lookup(supabaseUrlHost);
+    await dnsPromises.lookup(supabaseUrlHost);
     console.log('[config] Supabase DNS lookup ok:', supabaseUrlHost);
   } catch (error) {
     console.error('[config] Supabase DNS lookup failed:', {
@@ -299,6 +318,40 @@ app.get('/api/health', (req, res) => {
     supabase_configured: Boolean(supabase),
     supabase_url_host: supabaseUrlHost
   });
+});
+
+app.get('/api/nettest', async (req, res) => {
+  try {
+    const result = await fetchWithTimeout('https://example.com', 5000, { method: 'GET' });
+    res.json({ ok: true, target: 'example.com', result });
+  } catch (e) {
+    res.status(200).json({ ok: false, target: 'example.com', error: e.message, cause: e.cause?.code || null });
+  }
+});
+
+app.get('/api/dnstest', async (req, res) => {
+  try {
+    const host = String(req.query.host || 'example.com');
+    const a = await dnsPromises.resolve4(host).catch(err => ({ error: err.code || err.message }));
+    const aaaa = await dnsPromises.resolve6(host).catch(err => ({ error: err.code || err.message }));
+    const lookup = await dnsPromises.lookup(host, { all: true }).catch(err => ({ error: err.code || err.message }));
+    res.json({ ok: true, host, resolve4: a, resolve6: aaaa, lookup });
+  } catch (e) {
+    res.status(200).json({ ok: false, error: e.message, cause: e.cause?.code || null });
+  }
+});
+
+app.get('/api/supabase-nettest', async (req, res) => {
+  try {
+    const u = new URL(process.env.SUPABASE_URL);
+    const host = u.hostname;
+    const dnsLookup = await dnsPromises.lookup(host, { all: true }).catch(err => ({ error: err.code || err.message }));
+    // HEAD mot root (ikke perfekt, men viser om TLS/DNS funker)
+    const result = await fetchWithTimeout(`https://${host}`, 5000, { method: 'GET' });
+    res.json({ ok: true, host, dnsLookup, fetch: result });
+  } catch (e) {
+    res.status(200).json({ ok: false, error: e.message, cause: e.cause?.code || null });
+  }
 });
 
 let sessionStore;
