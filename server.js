@@ -322,10 +322,13 @@ app.get('/api/health', (req, res) => {
 
 app.get('/api/nettest', async (req, res) => {
   try {
-    const result = await fetchWithTimeout('https://example.com', 5000, { method: 'GET' });
-    res.json({ ok: true, target: 'example.com', result });
+    // Bruk HTTP for å teste grunnleggende utgående nett uten å være avhengig av
+    // CA-kjeden i runtime-miljøet. Dette gjør endpointet nyttig også i miljøer
+    // der TLS root certificates ikke er tilgjengelig.
+    const result = await fetchWithTimeout('http://example.com', 5000, { method: 'GET' });
+    res.json({ ok: true, target: 'http://example.com', result });
   } catch (e) {
-    res.status(200).json({ ok: false, target: 'example.com', error: e.message, cause: e.cause?.code || null });
+    res.status(200).json({ ok: false, target: 'http://example.com', error: e.message, cause: e.cause?.code || null });
   }
 });
 
