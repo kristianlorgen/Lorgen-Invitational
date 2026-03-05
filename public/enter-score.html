@@ -611,6 +611,8 @@ let teamData       = null;
 let tournamentData = null;
 let holesData      = [];
 let scoresData     = {};
+let sponsorSettings = { showSponsors: false };
+let holeSponsorsMap = {};
 let claimsData     = {};
 let pendingPhotoHole = null;
 let currentHoleIndex = 0;
@@ -729,6 +731,35 @@ async function notifyBirdieShot(payload) {
   } catch (_) {}
 }
 
+function shouldShowSponsors(settings) {
+  return !!(settings && settings.showSponsors);
+}
+
+function sponsorInitials(name) {
+  return String(name || '').split(' ').map(x => x.trim()[0]).filter(Boolean).slice(0,2).join('').toUpperCase() || 'SP';
+}
+
+function renderHoleSponsorCard(holeNumber) {
+  if (!shouldShowSponsors(sponsorSettings)) return '';
+  const item = holeSponsorsMap[holeNumber];
+  if (!item || !item.sponsor || !item.sponsor.active) return '';
+  const sponsor = item.sponsor;
+  const isLink = sponsor.websiteUrl && sponsor.websiteUrl.trim();
+  const body = `
+    <div class="sponsor-badge-card ${isLink ? 'is-link' : ''}">
+      <div class="sponsor-logo-wrap">
+        ${sponsor.logoUrl ? `<img src="${sponsor.logoUrl}" alt="${sponsor.name}">` : `<span class="sponsor-logo-fallback">${sponsorInitials(sponsor.name)}</span>`}
+      </div>
+      <div class="sponsor-badge-body">
+        <div class="sponsor-badge-pill">Presented by</div>
+        <div class="sponsor-badge-name">${sponsor.name}</div>
+        ${item.message || sponsor.tagline ? `<div class="sponsor-badge-text">${item.message || sponsor.tagline}</div>` : ''}
+      </div>
+    </div>`;
+  if (!isLink) return body;
+  return `<a href="${sponsor.websiteUrl}" target="_blank" rel="noopener" style="text-decoration:none;display:block">${body}</a>`;
+}
+
 function allHolesCompleted() {
   return holesData.length > 0 && holesData.every(h => (scoresData[h.hole_number]?.score || 0) > 0);
 }
@@ -843,6 +874,9 @@ async function loadScorecard() {
   teamData = d.team; holesData = d.holes; tournamentData = d.tournament || null;
   d.scores.forEach(s => { scoresData[s.hole_number] = s; });
   if (d.claims) d.claims.forEach(c => { claimsData[c.hole_number + '_' + c.award_type] = c; });
+  sponsorSettings = d.settings || { showSponsors: false };
+  holeSponsorsMap = {};
+  (d.holeSponsors || []).forEach(hs => { holeSponsorsMap[hs.holeNumber] = hs; });
   renderAll();
   loadPosition();
   await loadChatMessages();
@@ -1106,6 +1140,8 @@ function renderCurrentHole() {
   const ldClaim  = claimsData[h.hole_number + '_longest_drive'];
   const ctpClaim = claimsData[h.hole_number + '_closest_to_pin'];
 
+  const sponsorCard = renderHoleSponsorCard(h.hole_number);
+
   const competitionBanners = [
     hasLd  ? '<div class="competition-banner">🏌️ Utvalgt hull — <strong>Longest Drive</strong> konkurranse! Meld inn ditt beste slag nedenfor.</div>' : '',
     hasCtp ? '<div class="competition-banner">🎯 Utvalgt hull — <strong>Closest to Pin</strong> konkurranse! Meld inn din avstand nedenfor.</div>' : ''
@@ -1150,6 +1186,8 @@ function renderCurrentHole() {
         <div style="font-family:var(--font-heading);font-size:2.2rem;color:var(--gold-dark);line-height:1">${h.par}</div>
       </div>
     </div>
+
+    ${sponsorCard}
 
     ${competitionBanners}
 
