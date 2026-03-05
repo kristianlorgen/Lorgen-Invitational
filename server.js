@@ -135,40 +135,6 @@ function getScoreboardTournament() {
   return t || null;
 }
 
-function getSettings() {
-  const row = db.prepare('SELECT show_sponsors FROM settings WHERE id=1').get();
-  return { showSponsors: !!(row && row.show_sponsors) };
-}
-
-function shouldShowSponsors(settings = {}) {
-  return !!settings.showSponsors;
-}
-
-function getHoleSponsorsForTournament(tournamentId) {
-  if (!tournamentId) return [];
-  return db.prepare(
-    `SELECT hs.hole_number, hs.message, hs.sponsor_id,
-            s.name, s.logo_url, s.website_url, s.tagline, s.tier, s.active
-     FROM hole_sponsors hs
-     LEFT JOIN sponsors s ON s.id=hs.sponsor_id
-     WHERE hs.tournament_id=?
-     ORDER BY hs.hole_number ASC`
-  ).all(tournamentId).map(r => ({
-    holeNumber: r.hole_number,
-    message: r.message || '',
-    sponsorId: r.sponsor_id,
-    sponsor: r.sponsor_id ? {
-      id: r.sponsor_id,
-      name: r.name,
-      logoUrl: r.logo_url || '',
-      websiteUrl: r.website_url || '',
-      tagline: r.tagline || '',
-      tier: r.tier,
-      active: !!r.active
-    } : null
-  }));
-}
-
 function normalizePhotoPath(photoPath = '') {
   if (!photoPath || typeof photoPath !== 'string') return '';
 
@@ -411,38 +377,9 @@ app.get('/api/version', (req, res) => {
 app.get('/api/tournament', (req, res) => {
   try {
     const t = getActiveTournament();
-    const settings = getSettings();
-    if (!t) return res.json({ tournament: null, holes: [], settings, holeSponsors: [] });
+    if (!t) return res.json({ tournament: null, holes: [] });
     const holes = db.prepare('SELECT * FROM holes WHERE tournament_id=? ORDER BY hole_number').all(t.id);
-    const holeSponsors = shouldShowSponsors(settings) ? getHoleSponsorsForTournament(t.id) : [];
-    res.json({ tournament: t, holes, settings, holeSponsors });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/api/settings', (req, res) => {
-  try { res.json({ settings: getSettings() }); }
-  catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/api/sponsors', (req, res) => {
-  try {
-    const settings = getSettings();
-    if (!shouldShowSponsors(settings)) return res.json({ settings, sponsors: [], holeSponsors: [] });
-    const tournament = getActiveTournament();
-    const sponsors = db.prepare(
-      `SELECT id, name, logo_url, website_url, tagline, tier, active
-       FROM sponsors WHERE active=1 ORDER BY tier='title' DESC, tier='hole' DESC, name ASC`
-    ).all().map(s => ({
-      id: s.id,
-      name: s.name,
-      logoUrl: s.logo_url || '',
-      websiteUrl: s.website_url || '',
-      tagline: s.tagline || '',
-      tier: s.tier,
-      active: !!s.active
-    }));
-    const holeSponsors = tournament ? getHoleSponsorsForTournament(tournament.id) : [];
-    res.json({ settings, tournament, sponsors, holeSponsors });
+    res.json({ tournament: t, holes });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -594,9 +531,7 @@ app.get('/api/team/scorecard', requireTeam, (req, res) => {
     const scoresRaw  = db.prepare('SELECT * FROM scores WHERE team_id=?').all(req.session.teamId);
     const scores     = scoresRaw.map(s => ({ ...s, photo_path: normalizePhotoPath(s.photo_path) }));
     const claims     = db.prepare('SELECT * FROM award_claims WHERE tournament_id=? AND team_id=?').all(req.session.tournamentId, req.session.teamId);
-    const settings = getSettings();
-    const holeSponsors = shouldShowSponsors(settings) ? getHoleSponsorsForTournament(req.session.tournamentId) : [];
-    res.json({ team: { ...team, locked: team.locked || 0 }, tournament, holes, scores, claims, settings, holeSponsors });
+    res.json({ team: { ...team, locked: team.locked || 0 }, tournament, holes, scores, claims });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1311,88 +1246,6 @@ app.delete('/api/admin/course/:id', requireAdmin, (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get('/api/admin/settings', requireAdmin, (req, res) => {
-  try { res.json({ settings: getSettings() }); }
-  catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.put('/api/admin/settings', requireAdmin, (req, res) => {
-  try {
-    const showSponsors = req.body?.showSponsors ? 1 : 0;
-    db.prepare('UPDATE settings SET show_sponsors=?, updated_at=CURRENT_TIMESTAMP WHERE id=1').run(showSponsors);
-    res.json({ success: true, settings: { showSponsors: !!showSponsors } });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/api/admin/sponsors', requireAdmin, (req, res) => {
-  try {
-    const sponsors = db.prepare('SELECT * FROM sponsors ORDER BY active DESC, tier="title" DESC, tier="hole" DESC, name ASC').all();
-    res.json({ sponsors: sponsors.map(s => ({
-      id: s.id, name: s.name, logoUrl: s.logo_url || '', websiteUrl: s.website_url || '',
-      tagline: s.tagline || '', tier: s.tier, active: !!s.active
-    }))});
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/admin/sponsor', requireAdmin, (req, res) => {
-  try {
-    const { name, logoUrl = '', websiteUrl = '', tagline = '', tier = 'supporter', active = true } = req.body || {};
-    if (!String(name || '').trim()) return res.status(400).json({ error: 'Navn er påkrevd' });
-    if (!['title', 'hole', 'supporter'].includes(tier)) return res.status(400).json({ error: 'Ugyldig nivå' });
-    const r = db.prepare(
-      'INSERT INTO sponsors (name, logo_url, website_url, tagline, tier, active) VALUES (?,?,?,?,?,?)'
-    ).run(String(name).trim(), String(logoUrl || '').trim(), String(websiteUrl || '').trim(), String(tagline || '').trim(), tier, active ? 1 : 0);
-    res.json({ success: true, id: Number(r.lastInsertRowid) });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.put('/api/admin/sponsor/:id', requireAdmin, (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const { name, logoUrl = '', websiteUrl = '', tagline = '', tier = 'supporter', active = true } = req.body || {};
-    if (!String(name || '').trim()) return res.status(400).json({ error: 'Navn er påkrevd' });
-    if (!['title', 'hole', 'supporter'].includes(tier)) return res.status(400).json({ error: 'Ugyldig nivå' });
-    db.prepare(
-      'UPDATE sponsors SET name=?, logo_url=?, website_url=?, tagline=?, tier=?, active=? WHERE id=?'
-    ).run(String(name).trim(), String(logoUrl || '').trim(), String(websiteUrl || '').trim(), String(tagline || '').trim(), tier, active ? 1 : 0, id);
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.delete('/api/admin/sponsor/:id', requireAdmin, (req, res) => {
-  try {
-    db.prepare('DELETE FROM sponsors WHERE id=?').run(Number(req.params.id));
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/api/admin/tournament/:id/hole-sponsors', requireAdmin, (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const rows = db.prepare(
-      'SELECT hole_number, sponsor_id, message FROM hole_sponsors WHERE tournament_id=? ORDER BY hole_number ASC'
-    ).all(id);
-    res.json({ holeSponsors: rows.map(r => ({ holeNumber: r.hole_number, sponsorId: r.sponsor_id, message: r.message || '' })) });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.put('/api/admin/tournament/:id/hole-sponsor', requireAdmin, (req, res) => {
-  try {
-    const tournamentId = Number(req.params.id);
-    const holeNumber = Number(req.body?.holeNumber);
-    const sponsorId = req.body?.sponsorId ? Number(req.body.sponsorId) : null;
-    const message = String(req.body?.message || '').trim();
-    if (!holeNumber || holeNumber < 1 || holeNumber > 18) return res.status(400).json({ error: 'Ugyldig hullnummer' });
-    db.prepare(
-      `INSERT INTO hole_sponsors (tournament_id, hole_number, sponsor_id, message)
-       VALUES (?,?,?,?)
-       ON CONFLICT(tournament_id, hole_number)
-       DO UPDATE SET sponsor_id=excluded.sponsor_id, message=excluded.message`
-    ).run(tournamentId, holeNumber, sponsorId, message);
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
 app.get('/api/admin/course/:id/holes', requireAdmin, (req, res) => {
   try {
     let holes = db.prepare('SELECT * FROM course_holes WHERE course_id=? ORDER BY hole_number').all(req.params.id);
@@ -1587,15 +1440,6 @@ app.get('/api/instagram-qr', (req, res) => {
 // ── Clean URL routing ────────────────────────────────────────────────────────
 ['gameday', 'scoreboard', 'legacy', 'enter-score', 'admin', 'gallery'].forEach(p => {
   app.get(`/${p}`, (req, res) => res.sendFile(path.join(__dirname, `public/${p}.html`)));
-});
-
-app.get('/sponsorer', (req, res) => {
-  try {
-    if (!shouldShowSponsors(getSettings())) return res.redirect('/');
-    return res.sendFile(path.join(__dirname, 'public/sponsors.html'));
-  } catch(_) {
-    return res.redirect('/');
-  }
 });
 
 const server = app.listen(PORT, '0.0.0.0', () => {

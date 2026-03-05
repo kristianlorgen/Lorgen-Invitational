@@ -103,7 +103,6 @@
         <div class="sidebar-link" onclick="showPanel('scores')"><i class="fas fa-list-ol"></i> Poeng</div>
         <div class="sidebar-link" onclick="showPanel('photos')"><i class="fas fa-images"></i> Bilder</div>
         <div class="sidebar-link" onclick="showPanel('awards')"><i class="fas fa-trophy"></i> Utmerkelser</div>
-        <div class="sidebar-link" onclick="showPanel('sponsors')"><i class="fas fa-handshake"></i> Sponsorer</div>
       </div>
       <div class="sidebar-section">
         <div class="sidebar-label">Hall of Fame</div>
@@ -636,51 +635,6 @@
       </div>
 
       <!-- ── ÆRESGALLERI ────────────────────────────────────────────────────── -->
-
-      <div class="admin-panel" id="panel-sponsors">
-        <div class="admin-panel-title">Sponsorer</div>
-        <div class="admin-panel-sub">Aktiver sponsorvisning og koble sponsorer til hull 1–18</div>
-
-        <div class="card" style="margin-bottom:20px">
-          <div class="card-header"><strong>Synlighet</strong></div>
-          <div class="card-body" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
-            <div>
-              <div style="font-weight:700;color:var(--dark)">Vis sponsorer på nettsiden</div>
-              <div style="font-size:.82rem;color:var(--text-muted)">Når av vises ingen sponsor-komponenter på frontend.</div>
-            </div>
-            <label style="display:inline-flex;align-items:center;gap:8px;font-size:.9rem">
-              <input type="checkbox" id="showSponsorsToggle" onchange="toggleSponsorVisibility()"> Aktiv
-            </label>
-          </div>
-        </div>
-
-        <div class="card" style="margin-bottom:20px">
-          <div class="card-header"><strong>Opprett sponsor</strong></div>
-          <div class="card-body">
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">
-              <div class="form-group"><label class="form-label">Navn</label><input class="form-input" id="sponsorName"></div>
-              <div class="form-group"><label class="form-label">Logo URL</label><input class="form-input" id="sponsorLogo"></div>
-              <div class="form-group"><label class="form-label">Nettside URL</label><input class="form-input" id="sponsorWebsite"></div>
-              <div class="form-group"><label class="form-label">Tagline</label><input class="form-input" id="sponsorTagline"></div>
-              <div class="form-group"><label class="form-label">Nivå</label><select class="form-select" id="sponsorTier"><option value="title">Hovedsponsor</option><option value="hole">Hullsponsor</option><option value="supporter" selected>Supporter</option></select></div>
-            </div>
-            <button class="btn btn--gold btn--sm" onclick="createSponsor()"><i class="fas fa-plus"></i> Opprett sponsor</button>
-          </div>
-        </div>
-
-        <div class="card" style="margin-bottom:20px">
-          <div class="card-header"><strong>Alle sponsorer</strong></div>
-          <div style="overflow-x:auto">
-            <table class="data-table"><thead><tr><th>Navn</th><th>Nivå</th><th>Status</th><th>Handlinger</th></tr></thead><tbody id="sponsorsTable"><tr><td colspan="4" style="text-align:center;padding:20px;color:var(--text-muted)">Laster...</td></tr></tbody></table>
-          </div>
-        </div>
-
-        <div class="card" id="holeSponsorsCard">
-          <div class="card-header"><strong>Hull-sponsing (aktiv turnering)</strong></div>
-          <div class="card-body" id="holeSponsorsGrid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px"></div>
-        </div>
-      </div>
-
       <div class="admin-panel" id="panel-legacy">
         <div class="admin-panel-title">Æresgalleri</div>
         <div class="admin-panel-sub">Administrer historikk og tidligere mesterlag — kilden til «Regjerende Mestere»</div>
@@ -837,14 +791,12 @@ function showPanel(id) {
   // Auto-trigger data loading for panels with a tournament select
   const loaders = { holes: loadHoles, teams: loadTeams, scores: loadScores,
                     photos: loadPhotos, awards: loadAwards, gameday: loadGameday,
-                    courses: loadCourses, sponsors: loadSponsorsAdmin };
+                    courses: loadCourses };
   if (loaders[id]) loaders[id]();
 }
 
 // ── Tilstand ──────────────────────────────────────────────────────────────────
 let allTournaments = [];
-let sponsorList = [];
-let sponsorSettings = { showSponsors: false };
 
 async function initAdmin() {
   await loadTournaments();
@@ -852,7 +804,6 @@ async function initAdmin() {
   await loadLegacy();
   loadCoinBack();
   loadCourses();
-  loadSponsorsAdmin();
 }
 
 // ── Turneringer ───────────────────────────────────────────────────────────────
@@ -2003,113 +1954,6 @@ async function deleteCourse(id, name) {
     await loadCourses();
   } catch(e) { showToast(e.message, 'error'); }
 }
-
-
-// ── Sponsorer ───────────────────────────────────────────────────────────────
-async function loadSponsorsAdmin() {
-  try {
-    const [settingsData, sponsorsData] = await Promise.all([api('/api/admin/settings'), api('/api/admin/sponsors')]);
-    sponsorSettings = settingsData.settings || { showSponsors: false };
-    sponsorList = sponsorsData.sponsors || [];
-    const toggle = document.getElementById('showSponsorsToggle');
-    if (toggle) toggle.checked = !!sponsorSettings.showSponsors;
-    renderSponsorsTable();
-    await renderHoleSponsorsAdmin();
-  } catch(e) { showToast(e.message, 'error'); }
-}
-
-function renderSponsorsTable() {
-  const tbody = document.getElementById('sponsorsTable');
-  if (!tbody) return;
-  if (!sponsorList.length) {
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--text-muted)">Ingen sponsorer registrert</td></tr>';
-    return;
-  }
-  tbody.innerHTML = sponsorList.map(s => `
-    <tr>
-      <td><strong>${s.name}</strong><div style="font-size:.75rem;color:var(--text-muted)">${s.tagline || '—'}</div></td>
-      <td>${s.tier}</td>
-      <td>${s.active ? 'Aktiv' : 'Inaktiv'}</td>
-      <td style="display:flex;gap:6px">
-        <button class="btn btn--sm" style="background:var(--gold-pale);border:1px solid var(--gold-border);color:var(--gold-dark)" onclick="editSponsor(${s.id})"><i class="fas fa-pen"></i></button>
-        <button class="btn btn--danger btn--sm" onclick="deleteSponsor(${s.id})"><i class="fas fa-trash"></i></button>
-      </td>
-    </tr>`).join('');
-}
-
-async function createSponsor() {
-  const payload = {
-    name: document.getElementById('sponsorName').value.trim(),
-    logoUrl: document.getElementById('sponsorLogo').value.trim(),
-    websiteUrl: document.getElementById('sponsorWebsite').value.trim(),
-    tagline: document.getElementById('sponsorTagline').value.trim(),
-    tier: document.getElementById('sponsorTier').value,
-    active: true
-  };
-  if (!payload.name) return showToast('Navn er påkrevd', 'error');
-  await api('/api/admin/sponsor', { method:'POST', body: JSON.stringify(payload) });
-  ['sponsorName','sponsorLogo','sponsorWebsite','sponsorTagline'].forEach(id => document.getElementById(id).value='');
-  showToast('Sponsor opprettet');
-  await loadSponsorsAdmin();
-}
-
-async function editSponsor(id) {
-  const s = sponsorList.find(x => x.id === Number(id));
-  if (!s) return;
-  const name = prompt('Navn', s.name); if (name === null) return;
-  const logoUrl = prompt('Logo URL', s.logoUrl || ''); if (logoUrl === null) return;
-  const websiteUrl = prompt('Nettside URL', s.websiteUrl || ''); if (websiteUrl === null) return;
-  const tagline = prompt('Tagline', s.tagline || ''); if (tagline === null) return;
-  const tier = prompt('Nivå (title|hole|supporter)', s.tier || 'supporter'); if (tier === null) return;
-  const active = confirm('Trykk OK for aktiv sponsor, Avbryt for inaktiv');
-  await api('/api/admin/sponsor/' + id, { method:'PUT', body: JSON.stringify({ name, logoUrl, websiteUrl, tagline, tier, active }) });
-  showToast('Sponsor oppdatert');
-  await loadSponsorsAdmin();
-}
-
-async function deleteSponsor(id) {
-  if (!confirm('Slette sponsor?')) return;
-  await api('/api/admin/sponsor/' + id, { method:'DELETE' });
-  showToast('Sponsor slettet');
-  await loadSponsorsAdmin();
-}
-
-async function toggleSponsorVisibility() {
-  const showSponsors = document.getElementById('showSponsorsToggle').checked;
-  await api('/api/admin/settings', { method:'PUT', body: JSON.stringify({ showSponsors }) });
-  sponsorSettings.showSponsors = showSponsors;
-  document.getElementById('holeSponsorsCard').style.display = showSponsors ? '' : 'none';
-  showToast(showSponsors ? 'Sponsorvisning aktivert' : 'Sponsorvisning deaktivert');
-}
-
-async function renderHoleSponsorsAdmin() {
-  const activeTournament = allTournaments.find(t => t.status === 'active') || allTournaments.find(t => t.status === 'upcoming');
-  const grid = document.getElementById('holeSponsorsGrid');
-  const card = document.getElementById('holeSponsorsCard');
-  if (!grid || !card) return;
-  card.style.display = sponsorSettings.showSponsors ? '' : 'none';
-  if (!activeTournament) { grid.innerHTML = '<div style="color:var(--text-muted)">Ingen aktiv turnering tilgjengelig.</div>'; return; }
-  const data = await api('/api/admin/tournament/' + activeTournament.id + '/hole-sponsors');
-  const mapping = {};
-  (data.holeSponsors || []).forEach(h => mapping[h.holeNumber] = h);
-  grid.innerHTML = Array.from({length:18}, (_,i)=>i+1).map(h => {
-    const row = mapping[h] || {};
-    return `<div style="border:1px solid var(--gold-border);padding:10px;border-radius:12px;background:var(--white)">
-      <div style="font-weight:700;color:var(--gold-dark);margin-bottom:8px">Hull ${h}</div>
-      <select class="form-select" id="holeSponsor-${h}"><option value="">Ingen sponsor</option>${sponsorList.filter(s=>s.active).map(s=>`<option value="${s.id}" ${Number(row.sponsorId)===s.id?'selected':''}>${s.name}</option>`).join('')}</select>
-      <input class="form-input" id="holeSponsorMsg-${h}" placeholder="Valgfri melding" value="${row.message || ''}" style="margin-top:8px">
-      <button class="btn btn--outline btn--sm" style="margin-top:8px" onclick="saveHoleSponsor(${activeTournament.id}, ${h})">Lagre</button>
-    </div>`;
-  }).join('');
-}
-
-async function saveHoleSponsor(tournamentId, holeNumber) {
-  const sponsorId = document.getElementById('holeSponsor-' + holeNumber).value || null;
-  const message = document.getElementById('holeSponsorMsg-' + holeNumber).value.trim();
-  await api('/api/admin/tournament/' + tournamentId + '/hole-sponsor', { method:'PUT', body: JSON.stringify({ holeNumber, sponsorId, message }) });
-  showToast('Hullsponsor lagret');
-}
-
 </script>
 </body>
 </html>
