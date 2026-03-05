@@ -19,7 +19,6 @@
     <ul class="navbar-nav">
       <li><a href="/" class="nav-link active">Hjem</a></li>
       <li><a href="/gameday" class="nav-link">Spilleregler &amp; Informasjon</a></li>
-      <li><a href="/shop" class="nav-link">Nettbutikk</a></li>
       <li><a href="/scoreboard" class="nav-link">Live Resultater</a></li>
       <li><a href="/gallery" class="nav-link">Turneringsbilder</a></li>
       <li><a href="/legacy" class="nav-link">Hall of Fame</a></li>
@@ -35,7 +34,6 @@
         <a href="/" class="quick-nav-link active">
           <i class="fas fa-home"></i> Hjem</a>
         <a href="/gameday" class="quick-nav-link"><i class="fas fa-calendar-day"></i> Spilleregler & Informasjon</a>
-        <a href="/shop" class="quick-nav-link"><i class="fas fa-bag-shopping"></i> Nettbutikk</a>
         <a href="/scoreboard" class="quick-nav-link"><i class="fas fa-flag"></i> Live Resultater</a>
         <a href="/gallery" class="quick-nav-link"><i class="fas fa-camera"></i> Turneringsbilder</a>
         <a href="/legacy" class="quick-nav-link"><i class="fas fa-trophy"></i> Hall of Fame</a>
@@ -51,7 +49,6 @@
 <div class="navbar-mobile" id="mobileMenu">
   <a href="/" class="nav-link active">Hjem</a>
   <a href="/gameday" class="nav-link">Spilleregler &amp; Informasjon</a>
-  <a href="/shop" class="nav-link">Nettbutikk</a>
   <a href="/scoreboard" class="nav-link">Live Resultater</a>
   <a href="/gallery" class="nav-link">Turneringsbilder</a>
   <a href="/legacy" class="nav-link">Hall of Fame</a>
@@ -128,11 +125,6 @@
     <div class="hero-actions">
       <a href="/scoreboard" class="btn btn--gold btn--lg"><i class="fas fa-golf-ball-tee"></i> Live Resultater</a>
       <a href="/gameday" class="btn btn--outline btn--lg" style="color:var(--gold-dark);border-color:var(--gold)"><i class="fas fa-calendar-day"></i> Spilleregler & Informasjon</a>
-    </div>
-
-    <div id="sponsorSection" class="d-none" style="margin-top:28px;width:min(100%,1120px)">
-      <div style="font-size:.8rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--text-muted);margin-bottom:16px">Sponsorer</div>
-      <div id="sponsorGrid" class="sponsor-grid"></div>
     </div>
   </div>
 </section>
@@ -268,7 +260,7 @@
       <a href="/enter-score" class="btn btn--dark"><i class="fas fa-pencil"></i> Scorekort</a>
     </div>
   </div>
-
+</section>
 
 <footer class="footer">
   <div class="container">
@@ -438,28 +430,6 @@ async function loadGallery() {
   }
 }
 
-
-
-async function loadSponsors() {
-  try {
-    const r = await fetch('/api/sponsors?placement=home');
-    const d = await r.json();
-    if (!d.sponsors || d.sponsors.length === 0) return;
-    const section = document.getElementById('sponsorSection');
-    const grid = document.getElementById('sponsorGrid');
-    const topFive = d.sponsors.filter(s => s.spot_number >= 1 && s.spot_number <= 5).sort((a,b)=>a.spot_number-b.spot_number);
-    if (!topFive.length) return;
-    section.classList.remove('d-none');
-    grid.innerHTML = topFive.map(s => `
-      <article class="sponsor-card">
-        ${s.logo_path ? `<img src="${s.logo_path}" alt="${s.sponsor_name || 'Sponsor'}" class="sponsor-logo">` : '<div class="sponsor-logo sponsor-logo--placeholder"><i class="fas fa-image"></i></div>'}
-        <span class="sponsor-name">${s.sponsor_name || `Sponsorplass ${s.spot_number}`}</span>
-        ${s.description ? `<span class="sponsor-description">${s.description}</span>` : ''}
-      </article>
-    `).join('');
-  } catch(_) {}
-}
-
 async function loadCoinBack() {
   try {
     const d = await fetch('/api/coin-back').then(r => r.json());
@@ -473,7 +443,6 @@ loadTournament();
 loadChampion();
 loadGallery();
 loadCoinBack();
-loadSponsors();
 </script>
 </body>
 </html>

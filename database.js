@@ -1,81 +1,11 @@
-const { DatabaseSync } = require('node:sqlite');
+const Database = require('better-sqlite3');
 const fs = require('fs');
 
 if (!fs.existsSync('./data')) {
   fs.mkdirSync('./data', { recursive: true });
 }
 
-function normalizeParams(params) {
-  if (params.length === 0) return [];
-  if (params.length === 1 && Array.isArray(params[0])) return params[0];
-  if (params.length === 1 && params[0] && typeof params[0] === 'object' && !Array.isArray(params[0])) return params[0];
-  return params;
-}
-
-class StatementCompat {
-  constructor(stmt) {
-    this.stmt = stmt;
-  }
-
-  run(...params) {
-    return this.stmt.run(normalizeParams(params));
-  }
-
-  get(...params) {
-    return this.stmt.get(normalizeParams(params));
-  }
-
-  all(...params) {
-    return this.stmt.all(normalizeParams(params));
-  }
-}
-
-class DatabaseCompat {
-  constructor(path) {
-    this.db = new DatabaseSync(path);
-    this.transactionDepth = 0;
-  }
-
-  exec(sql) {
-    return this.db.exec(sql);
-  }
-
-  pragma(statement) {
-    const value = statement.trim().replace(/;$/, '');
-    return this.db.exec(`PRAGMA ${value}`);
-  }
-
-  prepare(sql) {
-    return new StatementCompat(this.db.prepare(sql));
-  }
-
-  transaction(fn) {
-    return (...args) => {
-      const nested = this.transactionDepth > 0;
-      const savepoint = `sp_${this.transactionDepth + 1}`;
-      this.transactionDepth += 1;
-      try {
-        if (nested) this.db.exec(`SAVEPOINT ${savepoint}`);
-        else this.db.exec('BEGIN');
-
-        const result = fn(...args);
-
-        if (nested) this.db.exec(`RELEASE SAVEPOINT ${savepoint}`);
-        else this.db.exec('COMMIT');
-
-        return result;
-      } catch (err) {
-        if (nested) this.db.exec(`ROLLBACK TO SAVEPOINT ${savepoint}`);
-        else this.db.exec('ROLLBACK');
-        throw err;
-      } finally {
-        this.transactionDepth -= 1;
-      }
-    };
-  }
-}
-
-const db = new DatabaseCompat('./data/tournament.db');
+const db = new Database('./data/tournament.db');
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
@@ -215,80 +145,6 @@ db.exec(`
     voted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(tournament_id, photo_ref, voter_ip)
   );
-
-  CREATE TABLE IF NOT EXISTS sponsors (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    tournament_id INTEGER NOT NULL,
-    placement TEXT NOT NULL,
-    slot_key TEXT NOT NULL,
-    spot_number INTEGER,
-    hole_number INTEGER,
-    sponsor_name TEXT DEFAULT '',
-    description TEXT DEFAULT '',
-    logo_path TEXT DEFAULT '',
-    is_enabled INTEGER NOT NULL DEFAULT 0,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
-    UNIQUE(tournament_id, placement, slot_key)
-  );
-
-
-  CREATE TABLE IF NOT EXISTS webshop_products (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    slug TEXT NOT NULL UNIQUE,
-    name TEXT NOT NULL,
-    description TEXT DEFAULT '',
-    image_url TEXT DEFAULT '',
-    price_nok INTEGER NOT NULL,
-    currency TEXT NOT NULL DEFAULT 'nok',
-    printful_variant_id INTEGER,
-    is_active INTEGER NOT NULL DEFAULT 1,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-
-  CREATE TABLE IF NOT EXISTS webshop_orders (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    public_id TEXT NOT NULL UNIQUE,
-    email TEXT NOT NULL,
-    full_name TEXT DEFAULT '',
-    status TEXT NOT NULL DEFAULT 'pending_payment',
-    currency TEXT NOT NULL DEFAULT 'nok',
-    amount_total INTEGER NOT NULL DEFAULT 0,
-    stripe_session_id TEXT DEFAULT '',
-    stripe_payment_intent_id TEXT DEFAULT '',
-    printful_order_id TEXT DEFAULT '',
-    printful_status TEXT DEFAULT '',
-    tracking_number TEXT DEFAULT '',
-    tracking_url TEXT DEFAULT '',
-    shipping_json TEXT DEFAULT '',
-    metadata_json TEXT DEFAULT '',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-
-  CREATE TABLE IF NOT EXISTS webshop_order_items (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    order_id INTEGER NOT NULL,
-    product_id INTEGER NOT NULL,
-    product_name TEXT NOT NULL,
-    quantity INTEGER NOT NULL,
-    unit_price INTEGER NOT NULL,
-    printful_variant_id INTEGER,
-    FOREIGN KEY (order_id) REFERENCES webshop_orders(id) ON DELETE CASCADE,
-    FOREIGN KEY (product_id) REFERENCES webshop_products(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS webshop_webhook_events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    provider TEXT NOT NULL,
-    event_id TEXT NOT NULL,
-    payload_json TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(provider, event_id)
-  );
-
-
-
 `);
 
 // Migrate existing databases
@@ -318,21 +174,6 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS photo_votes (
   UNIQUE(tournament_id, photo_ref, voter_ip)
 )`); } catch(_) {}
 
-
-
-try {
-  const existingProducts = db.prepare('SELECT COUNT(*) AS count FROM webshop_products').get();
-  if (!existingProducts || !existingProducts.count) {
-    const insertProduct = db.prepare(
-      `INSERT INTO webshop_products (slug, name, description, image_url, price_nok, currency, printful_variant_id, is_active)
-       VALUES (?,?,?,?,?,?,?,1)`
-    );
-    insertProduct.run('lorgen-cap', 'Lorgen Caps', 'Klassisk caps med brodert Lorgen-logo.', '/images/logo.png', 34900, 'nok', null);
-    insertProduct.run('lorgen-polo', 'Lorgen Polo', 'Komfortabel golfpolo med turneringsprofil.', '/images/logo.png', 59900, 'nok', null);
-    insertProduct.run('lorgen-hoodie', 'Lorgen Hoodie', 'Varm hoodie for kjølige kvelder på banen.', '/images/logo.png', 79900, 'nok', null);
-  }
-} catch (_) {}
-
 module.exports = db;
 
 try { db.exec(`CREATE TABLE IF NOT EXISTS chat_messages (
@@ -344,4 +185,3 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS chat_messages (
   image_path TEXT DEFAULT '',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`); } catch(_) {}
-
