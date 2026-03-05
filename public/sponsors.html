@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="nb">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sponsorer — Lorgen Invitational</title>
+  <link rel="icon" type="image/png" href="/images/logo.png">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body>
+<nav class="navbar" id="navbar">
+  <div class="container navbar-inner">
+    <a href="/" class="navbar-brand"><img src="/images/logo.png" alt="Lorgen Invitational" class="navbar-logo"></a>
+    <ul class="navbar-nav">
+      <li><a href="/" class="nav-link">Hjem</a></li>
+      <li><a href="/gameday" class="nav-link">Spilleregler &amp; Informasjon</a></li>
+      <li><a href="/scoreboard" class="nav-link">Live Resultater</a></li>
+      <li><a href="/gallery" class="nav-link">Turneringsbilder</a></li>
+      <li><a href="/legacy" class="nav-link">Hall of Fame</a></li>
+      <li><a href="/enter-score" class="nav-link nav-link--cta">Scorekort</a></li>
+    </ul>
+    <button class="navbar-toggle" id="navToggle" aria-label="Meny"><span></span><span></span><span></span></button>
+  </div>
+</nav>
+<div class="navbar-mobile" id="mobileMenu">
+  <a href="/" class="nav-link">Hjem</a>
+  <a href="/gameday" class="nav-link">Spilleregler &amp; Informasjon</a>
+  <a href="/scoreboard" class="nav-link">Live Resultater</a>
+  <a href="/gallery" class="nav-link">Turneringsbilder</a>
+  <a href="/legacy" class="nav-link">Hall of Fame</a>
+  <a href="/enter-score" class="nav-link">Scorekort</a>
+</div>
+
+<div class="page-hero"><div class="container"><div class="page-hero-tag"><i class="fas fa-handshake"></i> Samarbeid</div><h1 class="page-hero-title">Våre sponsorer</h1><p class="page-hero-sub">Partnere som gjør Lorgen Invitational mulig.</p></div></div>
+
+<section class="section" style="padding-top:26px">
+  <div class="container" id="sponsorContent"></div>
+</section>
+
+<script>
+function shouldShowSponsors(settings){ return !!(settings && settings.showSponsors); }
+function sponsorInitials(name){ return String(name||'').split(' ').map(x=>x.trim()[0]).filter(Boolean).slice(0,2).join('').toUpperCase() || 'SP'; }
+function sponsorCard(sponsor, extra='', holeNumber=null){
+  const content = `
+    <div class="sponsor-hole-card">${holeNumber ? `<div class="sponsor-hole-number">#${holeNumber}</div>` : ""}
+      <div class="sponsor-logo-wrap">${sponsor.logoUrl ? `<img src="${sponsor.logoUrl}" alt="${sponsor.name}">` : `<span class="sponsor-logo-fallback">${sponsorInitials(sponsor.name)}</span>`}</div>
+      <div class="sponsor-badge-body"><div class="sponsor-badge-name">${sponsor.name}</div>${extra || sponsor.tagline ? `<div class="sponsor-badge-text">${extra || sponsor.tagline}</div>` : ''}</div>
+    </div>`;
+  if (!sponsor.websiteUrl) return content;
+  return `<a href="${sponsor.websiteUrl}" target="_blank" rel="noopener" style="text-decoration:none">${content}</a>`;
+}
+async function init(){
+  const res = await fetch('/api/sponsors');
+  const d = await res.json();
+  if (!shouldShowSponsors(d.settings)) { location.href = '/'; return; }
+  const content = document.getElementById('sponsorContent');
+  const titleSponsors = (d.sponsors||[]).filter(s => s.tier === 'title');
+  const supporters = (d.sponsors||[]).filter(s => s.tier === 'supporter');
+  const holeMap = {};
+  (d.holeSponsors||[]).forEach(h => { if (h.sponsor && h.sponsor.active) holeMap[h.holeNumber] = h; });
+  content.innerHTML = `
+    ${titleSponsors.length ? `<div class="section-header" style="margin-bottom:18px"><span class="section-tag">Seksjon 1</span><h2 class="section-title">Hoved<span>sponsorer</span></h2></div><div class="sponsors-grid" style="margin-bottom:26px">${titleSponsors.map(s => sponsorCard(s)).join('')}</div>` : ''}
+    <div class="section-header" style="margin-bottom:18px"><span class="section-tag">Seksjon 2</span><h2 class="section-title">Hull<span>sponsing</span></h2></div>
+    <div class="sponsors-grid" style="margin-bottom:26px">
+      ${Array.from({length:18},(_,i)=>i+1).map(n => {
+        const hs = holeMap[n];
+        if (!hs) return '';
+        return `<div>${sponsorCard(hs.sponsor, hs.message, n)}</div>`;
+      }).join('')}
+    </div>
+    ${supporters.length ? `<div class="section-header" style="margin-bottom:18px"><span class="section-tag">Seksjon 3</span><h2 class="section-title">Support<span>ers</span></h2></div><div class="sponsors-grid">${supporters.map(s => sponsorCard(s)).join('')}</div>` : ''}
+  `;
+}
+init();
+window.addEventListener('scroll',()=>document.getElementById('navbar').classList.toggle('scrolled', window.scrollY > 40));
+document.getElementById('navToggle').addEventListener('click',()=>document.getElementById('mobileMenu').classList.toggle('open'));
+</script>
+</body>
+</html>
