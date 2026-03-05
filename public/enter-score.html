@@ -612,6 +612,7 @@ let tournamentData = null;
 let holesData      = [];
 let scoresData     = {};
 let claimsData     = {};
+let holeSponsorsMap = {};
 let pendingPhotoHole = null;
 let currentHoleIndex = 0;
 let teamPin = '';
@@ -843,6 +844,8 @@ async function loadScorecard() {
   teamData = d.team; holesData = d.holes; tournamentData = d.tournament || null;
   d.scores.forEach(s => { scoresData[s.hole_number] = s; });
   if (d.claims) d.claims.forEach(c => { claimsData[c.hole_number + '_' + c.award_type] = c; });
+  holeSponsorsMap = {};
+  if (d.hole_sponsors) d.hole_sponsors.forEach(s => { holeSponsorsMap[s.hole_number] = s; });
   renderAll();
   loadPosition();
   await loadChatMessages();
@@ -1105,6 +1108,17 @@ function renderCurrentHole() {
   const hasCtp = h.is_closest_to_pin;
   const ldClaim  = claimsData[h.hole_number + '_longest_drive'];
   const ctpClaim = claimsData[h.hole_number + '_closest_to_pin'];
+  const holeSponsor = holeSponsorsMap[h.hole_number];
+
+  const sponsorBanner = holeSponsor ? `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:10px;border:1px solid var(--gold-border);border-radius:var(--radius-sm);background:var(--gold-pale)">
+      ${holeSponsor.logo_path ? `<img src="${holeSponsor.logo_path}" alt="${holeSponsor.sponsor_name || 'Sponsor'}" style="width:92px;height:92px;object-fit:contain;border-radius:8px;background:var(--white);padding:4px">` : ''}
+      <div>
+        <div style="font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);font-weight:700">Hullsponsor</div>
+        <div style="font-weight:700;color:var(--dark)">${holeSponsor.sponsor_name || 'Sponsor'}</div>
+        ${holeSponsor.description ? `<div style="font-size:.78rem;color:var(--text-muted)">${holeSponsor.description}</div>` : ''}
+      </div>
+    </div>` : '';
 
   const competitionBanners = [
     hasLd  ? '<div class="competition-banner">🏌️ Utvalgt hull — <strong>Longest Drive</strong> konkurranse! Meld inn ditt beste slag nedenfor.</div>' : '',
@@ -1151,6 +1165,7 @@ function renderCurrentHole() {
       </div>
     </div>
 
+    ${sponsorBanner}
     ${competitionBanners}
 
     ${needsPhoto ? `
