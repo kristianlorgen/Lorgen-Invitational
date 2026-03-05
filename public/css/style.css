@@ -1225,3 +1225,64 @@ input, select, textarea { font-family: inherit; }
 @media (max-width: 768px) {
   .quick-nav { display: none; }
 }
+
+/* Sponsor cards (homepage) */
+.sponsor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  gap: 20px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.sponsor-card {
+  min-height: 240px;
+  border: 1px solid var(--gold-border);
+  border-radius: 18px;
+  background: rgba(255,255,255,.92);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 24px;
+}
+
+.sponsor-logo {
+  width: 264px;
+  height: 264px;
+  object-fit: contain;
+  background: var(--white);
+  border-radius: 14px;
+  padding: 10px;
+}
+
+.sponsor-logo--placeholder {
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+}
+
+.sponsor-name {
+  text-align: center;
+  font-size: 1.45rem;
+  color: var(--dark);
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.sponsor-description {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1.4;
+  max-width: 42ch;
+}
+
+@media (max-width: 768px) {
+  .sponsor-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -145,6 +145,22 @@ db.exec(`
     voted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(tournament_id, photo_ref, voter_ip)
   );
+
+  CREATE TABLE IF NOT EXISTS sponsors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tournament_id INTEGER NOT NULL,
+    placement TEXT NOT NULL,
+    slot_key TEXT NOT NULL,
+    spot_number INTEGER,
+    hole_number INTEGER,
+    sponsor_name TEXT DEFAULT '',
+    description TEXT DEFAULT '',
+    logo_path TEXT DEFAULT '',
+    is_enabled INTEGER NOT NULL DEFAULT 0,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
+    UNIQUE(tournament_id, placement, slot_key)
+  );
 `);
 
 // Migrate existing databases

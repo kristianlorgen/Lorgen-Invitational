@@ -97,6 +97,7 @@
         <div class="sidebar-link" onclick="showPanel('holes')"><i class="fas fa-golf-ball-tee"></i> Bane og Hull</div>
         <div class="sidebar-link" onclick="showPanel('courses')"><i class="fas fa-map-location-dot"></i> Baner</div>
         <div class="sidebar-link" onclick="showPanel('gameday')"><i class="fas fa-calendar-day"></i> Spilleregler & Informasjon</div>
+        <div class="sidebar-link" onclick="showPanel('sponsors')"><i class="fas fa-handshake"></i> Sponsorer</div>
       </div>
       <div class="sidebar-section">
         <div class="sidebar-label">Aktiv Dag</div>
@@ -557,6 +558,36 @@
       </div>
 
       <!-- ── UTMERKELSER ────────────────────────────────────────────────────── -->
+      
+
+      <div class="admin-panel" id="panel-sponsors">
+        <div class="admin-panel-title">Sponsorer</div>
+        <div class="admin-panel-sub">Administrer sponsorplasser på forsiden og hullsponsorer i scorekortet</div>
+
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-body">
+            <div class="form-group" style="max-width:360px;margin:0">
+              <label class="form-label">Turnering</label>
+              <select class="form-select" id="sponsorsTournamentSelect" onchange="loadSponsorsAdmin()"></select>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-header"><strong>Forside — 5 sponsorplasser</strong></div>
+          <div class="card-body" id="homeSponsorRows"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><strong>Scorekort — sponsor per hull</strong></div>
+          <div class="card-body" id="holeSponsorRows"></div>
+        </div>
+
+        <div style="margin-top:16px">
+          <button class="btn btn--gold btn--sm" onclick="saveSponsorsAdmin()"><i class="fas fa-floppy-disk"></i> Lagre sponsorer</button>
+        </div>
+      </div>
+
       <div class="admin-panel" id="panel-awards">
         <div class="admin-panel-title">Utmerkelser</div>
         <div class="admin-panel-sub">Tildel Lengste Drive og Nærmest Flagget</div>
@@ -791,7 +822,7 @@ function showPanel(id) {
   // Auto-trigger data loading for panels with a tournament select
   const loaders = { holes: loadHoles, teams: loadTeams, scores: loadScores,
                     photos: loadPhotos, awards: loadAwards, gameday: loadGameday,
-                    courses: loadCourses };
+                    courses: loadCourses, sponsors: loadSponsorsAdmin };
   if (loaders[id]) loaders[id]();
 }
 
@@ -834,7 +865,7 @@ function formatTournamentDate(dateValue, includeWeekday = false) {
 
 function populateTournamentSelects() {
   const ids = ['teamsTournamentSelect','holesTournamentSelect','scoresTournamentSelect',
-               'awardsTournamentSelect','gamedayTournamentSelect','photosTournamentSelect'];
+               'awardsTournamentSelect','gamedayTournamentSelect','photosTournamentSelect','sponsorsTournamentSelect'];
   // Find the default (active > upcoming) tournament
   const defaultT = allTournaments.find(t => t.status === 'active') ||
                    allTournaments.find(t => t.status === 'upcoming');
@@ -1777,6 +1808,85 @@ async function saveFocusPicker() {
 
 function openLegacyFocusPicker(id, imgSrc, currentFocus) {
   openFocusPicker(imgSrc, id, currentFocus);
+}
+
+
+let sponsorsCache = { home: [], hole: [] };
+
+function sponsorRowHtml(item, type, indexKey) {
+  const rowId = `${type}-${indexKey}`;
+  return `
+    <div data-row="${rowId}" style="display:grid;grid-template-columns:120px 1fr 1fr 170px 170px;gap:10px;align-items:center;margin-bottom:10px;padding:10px;border:1px solid var(--gold-border);border-radius:10px;background:var(--off-white)">
+      <div style="font-weight:700;color:var(--dark)">${type === 'home' ? `Spot ${indexKey}` : `Hull ${indexKey}`}</div>
+      <input class="form-input" data-field="sponsor_name" value="${item.sponsor_name || ''}" placeholder="Sponsornavn">
+      <input class="form-input" data-field="description" value="${item.description || ''}" placeholder="Kort beskrivelse">
+      <div>
+        <input class="form-input" data-field="logo_path" value="${item.logo_path || ''}" placeholder="Logo URL eller last opp">
+        <input type="file" data-field="logo_file" accept="image/*" style="margin-top:6px;font-size:.75rem" onchange="uploadSponsorLogo(this, '${rowId}')">
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:.84rem;color:var(--text-muted)">
+        <input type="checkbox" data-field="is_enabled" ${item.is_enabled ? 'checked' : ''} style="accent-color:var(--gold)"> Vis sponsor
+      </label>
+    </div>`;
+}
+
+async function loadSponsorsAdmin() {
+  const tid = document.getElementById('sponsorsTournamentSelect').value;
+  if (!tid) {
+    document.getElementById('homeSponsorRows').innerHTML = '<div style="color:var(--text-muted)">Velg turnering først.</div>';
+    document.getElementById('holeSponsorRows').innerHTML = '';
+    return;
+  }
+  const d = await api('/api/admin/tournament/' + tid + '/sponsors');
+  sponsorsCache = d;
+  const homeMap = {};
+  (d.home || []).forEach(r => { homeMap[r.spot_number] = r; });
+  const holeMap = {};
+  (d.hole || []).forEach(r => { holeMap[r.hole_number] = r; });
+
+  document.getElementById('homeSponsorRows').innerHTML = [1,2,3,4,5].map(n => sponsorRowHtml(homeMap[n] || { spot_number:n, is_enabled:0 }, 'home', n)).join('');
+  document.getElementById('holeSponsorRows').innerHTML = Array.from({ length: 18 }, (_, i) => i + 1)
+    .map(n => sponsorRowHtml(holeMap[n] || { hole_number:n, is_enabled:0 }, 'hole', n)).join('');
+}
+
+async function uploadSponsorLogo(input, rowId) {
+  const file = input.files?.[0];
+  if (!file) return;
+  const tid = document.getElementById('sponsorsTournamentSelect').value;
+  if (!tid) { showToast('Velg turnering først', 'error'); return; }
+  const fd = new FormData();
+  fd.append('logo', file);
+  const res = await fetch('/api/admin/tournament/' + tid + '/sponsor-logo', { method: 'POST', body: fd });
+  const data = await res.json();
+  if (!res.ok) { showToast(data.error || 'Kunne ikke laste opp logo', 'error'); return; }
+  const row = document.querySelector(`[data-row="${rowId}"]`);
+  if (row) row.querySelector('[data-field="logo_path"]').value = data.logo_path || '';
+  showToast('Logo lastet opp');
+}
+
+async function saveSponsorsAdmin() {
+  const tid = document.getElementById('sponsorsTournamentSelect').value;
+  if (!tid) { showToast('Velg turnering først', 'error'); return; }
+  const rows = Array.from(document.querySelectorAll('#panel-sponsors [data-row]'));
+  const sponsors = rows.map(row => {
+    const [placement, num] = row.getAttribute('data-row').split('-');
+    const isHome = placement === 'home';
+    return {
+      placement,
+      spot_number: isHome ? Number(num) : null,
+      hole_number: isHome ? null : Number(num),
+      sponsor_name: row.querySelector('[data-field="sponsor_name"]').value,
+      description: row.querySelector('[data-field="description"]').value,
+      logo_path: row.querySelector('[data-field="logo_path"]').value,
+      is_enabled: row.querySelector('[data-field="is_enabled"]').checked
+    };
+  });
+  await api('/api/admin/tournament/' + tid + '/sponsors', {
+    method: 'POST',
+    body: JSON.stringify({ sponsors })
+  });
+  showToast('Sponsorer lagret');
+  await loadSponsorsAdmin();
 }
 
 // ── Baner (courses) ───────────────────────────────────────────────────────────

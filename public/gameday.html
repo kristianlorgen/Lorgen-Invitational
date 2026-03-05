@@ -62,7 +62,11 @@
   <div class="container">
     <div class="page-hero-tag"><i class="fas fa-flag"></i> &nbsp; Spilleregler & Informasjon</div>
     <h1 class="page-hero-title">Spilleregler & Informasjon</h1>
-    <p class="page-hero-sub" id="heroDateLine">Alt du trenger for turneringsdagen</p>
+    <div id="heroSponsorBox" class="d-none" style="margin:20px auto 16px;max-width:1080px;background:var(--white);border:1px solid var(--gold-border);border-radius:14px;padding:16px 20px">
+      <div style="font-size:.74rem;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--text-muted);margin-bottom:12px">Sponsorer</div>
+      <div id="heroSponsorList" style="display:flex;gap:14px;flex-wrap:wrap;justify-content:center"></div>
+    </div>
+    <p class="page-hero-sub" id="heroDateLine">Alt du trenger å vite for turneringsdagen</p>
   </div>
 </div>
 
@@ -309,6 +313,29 @@ function formatTournamentDate(dateValue, includeWeekday = false) {
   });
 }
 
+
+
+async function loadHeroSponsors() {
+  try {
+    const r = await fetch('/api/sponsors?placement=home');
+    const d = await r.json();
+    const sponsors = (d.sponsors || []).filter(s => s.spot_number >= 1 && s.spot_number <= 5).sort((a,b)=>a.spot_number-b.spot_number);
+    if (!sponsors.length) return;
+    const box = document.getElementById('heroSponsorBox');
+    const list = document.getElementById('heroSponsorList');
+    list.innerHTML = sponsors.map(s => `
+      <div style="display:flex;align-items:center;gap:12px;border:1px solid var(--gold-border);border-radius:12px;background:var(--off-white);padding:12px 16px">
+        ${s.logo_path ? `<img src="${s.logo_path}" alt="${s.sponsor_name || 'Sponsor'}" style="width:112px;height:112px;object-fit:contain;background:var(--white);border-radius:10px;padding:4px">` : ''}
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <span style="font-size:1.1rem;color:var(--dark);font-weight:700;line-height:1.2">${s.sponsor_name || 'Sponsor'}</span>
+          ${s.description ? `<span style="color:var(--text-muted);font-size:.95rem;line-height:1.35">${s.description}</span>` : ''}
+        </div>
+      </div>
+    `).join('');
+    box.classList.remove('d-none');
+  } catch (_) {}
+}
+
 async function loadGameday() {
   try {
     const r = await fetch('/api/tournament');
@@ -378,6 +405,7 @@ async function loadGameday() {
   }
 }
 
+loadHeroSponsors();
 loadGameday();
 </script>
 </body>
