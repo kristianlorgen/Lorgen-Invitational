@@ -145,35 +145,6 @@ db.exec(`
     voted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(tournament_id, photo_ref, voter_ip)
   );
-
-  CREATE TABLE IF NOT EXISTS settings (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    show_sponsors INTEGER NOT NULL DEFAULT 0,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-
-  CREATE TABLE IF NOT EXISTS sponsors (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    logo_url TEXT DEFAULT '',
-    website_url TEXT DEFAULT '',
-    tagline TEXT DEFAULT '',
-    tier TEXT NOT NULL DEFAULT 'supporter',
-    active INTEGER NOT NULL DEFAULT 1,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-
-  CREATE TABLE IF NOT EXISTS hole_sponsors (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    tournament_id INTEGER NOT NULL,
-    hole_number INTEGER NOT NULL,
-    sponsor_id INTEGER,
-    message TEXT DEFAULT '',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE,
-    FOREIGN KEY (sponsor_id) REFERENCES sponsors(id) ON DELETE SET NULL,
-    UNIQUE(tournament_id, hole_number)
-  );
 `);
 
 // Migrate existing databases
@@ -202,9 +173,6 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS photo_votes (
   voted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(tournament_id, photo_ref, voter_ip)
 )`); } catch(_) {}
-try { db.exec(`ALTER TABLE sponsors ADD COLUMN active INTEGER NOT NULL DEFAULT 1`); } catch(_) {}
-
-db.prepare(`INSERT OR IGNORE INTO settings (id, show_sponsors) VALUES (1, 0)`).run();
 
 module.exports = db;
 
