@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Turneringsbilder — Lorgen Invitational</title>
   <meta name="description" content="Se alle bilder fra dagens runde og stem på ditt favorittbilde.">
+
+  <meta property="og:title" content="Lorgen Invitational">
+  <meta property="og:description" content="Power · Precision · Party — Live resultater, regler og galleri.">
+  <meta property="og:image" content="https://lorgen-invitational-production.up.railway.app/images/logo.png">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
   <link rel="icon" type="image/png" href="/images/logo.png">
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -150,10 +156,16 @@
       <p class="section-subtitle" id="photoCount">Laster bilder...</p>
     </div>
 
-    <div id="emptyState" class="d-none" style="text-align:center;padding:60px 20px">
-      <div style="font-size:3rem;margin-bottom:16px">📸</div>
-      <h3 style="font-family:var(--font-heading);color:var(--text);margin-bottom:8px">Ingen bilder ennå</h3>
-      <p style="color:var(--text-muted)">Bilder dukker opp her etter hvert som spillere laster opp fra hullene.</p>
+    <div id="emptyState" class="d-none">
+      <div class="empty-state">
+        <div class="empty-state__icon">📸</div>
+        <h3 class="empty-state__title">Ingen bilder ennå</h3>
+        <p class="empty-state__description">Bilder dukker opp her etter hvert som spillere laster opp fra hullene.</p>
+        <div class="empty-state__actions">
+          <a href="/enter-score" class="btn btn--gold"><i class="fas fa-golf-ball"></i> Gå til Scorekort</a>
+          <a href="/scoreboard" class="btn btn--outline" style="color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-list-ol"></i> Live Resultater</a>
+        </div>
+      </div>
     </div>
 
     <div class="gallery-grid" id="galleryGrid"></div>

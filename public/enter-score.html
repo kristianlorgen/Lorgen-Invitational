@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Scorekort — Lorgen Invitational</title>
   <meta name="description" content="Registrer poengsummen for ditt lag i Lorgen Invitational.">
+
+  <meta property="og:title" content="Lorgen Invitational">
+  <meta property="og:description" content="Power · Precision · Party — Live resultater, regler og galleri.">
+  <meta property="og:image" content="https://lorgen-invitational-production.up.railway.app/images/logo.png">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
   <link rel="icon" type="image/png" href="/images/logo.png">
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -443,6 +449,13 @@
     </div>
   </div>
 
+  <section style="background:var(--off-white);padding:28px 0" id="scoreStatusScreen" class="d-none">
+    <div class="container">
+      <div class="empty-state" id="scoreStatusCard"></div>
+    </div>
+  </section>
+
+  <div id="activeRoundContent">
   <!-- Hullnavigasjon (prikker) -->
   <div style="background:var(--white);padding:12px 16px;border-bottom:1px solid var(--gold-border)">
     <div class="container" style="max-width:600px">
@@ -509,6 +522,7 @@
         </div>
       </div>
     </div>
+  </div>
   </div>
 </div>
 
@@ -719,6 +733,56 @@ function allHolesCompleted() {
   return holesData.length > 0 && holesData.every(h => (scoresData[h.hole_number]?.score || 0) > 0);
 }
 
+function renderScoreStatus(kind) {
+  const statusWrap = document.getElementById('scoreStatusScreen');
+  const statusCard = document.getElementById('scoreStatusCard');
+  const activeWrap = document.getElementById('activeRoundContent');
+  if (!statusWrap || !statusCard || !activeWrap) return;
+
+  if (kind === 'active') {
+    statusWrap.classList.add('d-none');
+    activeWrap.classList.remove('d-none');
+    return;
+  }
+
+  activeWrap.classList.add('d-none');
+  statusWrap.classList.remove('d-none');
+
+  if (kind === 'idle') {
+    statusCard.innerHTML = `
+      <div class="empty-state__icon">⌛</div>
+      <h2 class="empty-state__title">Velkommen${teamData?.team_name ? `, ${teamData.team_name}` : ''}</h2>
+      <p class="empty-state__description">Laster scorekort…</p>
+      <div class="empty-state__actions">
+        <a href="/scoreboard" class="btn btn--outline" style="color:var(--gold-dark);border-color:var(--gold-border)">
+          <i class="fas fa-list-ol"></i> Gå til Live Resultater
+        </a>
+      </div>`;
+    return;
+  }
+
+  if (kind === 'locked') {
+    statusCard.innerHTML = `
+      <div class="empty-state__icon">🔒</div>
+      <h2 class="empty-state__title">Resultatkort låst</h2>
+      <p class="empty-state__description">Kontakt admin hvis noe må korrigeres.</p>
+      <div class="empty-state__actions">
+        <a href="/scoreboard" class="btn btn--gold"><i class="fas fa-list-ol"></i> Se Live Resultater</a>
+        <a href="/legacy" class="btn btn--outline" style="color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-trophy"></i> Hall of Fame</a>
+      </div>`;
+    return;
+  }
+
+  statusCard.innerHTML = `
+    <div class="empty-state__icon">🏁</div>
+    <h2 class="empty-state__title">Runden er fullført!</h2>
+    <p class="empty-state__description">Etter låsing kan kun admin endre poengene.</p>
+    <div class="empty-state__actions">
+      <a href="/scoreboard" class="btn btn--gold"><i class="fas fa-list-ol"></i> Se stillingen</a>
+      <button onclick="openSummary()" class="btn btn--outline" style="color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-lock"></i> Lås inn resultater</button>
+    </div>`;
+}
+
 async function doLogin() {
   const pin = getPin();
   if (pin.length < 4) { document.getElementById('loginError').textContent = 'Vennligst skriv inn din 4-sifrede PIN'; return; }
@@ -735,9 +799,10 @@ async function doLogin() {
       sessionStorage.setItem('team_pin', pin);
       teamData = d.team;
       updateNotificationBanner();
-      await loadScorecard();
       document.getElementById('loginScreen').classList.add('d-none');
       document.getElementById('scorecardScreen').classList.remove('d-none');
+      renderScoreStatus('idle');
+      await loadScorecard();
     } else {
       document.getElementById('loginError').textContent = d.error || 'Ugyldig PIN';
       digits.forEach(d => d.value = ''); digits[0].focus();
@@ -782,7 +847,15 @@ async function loadScorecard() {
   loadPosition();
   await loadChatMessages();
   startChatEvents();
-  if (teamData.locked) showLockedState();
+  if (teamData.locked) {
+    showLockedState();
+    return;
+  }
+  if (allHolesCompleted()) {
+    renderScoreStatus('finished');
+  } else {
+    renderScoreStatus('active');
+  }
 }
 
 function formatChatTime(timestamp) {
@@ -1254,7 +1327,7 @@ function showLockedState() {
   const banner = document.getElementById('lockedBanner');
   banner.classList.remove('d-none');
   banner.style.display = 'flex';
-  renderDots(); renderCurrentHole();
+  renderScoreStatus('locked');
 }
 
 async function submitScore(holeNum) {
@@ -1281,6 +1354,7 @@ async function submitScore(holeNum) {
       renderDots();
       renderCurrentHole();
       loadPosition();
+      renderScoreStatus(allHolesCompleted() ? 'finished' : 'active');
     } else {
       showToast(d.error || 'Kunne ikke lagre poengsum', 'error');
       btn.disabled = false;
@@ -1347,9 +1421,10 @@ async function checkSession() {
     if (d.type === 'team') {
       teamData = d.team;
       await ensureNotificationPermission();
-      await loadScorecard();
       document.getElementById('loginScreen').classList.add('d-none');
       document.getElementById('scorecardScreen').classList.remove('d-none');
+      renderScoreStatus('idle');
+      await loadScorecard();
     }
   } catch (_) {}
 }

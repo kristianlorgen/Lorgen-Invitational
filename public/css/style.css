@@ -1092,6 +1092,39 @@ input, select, textarea { font-family: inherit; }
 .badge--info    { background: #eff6ff; color: var(--info); border: 1px solid #bfdbfe; }
 .badge--active  { background: rgba(22,163,74,.15); color: #4ade80; border: 1px solid rgba(22,163,74,.3); }
 
+.empty-state {
+  max-width: 760px;
+  margin: 0 auto;
+  text-align: center;
+  background: var(--white);
+  border: 1px solid var(--gold-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-sm);
+  padding: 36px 24px;
+}
+.empty-state__icon {
+  font-size: 2.2rem;
+  margin-bottom: 10px;
+}
+.empty-state__title {
+  font-family: var(--font-heading);
+  font-size: 1.8rem;
+  color: var(--dark);
+  margin-bottom: 8px;
+}
+.empty-state__description {
+  color: var(--text-muted);
+  max-width: 520px;
+  margin: 0 auto 18px;
+  line-height: 1.55;
+}
+.empty-state__actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 /* ── Footer ─────────────────────────────────────────────────────────────────── */
 .footer {
   background: var(--dark);
