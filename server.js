@@ -206,6 +206,56 @@ function getStageMatches(stageId) {
   }));
 }
 
+
+function getTournamentPlayers(tournamentId) {
+  return db.prepare(
+    `SELECT p.*, s.name AS side_name
+     FROM players p
+     LEFT JOIN tournament_sides s ON s.id=p.team_id
+     WHERE p.tournament_id=?
+     ORDER BY p.active DESC, p.name COLLATE NOCASE ASC, p.id ASC`
+  ).all(tournamentId);
+}
+
+function getStagePairings(stageId) {
+  const stage = db.prepare('SELECT id, tournament_id FROM tournament_stages WHERE id=? LIMIT 1').get(stageId);
+  if (!stage) return [];
+  const players = getTournamentPlayers(stage.tournament_id);
+  const playerMap = new Map(players.map((pl) => [pl.id, pl]));
+  return db.prepare(
+    `SELECT sp.*, ts.name AS side_name
+     FROM stage_pairings sp
+     LEFT JOIN tournament_sides ts ON ts.id=sp.team_id
+     WHERE sp.stage_id=?
+     ORDER BY sp.pairing_order ASC, sp.id ASC`
+  ).all(stageId).map((pairing) => {
+    const ids = safeJsonParse(pairing.player_ids, []) || [];
+    const pairingPlayers = ids.map((id) => playerMap.get(id)).filter(Boolean);
+    return {
+      ...pairing,
+      player_ids: ids,
+      players: pairingPlayers,
+      label: pairingPlayers.length ? pairingPlayers.map((pl) => pl.name).join(' + ') : 'TBD'
+    };
+  });
+}
+
+function getStagePairingMatches(stageId) {
+  const pairings = getStagePairings(stageId);
+  const pairingMap = new Map(pairings.map((p) => [p.id, p]));
+  return db.prepare(
+    `SELECT m.*
+     FROM stage_pairing_matches m
+     WHERE m.stage_id=?
+     ORDER BY m.match_order ASC, m.id ASC`
+  ).all(stageId).map((match) => ({
+    ...match,
+    pairing_a: pairingMap.get(match.pairing_a_id) || null,
+    pairing_b: pairingMap.get(match.pairing_b_id) || null,
+    winner_pairing: pairingMap.get(match.winner_pairing_id) || null
+  }));
+}
+
 function buildCupStandings(matches = [], sides = []) {
   const sideTotals = {};
   sides.forEach((side) => {
@@ -595,7 +645,9 @@ app.get('/api/scoreboard', (req, res) => {
     }
 
     const base = buildScoreboard(t, ctx.stage);
-    res.json({ ...base, mode: t.tournament_mode || 'single_format', stages: ctx.stages });
+    const stagePairings = ctx.stage ? getStagePairings(ctx.stage.id) : [];
+    const stagePairingMatches = ctx.stage ? getStagePairingMatches(ctx.stage.id) : [];
+    res.json({ ...base, mode: t.tournament_mode || 'single_format', stages: ctx.stages, pairings: stagePairings, pairingMatches: stagePairingMatches });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1008,6 +1060,138 @@ app.put('/api/admin/match/:id', requireAdmin, (req, res) => {
 
 app.delete('/api/admin/match/:id', requireAdmin, (req, res) => {
   try { db.prepare('DELETE FROM stage_matches WHERE id=?').run(req.params.id); res.json({ success: true }); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+
+app.get('/api/admin/tournament/:id/players', requireAdmin, (req, res) => {
+  try {
+    res.json({ players: getTournamentPlayers(req.params.id) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/admin/tournament/:id/players', requireAdmin, (req, res) => {
+  try {
+    const { name, handicap, teamId, active } = req.body || {};
+    if (!String(name || '').trim()) return res.status(400).json({ error: 'Navn er påkrevd' });
+    const row = db.prepare(
+      `INSERT INTO players (tournament_id, name, handicap, team_id, active, updated_at)
+       VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
+    ).run(req.params.id, String(name).trim(), handicap === '' || handicap === null || handicap === undefined ? null : Number(handicap), teamId || null, active === 0 ? 0 : 1);
+    res.json({ success: true, id: row.lastInsertRowid });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/admin/player/:id', requireAdmin, (req, res) => {
+  try {
+    const { name, handicap, teamId, active } = req.body || {};
+    if (!String(name || '').trim()) return res.status(400).json({ error: 'Navn er påkrevd' });
+    db.prepare(
+      `UPDATE players SET name=?, handicap=?, team_id=?, active=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`
+    ).run(String(name).trim(), handicap === '' || handicap === null || handicap === undefined ? null : Number(handicap), teamId || null, active === 0 ? 0 : 1, req.params.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/admin/player/:id', requireAdmin, (req, res) => {
+  try { db.prepare('DELETE FROM players WHERE id=?').run(req.params.id); res.json({ success: true }); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/admin/stage/:id/pairings', requireAdmin, (req, res) => {
+  try { res.json({ pairings: getStagePairings(req.params.id) }); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/admin/stage/:id/pairing', requireAdmin, (req, res) => {
+  try {
+    const { teamId, playerIds, order, teeTime } = req.body || {};
+    const ids = Array.isArray(playerIds) ? playerIds.map((id) => Number(id)).filter(Number.isFinite) : [];
+    if (!ids.length) return res.status(400).json({ error: 'Velg minst én spiller' });
+    if (ids.length > 4) return res.status(400).json({ error: 'Maks 4 spillere per pairing' });
+    const row = db.prepare(
+      `INSERT INTO stage_pairings (stage_id, team_id, player_ids, pairing_order, tee_time, updated_at)
+       VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
+    ).run(req.params.id, teamId || null, JSON.stringify(ids), parseInt(order, 10) || 1, teeTime || null);
+    res.json({ success: true, id: row.lastInsertRowid });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/admin/pairing/:id', requireAdmin, (req, res) => {
+  try {
+    const { teamId, playerIds, order, teeTime } = req.body || {};
+    const ids = Array.isArray(playerIds) ? playerIds.map((id) => Number(id)).filter(Number.isFinite) : [];
+    if (!ids.length) return res.status(400).json({ error: 'Velg minst én spiller' });
+    if (ids.length > 4) return res.status(400).json({ error: 'Maks 4 spillere per pairing' });
+    db.prepare(
+      `UPDATE stage_pairings
+       SET team_id=?, player_ids=?, pairing_order=?, tee_time=?, updated_at=CURRENT_TIMESTAMP
+       WHERE id=?`
+    ).run(teamId || null, JSON.stringify(ids), parseInt(order, 10) || 1, teeTime || null, req.params.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/admin/pairing/:id', requireAdmin, (req, res) => {
+  try { db.prepare('DELETE FROM stage_pairings WHERE id=?').run(req.params.id); res.json({ success: true }); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/admin/stage/:id/pairings/auto-generate', requireAdmin, (req, res) => {
+  try {
+    const stage = db.prepare('SELECT * FROM tournament_stages WHERE id=? LIMIT 1').get(req.params.id);
+    if (!stage) return res.status(404).json({ error: 'Stage ikke funnet' });
+    const { size, randomize } = req.body || {};
+    const pairSize = [1,2,4].includes(Number(size)) ? Number(size) : 2;
+    const players = getTournamentPlayers(stage.tournament_id).filter((p) => p.active);
+    const ordered = [...players];
+    if (randomize !== false) {
+      for (let i = ordered.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [ordered[i], ordered[j]] = [ordered[j], ordered[i]];
+      }
+    }
+    const tx = db.transaction(() => {
+      db.prepare('DELETE FROM stage_pairings WHERE stage_id=?').run(stage.id);
+      const insert = db.prepare('INSERT INTO stage_pairings (stage_id, team_id, player_ids, pairing_order, updated_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)');
+      let order = 1;
+      for (let i = 0; i < ordered.length; i += pairSize) {
+        const chunk = ordered.slice(i, i + pairSize);
+        const firstTeam = chunk[0]?.team_id || null;
+        insert.run(stage.id, firstTeam, JSON.stringify(chunk.map((c) => c.id)), order++);
+      }
+    });
+    tx();
+    res.json({ success: true, pairings: getStagePairings(stage.id) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/admin/stage/:id/pairing-matches', requireAdmin, (req, res) => {
+  try { res.json({ matches: getStagePairingMatches(req.params.id) }); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/admin/stage/:id/pairing-match', requireAdmin, (req, res) => {
+  try {
+    const { pairingAId, pairingBId, format, order, teeTime, status } = req.body || {};
+    if (!pairingAId) return res.status(400).json({ error: 'Pairing A er påkrevd' });
+    const row = db.prepare(
+      `INSERT INTO stage_pairing_matches (stage_id, pairing_a_id, pairing_b_id, format, match_order, tee_time, status, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
+    ).run(req.params.id, pairingAId, pairingBId || null, normalizeTournamentFormat(format || 'matchplay'), parseInt(order, 10) || 1, teeTime || null, status || 'scheduled');
+    res.json({ success: true, id: row.lastInsertRowid });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/admin/pairing-match/:id', requireAdmin, (req, res) => {
+  try {
+    const { pairingAId, pairingBId, format, order, teeTime, status, winnerPairingId, resultText } = req.body || {};
+    db.prepare(
+      `UPDATE stage_pairing_matches
+       SET pairing_a_id=?, pairing_b_id=?, format=?, match_order=?, tee_time=?, status=?, winner_pairing_id=?, result_text=?, updated_at=CURRENT_TIMESTAMP
+       WHERE id=?`
+    ).run(pairingAId, pairingBId || null, normalizeTournamentFormat(format || 'matchplay'), parseInt(order, 10) || 1, teeTime || null, status || 'scheduled', winnerPairingId || null, resultText || '', req.params.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/admin/pairing-match/:id', requireAdmin, (req, res) => {
+  try { db.prepare('DELETE FROM stage_pairing_matches WHERE id=?').run(req.params.id); res.json({ success: true }); } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/admin/tournament/:id/sponsors', requireAdmin, (req, res) => {
