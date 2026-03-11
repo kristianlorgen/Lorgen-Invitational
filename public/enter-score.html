@@ -559,6 +559,7 @@
   </div>
 </div>
 
+<div id="uploadWarning" class="d-none" style="position:sticky;top:calc(var(--nav-height) + 8px);z-index:120;margin:8px auto;max-width:480px;background:#fff7ed;border:1px solid #fdba74;color:#9a3412;border-radius:10px;padding:8px 10px;font-size:.78rem"></div>
 <input type="file" id="photoInput" accept="image/*" capture="environment" style="display:none">
 
 <script src="/js/active-tournament.js"></script>
@@ -573,11 +574,18 @@ document.getElementById('navToggle').addEventListener('click', () => {
 function toggleQuickNav() {
   document.getElementById('quickNavPanel').classList.toggle('open');
 }
-function toggleChatWidget() {
+async function toggleChatWidget() {
   const widget = document.getElementById('chatWidget');
   if (!widget) return;
   widget.classList.toggle('open');
-  if (widget.classList.contains('open')) markChatAsSeen();
+  if (widget.classList.contains('open')) {
+    if (!chatLoaded) {
+      await loadChatMessages();
+      startChatEvents();
+      chatLoaded = true;
+    }
+    markChatAsSeen();
+  }
 }
 
 document.addEventListener('click', e => {
@@ -615,6 +623,72 @@ function showToast(msg, type = 'success') {
   document.getElementById('toastContainer').appendChild(t);
   setTimeout(() => t.remove(), 4000);
 }
+function showUploadWarning(msg) {
+  const el = document.getElementById('uploadWarning');
+  if (!el) return;
+  if (!msg) {
+    el.classList.add('d-none');
+    el.textContent = '';
+    return;
+  }
+  el.textContent = msg;
+  el.classList.remove('d-none');
+}
+
+function persistTeamPin(pin) {
+  teamPin = String(pin || '').trim();
+  if (!teamPin) return;
+  sessionStorage.setItem('team_pin', teamPin);
+  localStorage.setItem('team_pin', teamPin);
+}
+
+function restoreTeamPin() {
+  const persisted = sessionStorage.getItem('team_pin') || localStorage.getItem('team_pin') || '';
+  teamPin = persisted.trim();
+  if (teamPin) sessionStorage.setItem('team_pin', teamPin);
+  return teamPin;
+}
+
+function apiFetch(url, options = {}) {
+  const headers = new Headers(options.headers || {});
+  if (teamPin) headers.set('x-team-pin', teamPin);
+  return fetch(url, { ...options, headers, credentials: 'same-origin' });
+}
+
+function revokePhotoObjectUrl() {
+  if (photoObjectUrl) {
+    URL.revokeObjectURL(photoObjectUrl);
+    photoObjectUrl = null;
+  }
+}
+
+async function compressImageFile(file, maxDimension = 1600, quality = 0.78) {
+  if (!file) return file;
+  const beforeSize = Number(file.size || 0);
+  console.info('[scorecard-mobile] image:prepare:start', { fileSize: beforeSize, type: file.type, name: file.name });
+  const bitmap = await createImageBitmap(file);
+  const ratio = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
+  const targetW = Math.max(1, Math.round(bitmap.width * ratio));
+  const targetH = Math.max(1, Math.round(bitmap.height * ratio));
+  const canvas = document.createElement('canvas');
+  canvas.width = targetW;
+  canvas.height = targetH;
+  const ctx = canvas.getContext('2d', { alpha: false, willReadFrequently: false });
+  ctx.drawImage(bitmap, 0, 0, targetW, targetH);
+  bitmap.close();
+  const blob = await new Promise((resolve, reject) => {
+    canvas.toBlob((b) => b ? resolve(b) : reject(new Error('Kunne ikke komprimere bilde')), 'image/jpeg', quality);
+  });
+  const compressed = new File([blob], (file.name || 'photo').replace(/\.[^/.]+$/, '') + '-compressed.jpg', { type: 'image/jpeg' });
+  console.info('[scorecard-mobile] image:prepare:done', {
+    originalSize: beforeSize,
+    compressedSize: compressed.size,
+    width: targetW,
+    height: targetH
+  });
+  return compressed;
+}
+
 
 let teamData       = null;
 let tournamentData = null;
@@ -626,6 +700,9 @@ let activeFormatDef = TournamentFormats.getFormatDefinition('strokeplay');
 let pendingPhotoHole = null;
 let currentHoleIndex = 0;
 let teamPin = '';
+let photoObjectUrl = null;
+let photoProcessingInFlight = false;
+let chatLoaded = false;
 let chatMessages = [];
 let chatEventSource = null;
 let notificationRegistration = null;
@@ -824,13 +901,12 @@ async function doLogin() {
   btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Bekrefter...';
   document.getElementById('loginError').textContent = '';
   try {
-    const r = await fetch('/api/auth/team-login', {
+    const r = await apiFetch('/api/auth/team-login', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin })
     });
     const d = await r.json();
     if (d.success) {
-      teamPin = pin;
-      sessionStorage.setItem('team_pin', pin);
+      persistTeamPin(pin);
       teamData = d.team;
       updateNotificationBanner();
       document.getElementById('loginScreen').classList.add('d-none');
@@ -850,9 +926,12 @@ async function doLogout() {
     showToast('Du må fylle ut alle hull før du kan lukke scorekortet.', 'error');
     return;
   }
-  await fetch('/api/auth/logout', { method: 'POST' });
+  await apiFetch('/api/auth/logout', { method: 'POST' });
   sessionStorage.removeItem('team_pin');
-  location.reload();
+  localStorage.removeItem('team_pin');
+  teamPin = '';
+  document.getElementById('scorecardScreen').classList.add('d-none');
+  document.getElementById('loginScreen').classList.remove('d-none');
 }
 
 function scrollToScoreInput() {
@@ -872,9 +951,13 @@ window.addEventListener('beforeunload', (e) => {
 });
 
 async function loadScorecard() {
-  const r = await fetch('/api/team/scorecard');
+  const r = await apiFetch('/api/team/scorecard');
   const d = await r.json();
   if (!r.ok) {
+    console.warn('[scorecard-mobile] loadScorecard failed', { status: r.status, error: d.error || 'unknown', hasTeamPin: !!teamPin });
+    if (r.status === 401 && teamPin) {
+      showUploadWarning('Appen mistet sesjonen. Vi prøver å holde deg innlogget automatisk.');
+    }
     showToast(d.error || 'Kunne ikke laste scorekort akkurat nå.', 'error');
     renderScoreStatus('idle');
     const statusCard = document.getElementById('statusCard');
@@ -892,8 +975,6 @@ async function loadScorecard() {
   (Array.isArray(d.hole_sponsors) ? d.hole_sponsors : []).forEach(s => { holeSponsorsMap[s.hole_number] = s; });
   renderAll();
   loadPosition();
-  await loadChatMessages();
-  startChatEvents();
   if (teamData.locked) {
     showLockedState();
     return;
@@ -946,7 +1027,7 @@ function renderChatMessages() {
 
 async function loadChatMessages() {
   try {
-    const r = await fetch('/api/chat/messages');
+    const r = await apiFetch('/api/chat/messages');
     const d = await r.json();
     if (d.disabled) {
       const wrap = document.getElementById('chatMessages');
@@ -1005,7 +1086,7 @@ async function sendBirdieShoutout() {
   if (btn) btn.classList.add('is-celebrating');
   if (navigator.vibrate) navigator.vibrate([120, 80, 120, 80, 180]);
   try {
-    const r = await fetch('/api/team/birdie-shot', {
+    const r = await apiFetch('/api/team/birdie-shot', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ note: 'Alle spillere må ta birdie shots! 🥃', ...(teamPin ? { pin: teamPin } : {}) })
@@ -1049,9 +1130,9 @@ async function sendChatMessage(event) {
       if (teamPin) formData.append('pin', teamPin);
       formData.append('message', message);
       formData.append('image', imageFile);
-      r = await fetch('/api/chat/send', { method: 'POST', body: formData });
+      r = await apiFetch('/api/chat/send', { method: 'POST', body: formData });
     } else {
-      r = await fetch('/api/chat/send', {
+      r = await apiFetch('/api/chat/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message, ...(teamPin ? { pin: teamPin } : {}) })
@@ -1120,7 +1201,7 @@ function updateSummary() {
 
 async function loadPosition() {
   try {
-    const r = await fetch('/api/scoreboard');
+    const r = await apiFetch('/api/scoreboard');
     const d = await r.json();
     if (d.scoreboard && teamData) {
       const idx = d.scoreboard.findIndex(t => t.team_id === teamData.id);
@@ -1383,7 +1464,7 @@ async function lockAndClose() {
   const btn = document.getElementById('summaryLockBtn');
   btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Låser...';
   try {
-    const r = await fetch('/api/team/lock-scorecard', { method: 'POST' });
+    const r = await apiFetch('/api/team/lock-scorecard', { method: 'POST' });
     const d = await r.json();
     if (d.success) {
       teamData.locked = 1;
@@ -1412,7 +1493,7 @@ async function submitScore(holeNum) {
   btn.disabled = true;
 
   try {
-    const r = await fetch('/api/team/submit-score', {
+    const r = await apiFetch('/api/team/submit-score', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ hole_number: holeNum, score })
     });
@@ -1439,29 +1520,65 @@ async function submitScore(holeNum) {
 }
 
 function triggerPhoto(holeNum) {
+  if (photoProcessingInFlight) return;
+  showUploadWarning('');
   pendingPhotoHole = holeNum;
   document.getElementById('photoInput').click();
 }
 
 document.getElementById('photoInput').addEventListener('change', async e => {
   const file = e.target.files[0];
-  if (!file || !pendingPhotoHole) return;
+  if (!file || !pendingPhotoHole || photoProcessingInFlight) return;
   const holeNum = pendingPhotoHole;
   const btn = document.getElementById('photobtn-' + holeNum);
-  if (btn) { btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Laster opp...'; }
-  const fd = new FormData();
-  fd.append('photo', file);
+  photoProcessingInFlight = true;
+  console.info('[scorecard-mobile] upload:start', { holeNum, fileSize: file.size, type: file.type });
+  if (btn) {
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Klargjør bilde...';
+    btn.style.pointerEvents = 'none';
+  }
   try {
-    const r = await fetch('/api/team/upload-photo/' + holeNum, { method: 'POST', body: fd });
+    const processedFile = await compressImageFile(file);
+    revokePhotoObjectUrl();
+    photoObjectUrl = URL.createObjectURL(processedFile);
+    if (btn) {
+      btn.style.backgroundImage = `linear-gradient(rgba(0,0,0,.35), rgba(0,0,0,.35)), url('${photoObjectUrl}')`;
+      btn.style.backgroundSize = 'cover';
+      btn.style.backgroundPosition = 'center';
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Laster opp...';
+    }
+    console.info('[scorecard-mobile] upload:preview-ready', { holeNum, compressedSize: processedFile.size });
+    const fd = new FormData();
+    fd.append('photo', processedFile);
+    const r = await apiFetch('/api/team/upload-photo/' + holeNum, { method: 'POST', body: fd });
     const d = await r.json();
     if (d.success) {
       if (!scoresData[holeNum]) scoresData[holeNum] = {};
       scoresData[holeNum].photo_path = d.photo_path;
+      showUploadWarning('');
       showToast('Bilde lastet opp for hull ' + holeNum + '!', 'success');
-      renderDots(); renderCurrentHole();
-    } else { showToast(d.error || 'Opplasting mislyktes', 'error'); }
-  } catch (e) { showToast('Opplasting mislyktes — sjekk tilkoblingen', 'error'); }
-  e.target.value = ''; pendingPhotoHole = null;
+      renderDots();
+      renderCurrentHole();
+      console.info('[scorecard-mobile] upload:save:success', { holeNum });
+    } else {
+      console.warn('[scorecard-mobile] upload:save:failed', { holeNum, error: d.error || 'unknown' });
+      showUploadWarning('Bildet kunne ikke lagres i appen. Prøv igjen eller bruk mindre bilde.');
+      showToast(d.error || 'Opplasting mislyktes', 'error');
+    }
+  } catch (err) {
+    console.warn('[scorecard-mobile] upload:error', { holeNum, message: err?.message || err });
+    showUploadWarning('Bildet kunne ikke lagres i appen. Prøv igjen eller bruk mindre bilde.');
+    showToast('Opplasting mislyktes — prøv et mindre bilde', 'error');
+  } finally {
+    if (btn) {
+      btn.style.pointerEvents = '';
+      btn.innerHTML = '<i class="fas fa-camera"></i> Last opp bilde';
+    }
+    e.target.value = '';
+    pendingPhotoHole = null;
+    photoProcessingInFlight = false;
+    revokePhotoObjectUrl();
+  }
 });
 
 async function submitClaim(holeNum, awardType) {
@@ -1470,7 +1587,7 @@ async function submitClaim(holeNum, awardType) {
   const detail = document.getElementById(prefix + '-detail-' + holeNum)?.value || '';
   if (!player_name) { showToast('Velg en spiller', 'error'); return; }
   try {
-    const r = await fetch('/api/team/claim-award', {
+    const r = await apiFetch('/api/team/claim-award', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ hole_number: holeNum, award_type: awardType, player_name, detail })
     });
@@ -1487,12 +1604,20 @@ async function checkSession() {
   try {
     const hasActiveTournament = await ensureActiveTournamentForScorecard();
     await initNotifications();
-    teamPin = sessionStorage.getItem('team_pin') || '';
-    const r = await fetch('/api/auth/status');
+    restoreTeamPin();
+    const r = await apiFetch('/api/auth/status');
     const d = await r.json();
     if (d.type === 'team' && hasActiveTournament) {
       teamData = d.team;
       await ensureNotificationPermission();
+      document.getElementById('loginScreen').classList.add('d-none');
+      document.getElementById('scorecardScreen').classList.remove('d-none');
+      renderScoreStatus('idle');
+      await loadScorecard();
+      return;
+    }
+    if (teamPin && hasActiveTournament) {
+      console.warn('[scorecard-mobile] auth status missing session; attempting soft restore', { hasTeamPin: true });
       document.getElementById('loginScreen').classList.add('d-none');
       document.getElementById('scorecardScreen').classList.remove('d-none');
       renderScoreStatus('idle');

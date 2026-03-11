@@ -112,8 +112,37 @@ app.use(session({
 }));
 
 // ── Auth guards ──────────────────────────────────────────────────────────────
-const requireTeam = (req, res, next) =>
-  req.session.teamId ? next() : res.status(401).json({ error: 'Laginnlogging påkrevd' });
+function tryRestoreTeamSessionFromPin(req) {
+  const headerPin = String(req.get('x-team-pin') || '').trim();
+  if (!headerPin) return false;
+  try {
+    const t = getActiveTournament();
+    if (!t) return false;
+    const team = db.prepare('SELECT id, tournament_id FROM teams WHERE tournament_id=? AND pin_code=? LIMIT 1').get(t.id, headerPin);
+    if (!team) return false;
+    req.session.teamId = team.id;
+    req.session.tournamentId = team.tournament_id;
+    console.warn('[mobile-session] Restored missing team session from x-team-pin header', {
+      teamId: team.id,
+      tournamentId: team.tournament_id,
+      userAgent: req.get('user-agent') || 'unknown'
+    });
+    return true;
+  } catch (error) {
+    console.warn('[mobile-session] Failed restoring team session from pin', { message: error?.message || error });
+    return false;
+  }
+}
+
+const requireTeam = (req, res, next) => {
+  if (req.session.teamId) return next();
+  if (tryRestoreTeamSessionFromPin(req)) return next();
+  console.warn('[mobile-session] Missing team session and no valid pin fallback', {
+    path: req.path,
+    userAgent: req.get('user-agent') || 'unknown'
+  });
+  return res.status(401).json({ error: 'Laginnlogging påkrevd' });
+};
 
 const requireAdmin = (req, res, next) =>
   req.session.isAdmin ? next() : res.status(401).json({ error: 'Admininnlogging påkrevd' });
@@ -1116,8 +1145,18 @@ app.post('/api/team/upload-photo/:hole', requireTeam, (req, res) => {
       }
     }).single('photo');
     dynamicUpload(req, res, err => {
-      if (err) return res.status(400).json({ error: err.message });
+      if (err) {
+        console.warn('[scorecard-mobile] upload:multer-error', { holeNum, teamId: req.session.teamId, message: err.message });
+        return res.status(400).json({ error: err.message });
+      }
       if (!req.file) return res.status(400).json({ error: 'Ingen fil lastet opp' });
+      console.info('[scorecard-mobile] upload:received', {
+        holeNum,
+        teamId: req.session.teamId,
+        fileSize: req.file.size,
+        mimeType: req.file.mimetype,
+        filename: req.file.filename
+      });
       const photoPath = `/uploads/admin/t${tid}/scoreboard/h${holeNum}/${req.file.filename}`;
       const existing = db.prepare('SELECT id FROM scores WHERE team_id=? AND hole_number=?').get(req.session.teamId, holeNum);
       let scoreId;
@@ -1130,6 +1169,7 @@ app.post('/api/team/upload-photo/:hole', requireTeam, (req, res) => {
         scoreId = Number(created.lastInsertRowid);
       }
       syncScorePhotoToGallery({ tournamentId: tid, scoreId, photoPath });
+      console.info('[scorecard-mobile] upload:save:success', { holeNum, teamId: req.session.teamId, scoreId });
       broadcast('score_updated', { tournament_id: tid });
       res.json({ success: true, photo_path: photoPath });
     });
