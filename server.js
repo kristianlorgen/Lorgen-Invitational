@@ -195,6 +195,42 @@ const CONTROL_DEFAULTS = {
   tournamentStatus: 'draft'
 };
 
+const CHAT_REACTION_TYPES = new Set(['👍', '🔥', '⛳']);
+
+function ensureChatSessionId(req) {
+  if (!req.session) return null;
+  if (!req.session.chatReactionSessionId) {
+    req.session.chatReactionSessionId = `sess_${Date.now()}_${Math.round(Math.random() * 1e9)}`;
+  }
+  return req.session.chatReactionSessionId;
+}
+
+function getChatReactionSummary(messageId, actorKey) {
+  const rows = db.prepare(
+    `SELECT reaction_type, COUNT(*) AS cnt,
+            MAX(CASE WHEN actor_key=? THEN 1 ELSE 0 END) AS mine
+     FROM chat_message_reactions
+     WHERE message_id=?
+     GROUP BY reaction_type`
+  ).all(actorKey || '', messageId);
+  const summary = { '👍': { count: 0, selected: false }, '🔥': { count: 0, selected: false }, '⛳': { count: 0, selected: false } };
+  rows.forEach((row) => {
+    if (!summary[row.reaction_type]) return;
+    summary[row.reaction_type] = {
+      count: Number(row.cnt) || 0,
+      selected: Boolean(row.mine)
+    };
+  });
+  return summary;
+}
+
+function mapChatMessageWithReactions(message, actorKey) {
+  return {
+    ...message,
+    reactions: getChatReactionSummary(message.id, actorKey)
+  };
+}
+
 function getControlSettings() {
   const parseBool = (key, fallback) => {
     const raw = getSetting(key);
@@ -960,6 +996,7 @@ app.get('/api/chat/messages', (req, res) => {
     if (!getControlSettings().showAudienceFeed) return res.json({ messages: [], disabled: true });
     const t = getActiveTournament();
     if (!t) return res.json({ messages: [] });
+    const actorKey = ensureChatSessionId(req) || `ip:${req.ip || 'unknown'}`;
     const messages = db.prepare(
       `SELECT id, team_name, message, image_path, created_at
        FROM chat_messages
@@ -967,7 +1004,7 @@ app.get('/api/chat/messages', (req, res) => {
        ORDER BY id DESC
        LIMIT 100`
     ).all(t.id).reverse();
-    res.json({ messages });
+    res.json({ messages: messages.map((m) => mapChatMessageWithReactions(m, actorKey)) });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -987,8 +1024,9 @@ app.post('/api/chat/send', chatUpload.single('image'), (req, res) => {
     const result = db.prepare(
       'INSERT INTO chat_messages (tournament_id, team_id, team_name, message, image_path) VALUES (?,?,?,?,?)'
     ).run(t.id, team.id, team.team_name, msg, imagePath);
+    const actorKey = ensureChatSessionId(req) || `ip:${req.ip || 'unknown'}`;
     const created = db.prepare('SELECT id, team_name, message, image_path, created_at FROM chat_messages WHERE id=?').get(result.lastInsertRowid);
-    broadcast('chat_message', created);
+    broadcast('chat_message', mapChatMessageWithReactions(created, actorKey));
     res.json({ success: true, message: created });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -1009,10 +1047,45 @@ app.post('/api/team/birdie-shot', (req, res) => {
     const chatResult = db.prepare(
       'INSERT INTO chat_messages (tournament_id, team_id, team_name, message, image_path) VALUES (?,?,?,?,?)'
     ).run(t.id, team.id, team.team_name, shoutMessage.slice(0, 400), '');
+    const actorKey = ensureChatSessionId(req) || `ip:${req.ip || 'unknown'}`;
     const chatMessage = db.prepare('SELECT id, team_name, message, image_path, created_at FROM chat_messages WHERE id=?').get(chatResult.lastInsertRowid);
-    broadcast('chat_message', chatMessage);
+    broadcast('chat_message', mapChatMessageWithReactions(chatMessage, actorKey));
     broadcast('birdie_shot', payload);
     res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/chat/messages/:id/react', (req, res) => {
+  if (!getControlSettings().showAudienceFeed) return res.status(403).json({ error: 'Publikumsfeed er deaktivert akkurat nå.' });
+  const reactionType = String(req.body?.reactionType || '').trim();
+  if (!CHAT_REACTION_TYPES.has(reactionType)) return res.status(400).json({ error: 'Ugyldig reaksjonstype' });
+  try {
+    const t = getActiveTournament();
+    if (!t) return res.status(404).json({ error: 'Ingen aktiv turnering' });
+    const messageId = Number(req.params.id);
+    if (!Number.isFinite(messageId) || messageId <= 0) return res.status(400).json({ error: 'Ugyldig melding' });
+    const message = db.prepare('SELECT id, team_name, message, image_path, created_at FROM chat_messages WHERE id=? AND tournament_id=? LIMIT 1').get(messageId, t.id);
+    if (!message) return res.status(404).json({ error: 'Melding ikke funnet' });
+    const sessionId = ensureChatSessionId(req) || `ip:${req.ip || 'unknown'}`;
+    const actorKey = sessionId;
+    const existing = db.prepare('SELECT id FROM chat_message_reactions WHERE message_id=? AND reaction_type=? AND actor_key=? LIMIT 1').get(messageId, reactionType, actorKey);
+    let selected;
+    if (existing) {
+      db.prepare('DELETE FROM chat_message_reactions WHERE id=?').run(existing.id);
+      selected = false;
+    } else {
+      db.prepare(
+        'INSERT INTO chat_message_reactions (message_id, reaction_type, user_id, session_id, actor_key) VALUES (?,?,?,?,?)'
+      ).run(messageId, reactionType, null, sessionId, actorKey);
+      selected = true;
+    }
+    const summary = getChatReactionSummary(messageId, actorKey);
+    broadcast('chat_reaction_updated', {
+      messageId,
+      reactions: summary,
+      message: mapChatMessageWithReactions(message, actorKey)
+    });
+    res.json({ success: true, messageId, reactionType, selected, reactions: summary });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 

@@ -257,6 +257,18 @@ db.exec(`
     FOREIGN KEY (team_id) REFERENCES teams(id)
   );
 
+  CREATE TABLE IF NOT EXISTS chat_message_reactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id INTEGER NOT NULL,
+    reaction_type TEXT NOT NULL,
+    user_id TEXT,
+    session_id TEXT,
+    actor_key TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (message_id) REFERENCES chat_messages(id) ON DELETE CASCADE,
+    UNIQUE(message_id, reaction_type, actor_key)
+  );
+
   CREATE TABLE IF NOT EXISTS photo_votes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     tournament_id INTEGER NOT NULL,
@@ -316,6 +328,17 @@ try { db.exec(`UPDATE scores SET is_published=1 WHERE is_published IS NULL`); } 
 try { db.exec(`ALTER TABLE gallery_photos ADD COLUMN is_published INTEGER NOT NULL DEFAULT 1`); } catch(_) {}
 try { db.exec(`UPDATE gallery_photos SET is_published=1 WHERE is_published IS NULL`); } catch(_) {}
 try { db.exec(`ALTER TABLE chat_messages ADD COLUMN image_path TEXT DEFAULT ''`); } catch(_) {}
+try { db.exec(`CREATE TABLE IF NOT EXISTS chat_message_reactions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  message_id INTEGER NOT NULL,
+  reaction_type TEXT NOT NULL,
+  user_id TEXT,
+  session_id TEXT,
+  actor_key TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (message_id) REFERENCES chat_messages(id) ON DELETE CASCADE,
+  UNIQUE(message_id, reaction_type, actor_key)
+)`); } catch(_) {}
 try { db.exec(`CREATE TABLE IF NOT EXISTS photo_votes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   tournament_id INTEGER NOT NULL,
