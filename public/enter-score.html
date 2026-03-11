@@ -560,6 +560,7 @@
 
 <input type="file" id="photoInput" accept="image/*" capture="environment" style="display:none">
 
+<script src="/js/active-tournament.js"></script>
 <script>
 window.addEventListener('scroll', () => {
   document.getElementById('navbar').classList.toggle('scrolled', window.scrollY > 40);
@@ -790,7 +791,23 @@ function renderScoreStatus(kind) {
     </div>`;
 }
 
+
+async function ensureActiveTournamentForScorecard() {
+  const tournament = await ActiveTournament.getActiveTournament();
+  if (tournament) return true;
+
+  const error = document.getElementById('loginError');
+  const loginBtn = document.getElementById('loginBtn');
+  if (error) error.textContent = 'Ingen aktiv turnering valgt ennå. Kom tilbake senere for live resultater og turneringsinformasjon.';
+  if (loginBtn) {
+    loginBtn.disabled = true;
+    loginBtn.innerHTML = '<i class="fas fa-circle-info"></i> Ingen aktiv turnering';
+  }
+  return false;
+}
+
 async function doLogin() {
+  if (!(await ensureActiveTournamentForScorecard())) return;
   const pin = getPin();
   if (pin.length < 4) { document.getElementById('loginError').textContent = 'Vennligst skriv inn din 4-sifrede PIN'; return; }
   const btn = document.getElementById('loginBtn');
@@ -1435,11 +1452,12 @@ async function submitClaim(holeNum, awardType) {
 
 async function checkSession() {
   try {
+    const hasActiveTournament = await ensureActiveTournamentForScorecard();
     await initNotifications();
     teamPin = sessionStorage.getItem('team_pin') || '';
     const r = await fetch('/api/auth/status');
     const d = await r.json();
-    if (d.type === 'team') {
+    if (d.type === 'team' && hasActiveTournament) {
       teamData = d.team;
       await ensureNotificationPermission();
       document.getElementById('loginScreen').classList.add('d-none');

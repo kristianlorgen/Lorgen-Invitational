@@ -224,6 +224,7 @@
   </div>
 </footer>
 
+<script src="/js/active-tournament.js"></script>
 <script>
 document.getElementById('footerYear').textContent = new Date().getFullYear();
 window.addEventListener('scroll', () => {
@@ -343,6 +344,22 @@ function renderGallery(photosArr) {
 
 async function loadGallery() {
   try {
+    const tournament = await ActiveTournament.getActiveTournament();
+    if (!tournament) {
+      photos = [];
+      renderWinner([]);
+      renderGallery([]);
+      const empty = document.getElementById('emptyState');
+      if (empty) {
+        ActiveTournament.renderEmptyTournamentState(empty, {
+          icon: '📷',
+          title: 'Ingen aktiv turnering valgt ennå.',
+          description: 'Kom tilbake senere for live resultater og turneringsinformasjon.'
+        });
+      }
+      return;
+    }
+
     const r = await fetch('/api/gallery');
     const d = await r.json();
     photos = d.photos || [];
