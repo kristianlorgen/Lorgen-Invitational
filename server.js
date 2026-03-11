@@ -139,15 +139,16 @@ function setSetting(key, value) {
   ).run(key, value === undefined ? null : value);
 }
 
-function getActiveTournament() {
+function getActiveTournamentId() {
   const activeTournamentId = parseInt(getSetting('activeTournamentId') || '', 10);
-  if (!Number.isFinite(activeTournamentId)) return null;
-  const tournament = db.prepare('SELECT * FROM tournaments WHERE id=? LIMIT 1').get(activeTournamentId);
-  return tournament || null;
+  return Number.isFinite(activeTournamentId) ? activeTournamentId : null;
 }
 
-function getScoreboardTournament() {
-  return getActiveTournament();
+function getActiveTournament() {
+  const activeTournamentId = getActiveTournamentId();
+  if (!activeTournamentId) return null;
+  const tournament = db.prepare('SELECT * FROM tournaments WHERE id=? LIMIT 1').get(activeTournamentId);
+  return tournament || null;
 }
 
 function normalizePhotoPath(photoPath = '') {
@@ -427,11 +428,7 @@ app.get('/api/sponsors', (req, res) => {
       return res.status(400).json({ error: 'Ugyldig sponsor-plassering' });
     }
 
-    let tournamentId = parseInt(req.query.tournament_id, 10);
-    if (!Number.isFinite(tournamentId)) {
-      const t = getActiveTournament();
-      tournamentId = t?.id;
-    }
+    const tournamentId = getActiveTournamentId();
     if (!tournamentId) return res.json({ sponsors: [] });
 
     const sponsors = getSponsorsForTournament(tournamentId, placement).filter(s => s.is_enabled);
@@ -447,7 +444,7 @@ app.get('/api/sponsors', (req, res) => {
 
 app.get('/api/scoreboard', (req, res) => {
   try {
-    const t = getScoreboardTournament();
+    const t = getActiveTournament();
     if (!t) return res.json({ scoreboard: [], holes: [], awards: [], tournament: null });
     res.json(buildScoreboard(t));
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -474,7 +471,7 @@ app.get('/api/events', (req, res) => {
 
 app.get('/api/chat/messages', (req, res) => {
   try {
-    const t = getScoreboardTournament();
+    const t = getActiveTournament();
     if (!t) return res.json({ messages: [] });
     const messages = db.prepare(
       `SELECT id, team_name, message, image_path, created_at
@@ -1220,10 +1217,12 @@ app.post('/api/gallery/vote', (req, res) => {
   const { photo_ref } = req.body;
   if (!photo_ref) return res.status(400).json({ error: 'photo_ref er påkrevd' });
   try {
-    // Always store votes on the tournament that owns the selected image.
-    let t = getTournamentForPhotoRef(photo_ref);
-    if (!t) t = getActiveTournament();
+    const t = getActiveTournament();
     if (!t) return res.status(404).json({ error: 'Ingen aktiv turnering' });
+    const photoTournament = getTournamentForPhotoRef(photo_ref);
+    if (!photoTournament || photoTournament.id !== t.id) {
+      return res.status(400).json({ error: 'Bildet tilhører ikke aktiv turnering' });
+    }
     const voterIp = getVoterIp(req);
     // Toggle vote
     const existing = db.prepare('SELECT id FROM photo_votes WHERE tournament_id=? AND photo_ref=? AND voter_ip=?')

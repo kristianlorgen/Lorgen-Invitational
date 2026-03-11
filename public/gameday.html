@@ -290,6 +290,7 @@
   </div>
 </footer>
 
+<script src="/js/active-tournament.js"></script>
 <script>
 document.getElementById('footerYear').textContent = new Date().getFullYear();
 window.addEventListener('scroll', () => {
@@ -344,10 +345,8 @@ async function loadHeroSponsors() {
 
 async function loadGameday() {
   try {
-    const r = await fetch('/api/tournament');
-    const d = await r.json();
-    if (d.tournament) {
-      const t = d.tournament;
+    const t = await ActiveTournament.getActiveTournament();
+    if (t) {
       const datoFull = formatTournamentDate(t.date, true);
       const datoKort = formatTournamentDate(t.date);
 
@@ -366,8 +365,10 @@ async function loadGameday() {
       }
 
       // Fotoutfordring-hull
-      if (d.holes) {
-        const photoHoles = d.holes.filter(h => h.requires_photo);
+      const holesResponse = await fetch('/api/tournament');
+      const tournamentPayload = await holesResponse.json();
+      if (tournamentPayload.holes) {
+        const photoHoles = tournamentPayload.holes.filter(h => h.requires_photo);
         if (photoHoles.length > 0) {
           const placeholder = document.getElementById('specialPlaceholder');
           if (placeholder) placeholder.remove();
@@ -383,6 +384,13 @@ async function loadGameday() {
           });
         }
       }
+    } else {
+      document.getElementById('heroDateLine').textContent = 'Ingen aktiv turnering valgt ennå. Kom tilbake senere for live resultater og turneringsinformasjon.';
+      const teamsPlaceholder = document.getElementById('teamsPlaceholder');
+      if (teamsPlaceholder) teamsPlaceholder.innerHTML = '<i class="fas fa-users" style="display:block;font-size:1.3rem;color:var(--gold);margin-bottom:10px"></i>Ingen aktiv turnering valgt ennå.';
+      const specialPlaceholder = document.getElementById('specialPlaceholder');
+      if (specialPlaceholder) specialPlaceholder.textContent = 'Kom tilbake senere for live resultater og turneringsinformasjon.';
+      return;
     }
 
     // Last inn lag via resultattavle-data

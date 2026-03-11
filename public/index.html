@@ -223,7 +223,7 @@
         </div>
       </div>
       <div id="countdownDate" style="margin-top:24px;font-size:.85rem;color:rgba(255,255,255,.35);letter-spacing:.1em;text-transform:uppercase"></div>
-      <div id="noTournament" class="d-none" style="color:rgba(255,255,255,.5);font-size:1rem">Ingen aktiv turnering valgt ennå.</div>
+      <div id="noTournament" class="d-none" style="color:rgba(255,255,255,.5);font-size:1rem">Ingen aktiv turnering valgt ennå.<br>Kom tilbake senere for live resultater og turneringsinformasjon.</div>
     </div>
   </div>
 </section>
@@ -331,6 +331,7 @@
   </div>
 </footer>
 
+<script src="/js/active-tournament.js"></script>
 <script>
 document.getElementById('footerYear').textContent = new Date().getFullYear();
 window.addEventListener('scroll', () => {
@@ -362,14 +363,13 @@ function formatTournamentDate(dateValue, includeWeekday = false) {
 
 async function loadTournament() {
   try {
-    const r = await fetch('/api/tournament');
-    const d = await r.json();
-    if (d.tournament) {
-      document.getElementById('heroTournamentName').textContent = d.tournament.name;
-      document.getElementById('heroDate').textContent = formatTournamentDate(d.tournament.date);
-      document.getElementById('heroCourse').textContent = d.tournament.course || 'TBA';
-      startCountdown(d.tournament.date);
-      document.getElementById('countdownDate').textContent = formatTournamentDate(d.tournament.date, true);
+    const tournament = await ActiveTournament.getActiveTournament();
+    if (tournament) {
+      document.getElementById('heroTournamentName').textContent = tournament.name;
+      document.getElementById('heroDate').textContent = formatTournamentDate(tournament.date);
+      document.getElementById('heroCourse').textContent = tournament.course || 'TBA';
+      startCountdown(tournament.date);
+      document.getElementById('countdownDate').textContent = formatTournamentDate(tournament.date, true);
     } else {
       document.getElementById('noTournament').classList.remove('d-none');
       document.getElementById('countdown').classList.add('d-none');

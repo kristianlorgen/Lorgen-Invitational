@@ -92,7 +92,7 @@
   <div class="empty-state">
     <div class="empty-state__icon">📊</div>
     <h2 class="empty-state__title">Ingen aktiv turnering valgt ennå</h2>
-    <p class="empty-state__description">Resultattavlen tennes opp når turneringen er i gang. Kom tilbake på spilledagen!</p>
+    <p class="empty-state__description">Ingen aktiv turnering valgt ennå. Kom tilbake senere for live resultater og turneringsinformasjon.</p>
     <div class="empty-state__actions">
       <a href="/legacy" class="btn btn--gold"><i class="fas fa-trophy"></i> Se tidligere mestere</a>
       <a href="/gameday" class="btn btn--outline" style="color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-book"></i> Spilleregler</a>
@@ -226,6 +226,7 @@
   </div>
 </footer>
 
+<script src="/js/active-tournament.js"></script>
 <script>
 document.getElementById('footerYear').textContent = new Date().getFullYear();
 window.addEventListener('scroll', () => {
