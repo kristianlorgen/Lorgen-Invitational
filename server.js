@@ -159,6 +159,53 @@ function getActiveTournament() {
   };
 }
 
+const CONTROL_DEFAULTS = {
+  scoringOpen: false,
+  scorecardsOpen: false,
+  leaderboardVisible: false,
+  resultsPublished: false,
+  showAudienceFeed: true,
+  showSponsors: true,
+  tournamentStatus: 'draft'
+};
+
+function getControlSettings() {
+  const parseBool = (key, fallback) => {
+    const raw = getSetting(key);
+    if (raw === null || raw === undefined || raw === '') return fallback;
+    return ['1', 'true', 'yes', 'on'].includes(String(raw).toLowerCase());
+  };
+  const statusRaw = String(getSetting('tournamentStatus') || CONTROL_DEFAULTS.tournamentStatus).toLowerCase();
+  const tournamentStatus = ['draft', 'live', 'paused', 'completed'].includes(statusRaw)
+    ? statusRaw
+    : CONTROL_DEFAULTS.tournamentStatus;
+  return {
+    scoringOpen: parseBool('scoringOpen', CONTROL_DEFAULTS.scoringOpen),
+    scorecardsOpen: parseBool('scorecardsOpen', CONTROL_DEFAULTS.scorecardsOpen),
+    leaderboardVisible: parseBool('leaderboardVisible', CONTROL_DEFAULTS.leaderboardVisible),
+    resultsPublished: parseBool('resultsPublished', CONTROL_DEFAULTS.resultsPublished),
+    showAudienceFeed: parseBool('showAudienceFeed', CONTROL_DEFAULTS.showAudienceFeed),
+    showSponsors: parseBool('showSponsors', CONTROL_DEFAULTS.showSponsors),
+    tournamentStatus
+  };
+}
+
+function setControlSettings(next = {}) {
+  const current = getControlSettings();
+  const merged = { ...current, ...next };
+  const normalizedStatus = ['draft', 'live', 'paused', 'completed'].includes(String(merged.tournamentStatus || '').toLowerCase())
+    ? String(merged.tournamentStatus).toLowerCase()
+    : CONTROL_DEFAULTS.tournamentStatus;
+  setSetting('scoringOpen', merged.scoringOpen ? '1' : '0');
+  setSetting('scorecardsOpen', merged.scorecardsOpen ? '1' : '0');
+  setSetting('leaderboardVisible', merged.leaderboardVisible ? '1' : '0');
+  setSetting('resultsPublished', merged.resultsPublished ? '1' : '0');
+  setSetting('showAudienceFeed', merged.showAudienceFeed ? '1' : '0');
+  setSetting('showSponsors', merged.showSponsors ? '1' : '0');
+  setSetting('tournamentStatus', normalizedStatus);
+  return getControlSettings();
+}
+
 function safeJsonParse(raw, fallback = null) {
   if (!raw) return fallback;
   try { return JSON.parse(raw); } catch (_) { return fallback; }
@@ -584,12 +631,21 @@ app.get('/api/active-tournament', (req, res) => {
 app.get('/api/active-tournament-stage', (req, res) => {
   try {
     const { tournament, stage, stages } = getActiveTournamentAndStage();
-    res.json({ tournament, stage, stages });
+    res.json({ tournament, stage, stages, control: getControlSettings() });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/control-state', (req, res) => {
+  try {
+    const { tournament, stage } = getActiveTournamentAndStage();
+    res.json({ control: getControlSettings(), tournament, activeStage: stage });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/sponsors', (req, res) => {
   try {
+    const control = getControlSettings();
+    if (!control.showSponsors) return res.json({ sponsors: [] });
     const placement = String(req.query.placement || 'home');
     if (!['home', 'hole'].includes(placement)) {
       return res.status(400).json({ error: 'Ugyldig sponsor-plassering' });
@@ -611,9 +667,21 @@ app.get('/api/sponsors', (req, res) => {
 
 app.get('/api/scoreboard', (req, res) => {
   try {
+    const control = getControlSettings();
     const ctx = getActiveTournamentAndStage();
     const t = ctx.tournament;
     if (!t) return res.json({ scoreboard: [], holes: [], awards: [], tournament: null, activeStage: null, stages: [] });
+    if (!control.leaderboardVisible) {
+      return res.json({
+        hidden: true,
+        message: 'Leaderboard er ikke publisert ennå.',
+        mode: t.tournament_mode || 'single_format',
+        tournament: t,
+        activeStage: ctx.stage,
+        stages: ctx.stages,
+        control
+      });
+    }
 
     if ((t.tournament_mode || 'single_format') === 'ryder_cup') {
       const sides = getTournamentSides(t.id);
@@ -640,14 +708,15 @@ app.get('/api/scoreboard', (req, res) => {
         stages: ctx.stages,
         sides,
         matches: stageMatches,
-        cup
+        cup,
+        control
       });
     }
 
     const base = buildScoreboard(t, ctx.stage);
     const stagePairings = ctx.stage ? getStagePairings(ctx.stage.id) : [];
     const stagePairingMatches = ctx.stage ? getStagePairingMatches(ctx.stage.id) : [];
-    res.json({ ...base, mode: t.tournament_mode || 'single_format', stages: ctx.stages, pairings: stagePairings, pairingMatches: stagePairingMatches });
+    res.json({ ...base, mode: t.tournament_mode || 'single_format', stages: ctx.stages, pairings: stagePairings, pairingMatches: stagePairingMatches, control });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -672,6 +741,7 @@ app.get('/api/events', (req, res) => {
 
 app.get('/api/chat/messages', (req, res) => {
   try {
+    if (!getControlSettings().showAudienceFeed) return res.json({ messages: [], disabled: true });
     const t = getActiveTournament();
     if (!t) return res.json({ messages: [] });
     const messages = db.prepare(
@@ -686,6 +756,7 @@ app.get('/api/chat/messages', (req, res) => {
 });
 
 app.post('/api/chat/send', chatUpload.single('image'), (req, res) => {
+  if (!getControlSettings().showAudienceFeed) return res.status(403).json({ error: 'Publikumsfeed er deaktivert akkurat nå.' });
   const body = req.body || {};
   const msg = String(body.message || '').trim();
   const imagePath = req.file ? normalizePhotoPath(`/uploads/chat/${req.file.filename}`) : '';
@@ -707,6 +778,7 @@ app.post('/api/chat/send', chatUpload.single('image'), (req, res) => {
 });
 
 app.post('/api/team/birdie-shot', (req, res) => {
+  if (!getControlSettings().showAudienceFeed) return res.status(403).json({ error: 'Publikumsfeed er deaktivert akkurat nå.' });
   const { pin, note } = req.body || {};
   try {
     const resolved = resolveTeamForActiveTournament(req, pin);
@@ -785,6 +857,8 @@ app.get('/api/auth/status', (req, res) => {
 
 app.get('/api/team/scorecard', requireTeam, (req, res) => {
   try {
+    const control = getControlSettings();
+    if (!control.scorecardsOpen) return res.status(403).json({ error: 'Scorekort er ikke åpne akkurat nå.' });
     const team       = db.prepare('SELECT * FROM teams WHERE id=?').get(req.session.teamId);
     const tournament = db.prepare('SELECT id,name,slope_rating FROM tournaments WHERE id=?').get(req.session.tournamentId);
     const holes      = db.prepare('SELECT * FROM holes WHERE tournament_id=? ORDER BY hole_number').all(req.session.tournamentId);
@@ -792,7 +866,7 @@ app.get('/api/team/scorecard', requireTeam, (req, res) => {
     const scores     = scoresRaw.map(s => ({ ...s, photo_path: normalizePhotoPath(s.photo_path) }));
     const claims     = db.prepare('SELECT * FROM award_claims WHERE tournament_id=? AND team_id=?').all(req.session.tournamentId, req.session.teamId);
     const holeSponsors = getSponsorsForTournament(req.session.tournamentId, 'hole').filter(s => s.is_enabled);
-    res.json({ team: { ...team, locked: team.locked || 0 }, tournament, holes, scores, claims, hole_sponsors: holeSponsors });
+    res.json({ team: { ...team, locked: team.locked || 0 }, tournament, holes, scores, claims, hole_sponsors: holeSponsors, control });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -804,6 +878,9 @@ app.post('/api/team/submit-score', requireTeam, (req, res) => {
   if (isNaN(scoreNum) || scoreNum < 1 || scoreNum > 20)
     return res.status(400).json({ error: 'Poengsum må være mellom 1 og 20' });
   try {
+    const control = getControlSettings();
+    if (!control.scorecardsOpen) return res.status(403).json({ error: 'Scorekort er ikke åpne akkurat nå.' });
+    if (!control.scoringOpen) return res.status(403).json({ error: 'Scoring er ikke åpen akkurat nå.' });
     const teamLock = db.prepare('SELECT locked FROM teams WHERE id=?').get(req.session.teamId);
     if (teamLock?.locked) return res.status(403).json({ error: 'Resultatkort er låst. Kontakt turnerings-administrator for å endre.' });
     const hole = db.prepare('SELECT * FROM holes WHERE tournament_id=? AND hole_number=?')
@@ -831,6 +908,8 @@ app.post('/api/team/upload-photo/:hole', requireTeam, (req, res) => {
   const holeNum = parseInt(req.params.hole);
   const tid = req.session.tournamentId;
   try {
+    const control = getControlSettings();
+    if (!control.scorecardsOpen) return res.status(403).json({ error: 'Scorekort er ikke åpne akkurat nå.' });
     const hole = db.prepare('SELECT * FROM holes WHERE tournament_id=? AND hole_number=?').get(tid, holeNum);
     if (!hole) return res.status(404).json({ error: 'Hull ikke funnet' });
     const uploadDir = `./uploads/admin/t${tid}/scoreboard/h${holeNum}`;
@@ -881,6 +960,102 @@ app.get('/api/admin/tournaments', requireAdmin, (req, res) => {
       });
     res.json({ tournaments, activeTournamentId: Number.isFinite(activeTournamentId) ? activeTournamentId : null });
   } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/admin/control-panel', requireAdmin, (req, res) => {
+  try {
+    const control = getControlSettings();
+    const activeTournamentId = getActiveTournamentId();
+    const tournaments = db.prepare('SELECT * FROM tournaments ORDER BY year DESC, id DESC').all()
+      .map((t) => ({ ...t, format: normalizeTournamentFormat(t.format), format_label: getFormatDefinition(normalizeTournamentFormat(t.format)).label }));
+    const tournament = activeTournamentId
+      ? tournaments.find((t) => t.id === activeTournamentId) || null
+      : null;
+    const stages = tournament ? getStagesByTournament(tournament.id) : [];
+    const activeStage = tournament ? getActiveStage(tournament.id, tournament) : null;
+
+    let totalScoreEntries = 0;
+    let totalAudienceComments = 0;
+    let totalMatches = 0;
+    let completedMatches = 0;
+    let liveMatches = 0;
+
+    if (tournament) {
+      totalScoreEntries = db.prepare(
+        `SELECT COUNT(*) AS cnt
+         FROM scores s
+         JOIN teams tm ON tm.id=s.team_id
+         WHERE tm.tournament_id=?`
+      ).get(tournament.id)?.cnt || 0;
+      totalAudienceComments = db.prepare('SELECT COUNT(*) AS cnt FROM chat_messages WHERE tournament_id=?').get(tournament.id)?.cnt || 0;
+
+      if (activeStage) {
+        totalMatches = db.prepare('SELECT COUNT(*) AS cnt FROM stage_matches WHERE stage_id=?').get(activeStage.id)?.cnt || 0;
+        completedMatches = db.prepare("SELECT COUNT(*) AS cnt FROM stage_matches WHERE stage_id=? AND status='completed'").get(activeStage.id)?.cnt || 0;
+        liveMatches = db.prepare("SELECT COUNT(*) AS cnt FROM stage_matches WHERE stage_id=? AND status='in_progress'").get(activeStage.id)?.cnt || 0;
+      }
+    }
+
+    const cup = tournament && tournament.tournament_mode === 'ryder_cup'
+      ? buildCupStandings(stages.flatMap((st) => getStageMatches(st.id)), getTournamentSides(tournament.id))
+      : null;
+
+    res.json({
+      control,
+      activeTournamentId,
+      tournament,
+      tournaments,
+      stages,
+      activeStage,
+      stats: {
+        totalScoreEntries,
+        totalAudienceComments,
+        totalMatches,
+        completedMatches,
+        liveMatches
+      },
+      cup
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/admin/control-panel', requireAdmin, (req, res) => {
+  try {
+    const body = req.body || {};
+    const next = {};
+    ['scoringOpen', 'scorecardsOpen', 'leaderboardVisible', 'resultsPublished', 'showAudienceFeed', 'showSponsors'].forEach((key) => {
+      if (body[key] !== undefined) next[key] = Boolean(body[key]);
+    });
+    if (body.tournamentStatus !== undefined) next.tournamentStatus = String(body.tournamentStatus || '').toLowerCase();
+    const control = setControlSettings(next);
+    broadcast('control_updated', control);
+    res.json({ success: true, control });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/admin/control-panel/quick-action', requireAdmin, (req, res) => {
+  try {
+    const action = String(req.body?.action || '');
+    const actions = {
+      start_tournament: { tournamentStatus: 'live', scorecardsOpen: true, scoringOpen: true, leaderboardVisible: true },
+      pause_tournament: { tournamentStatus: 'paused', scoringOpen: false },
+      resume_tournament: { tournamentStatus: 'live', scoringOpen: true },
+      complete_tournament: { tournamentStatus: 'completed', scoringOpen: false, scorecardsOpen: false, resultsPublished: true },
+      open_scoring: { scoringOpen: true, scorecardsOpen: true },
+      close_scoring: { scoringOpen: false },
+      publish_leaderboard: { leaderboardVisible: true },
+      hide_leaderboard: { leaderboardVisible: false },
+      publish_results: { resultsPublished: true },
+      hide_results: { resultsPublished: false },
+      pause_live_views: { leaderboardVisible: false, showAudienceFeed: false },
+      reset_live_views: { leaderboardVisible: false, resultsPublished: false, showAudienceFeed: false }
+    };
+    const update = actions[action];
+    if (!update) return res.status(400).json({ error: 'Ugyldig quick action' });
+    const control = setControlSettings(update);
+    broadcast('control_updated', control);
+    res.json({ success: true, action, control });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/admin/tournament', requireAdmin, (req, res) => {
@@ -2048,6 +2223,8 @@ app.get('/api/instagram-qr', (req, res) => {
 ['gameday', 'scoreboard', 'legacy', 'enter-score', 'admin', 'gallery'].forEach(p => {
   app.get(`/${p}`, (req, res) => res.sendFile(path.join(__dirname, `public/${p}.html`)));
 });
+app.get('/admin/control-panel', (req, res) => res.sendFile(path.join(__dirname, 'public/control-panel.html')));
+app.get('/admin-dashboard', (req, res) => res.redirect('/admin/control-panel'));
 
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`
