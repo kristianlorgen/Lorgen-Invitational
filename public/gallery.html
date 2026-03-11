@@ -12,6 +12,12 @@
   <meta property="og:type" content="website">
   <meta name="twitter:card" content="summary_large_image">
   <link rel="icon" type="image/png" href="/images/logo.png">
+  <meta name="theme-color" content="#0D1B2A">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Lorgen">
+  <link rel="apple-touch-icon" href="/images/logo.png">
+  <link rel="manifest" href="/manifest.webmanifest">
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <style>
@@ -348,5 +354,6 @@ async function loadGallery() {
 loadGallery();
 setInterval(loadGallery, 30000);
 </script>
+  <script src="/js/pwa.js" defer></script>
 </body>
 </html>
