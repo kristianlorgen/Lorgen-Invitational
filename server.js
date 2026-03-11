@@ -156,6 +156,14 @@ app.get('/ready', (req, res) => {
   res.status(200).json({ status: 'ready' });
 });
 
+app.get('/admin/setup-wizard', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'admin-setup-wizard.html'));
+});
+
+app.get('/admin/tournaments/new', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'admin-setup-wizard.html'));
+});
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function getSetting(key) {
   const row = db.prepare('SELECT value FROM site_settings WHERE key=? LIMIT 1').get(key);
@@ -279,6 +287,44 @@ function setControlSettings(next = {}) {
   }
 
   return getControlSettings();
+}
+
+function sanitizeWeightedHandicap(weights = []) {
+  if (!Array.isArray(weights)) return [];
+  return weights
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value) && value >= 0 && value <= 100);
+}
+
+function validateWizardParticipants(format, participants, mode = 'single_format') {
+  if (mode === 'ryder_cup') {
+    if (!participants || !Array.isArray(participants.sideA) || !Array.isArray(participants.sideB)) {
+      return { valid: false, error: 'Ryder Cup krever spillere for både Lag A og Lag B' };
+    }
+    if (!participants.sideA.length || !participants.sideB.length) {
+      return { valid: false, error: 'Begge Ryder Cup-lag må ha minst én spiller' };
+    }
+    return { valid: true };
+  }
+  const def = getFormatDefinition(format);
+  const rows = Array.isArray(participants?.rows) ? participants.rows : [];
+  if (!rows.length) return { valid: false, error: 'Du må registrere minst én deltaker/ett lag' };
+
+  if (def.leaderboardMode === 'individual') {
+    const hasPlayer = rows.some((row) => String(row?.name || '').trim());
+    return hasPlayer ? { valid: true } : { valid: false, error: 'Legg til minst én spiller' };
+  }
+
+  const invalidRow = rows.find((row) => {
+    const players = Array.isArray(row?.players)
+      ? row.players.map((p) => String(p?.name || '').trim()).filter(Boolean)
+      : [];
+    return players.length !== def.teamSize;
+  });
+  if (invalidRow) {
+    return { valid: false, error: `Formatet krever nøyaktig ${def.teamSize} spillere per lag/par` };
+  }
+  return { valid: true };
 }
 
 function safeJsonParse(raw, fallback = null) {
@@ -1398,6 +1444,167 @@ app.post('/api/admin/tournament', requireAdmin, (req, res) => {
     db.prepare('UPDATE tournaments SET active_stage_id=? WHERE id=?').run(stageResult.lastInsertRowid, tid);
     res.json({ success: true, id: tid });
   } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
+  const payload = req.body || {};
+  const basics = payload.basics || {};
+  const rules = payload.rules || {};
+  const structure = payload.structure || {};
+  const participants = payload.participants || {};
+  const publishAction = String(payload.publishAction || 'draft');
+
+  const name = String(basics.name || '').trim();
+  const startDate = basics.startDate;
+  const endDate = basics.endDate || basics.startDate;
+  const year = parseInt(basics.year, 10) || (startDate ? new Date(startDate).getFullYear() : NaN);
+  const course = String(structure.course || basics.course || '').trim();
+  const mode = String(basics.mode || 'single_format');
+  const format = normalizeTournamentFormat(mode === 'ryder_cup' ? 'ryder_cup' : basics.format);
+
+  if (!name) return res.status(400).json({ error: 'Turneringsnavn er påkrevd' });
+  if (!startDate) return res.status(400).json({ error: 'Startdato er påkrevd' });
+  if (!Number.isFinite(year)) return res.status(400).json({ error: 'Ugyldig år' });
+
+  const participantValidation = validateWizardParticipants(format, participants, mode);
+  if (!participantValidation.valid) return res.status(400).json({ error: participantValidation.error });
+
+  const defaultHandicap = resolveHandicapConfig(format, null, { format, format_settings: null, handicap_percentage: null });
+  const useHandicap = rules.useHandicap !== false;
+  const handicapMethod = String(rules.handicapMethod || defaultHandicap.method || 'percentage');
+  const handicapPercentage = Number.isFinite(Number(rules.handicapPercentage))
+    ? Number(rules.handicapPercentage)
+    : Number(defaultHandicap.handicapPercentage || 100);
+  const weighted = sanitizeWeightedHandicap(rules.weightedPercentages || defaultHandicap.weights || []);
+
+  const formatSettings = {
+    handicap: {
+      enabled: useHandicap,
+      method: handicapMethod,
+      handicapPercentage,
+      ...(handicapMethod === 'weighted' ? { weights: weighted } : {})
+    },
+    wizard: {
+      createdByWizard: true,
+      participantMode: mode === 'ryder_cup' ? 'cup' : getFormatDefinition(format).participantMode
+    }
+  };
+
+  const isLive = ['create_and_open_scoring', 'create_and_publish_leaderboard'].includes(publishAction);
+  const status = publishAction === 'draft' ? 'draft' : (isLive ? 'live' : 'published');
+
+  const tx = db.transaction(() => {
+    const insertTournament = db.prepare(
+      `INSERT INTO tournaments (year, name, date, start_date, end_date, format, course, description, gameday_info, status, slope_rating, tournament_mode, handicap_percentage, format_settings, results_published, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)`
+    );
+    const tournamentRes = insertTournament.run(
+      year,
+      name,
+      startDate,
+      startDate,
+      endDate,
+      format,
+      course,
+      String(basics.description || ''),
+      '',
+      status,
+      Number.isFinite(Number(structure.slopeRating)) ? Number(structure.slopeRating) : 113,
+      mode,
+      useHandicap ? handicapPercentage : null,
+      JSON.stringify(formatSettings),
+      publishAction === 'create_and_publish_leaderboard' ? 1 : 0
+    );
+    const tournamentId = tournamentRes.lastInsertRowid;
+
+    const holesCount = Number.isFinite(Number(structure.holesCount)) ? Number(structure.holesCount) : 18;
+    const insertHole = db.prepare('INSERT INTO holes (tournament_id, hole_number, par, requires_photo) VALUES (?,?,4,0)');
+    for (let hole = 1; hole <= holesCount; hole++) insertHole.run(tournamentId, hole);
+
+    const stages = Array.isArray(structure.stages) && structure.stages.length
+      ? structure.stages
+      : [{ name: 'Dag 1', date: startDate, format }];
+    const activeStageIndex = Number.isFinite(Number(structure.activeStageIndex)) ? Number(structure.activeStageIndex) : 0;
+
+    const insertStage = db.prepare(
+      `INSERT INTO tournament_stages (tournament_id, name, stage_order, date, format, status, is_published, is_active, leaderboard_type, handicap_percentage, settings, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'published', 1, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
+    );
+    let activeStageId = null;
+    stages.forEach((stage, idx) => {
+      const stageFormat = normalizeTournamentFormat(stage?.format || format);
+      const row = insertStage.run(
+        tournamentId,
+        String(stage?.name || `Stage ${idx + 1}`),
+        idx + 1,
+        stage?.date || startDate,
+        stageFormat,
+        idx === activeStageIndex ? 1 : 0,
+        mode === 'ryder_cup' ? 'cup' : getFormatDefinition(stageFormat).leaderboardMode,
+        useHandicap ? handicapPercentage : null,
+        JSON.stringify({ handicap: formatSettings.handicap })
+      );
+      if (idx === activeStageIndex) activeStageId = row.lastInsertRowid;
+    });
+    db.prepare('UPDATE tournaments SET active_stage_id=? WHERE id=?').run(activeStageId, tournamentId);
+
+    if (mode === 'ryder_cup') {
+      const sideA = db.prepare('INSERT INTO tournament_sides (tournament_id, name, short_name, color, side_order, updated_at) VALUES (?,?,?,?,?,CURRENT_TIMESTAMP)')
+        .run(tournamentId, participants.sideAName || 'Lag A', 'A', '#1f6feb', 1).lastInsertRowid;
+      const sideB = db.prepare('INSERT INTO tournament_sides (tournament_id, name, short_name, color, side_order, updated_at) VALUES (?,?,?,?,?,CURRENT_TIMESTAMP)')
+        .run(tournamentId, participants.sideBName || 'Lag B', 'B', '#f59e0b', 2).lastInsertRowid;
+      const insertPlayer = db.prepare('INSERT INTO players (tournament_id, name, handicap, team_id, active, updated_at) VALUES (?,?,?,?,1,CURRENT_TIMESTAMP)');
+      (participants.sideA || []).forEach((player) => insertPlayer.run(tournamentId, String(player.name || '').trim(), player.handicap ?? null, sideA));
+      (participants.sideB || []).forEach((player) => insertPlayer.run(tournamentId, String(player.name || '').trim(), player.handicap ?? null, sideB));
+    } else if (getFormatDefinition(format).leaderboardMode === 'individual') {
+      const insertPlayer = db.prepare('INSERT INTO players (tournament_id, name, handicap, active, updated_at) VALUES (?,?,?,1,CURRENT_TIMESTAMP)');
+      (participants.rows || []).forEach((row) => {
+        const pName = String(row.name || '').trim();
+        if (!pName) return;
+        insertPlayer.run(tournamentId, pName, row.handicap ?? null);
+      });
+    } else {
+      const insertTeam = db.prepare(
+        'INSERT INTO teams (tournament_id, team_name, player1, player2, player3, player4, pin_code, player1_handicap, player2_handicap, player3_handicap, player4_handicap) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
+      );
+      (participants.rows || []).forEach((row, idx) => {
+        const players = Array.isArray(row.players) ? row.players : [];
+        const p = [0, 1, 2, 3].map((i) => players[i] || {});
+        const pin = String(row.pin || '').trim() || String(1000 + idx);
+        insertTeam.run(
+          tournamentId,
+          String(row.teamName || `Lag ${idx + 1}`),
+          String(p[0].name || '').trim(),
+          String(p[1].name || '').trim(),
+          String(p[2].name || '').trim(),
+          String(p[3].name || '').trim(),
+          pin,
+          Number(p[0].handicap || 0),
+          Number(p[1].handicap || 0),
+          Number(p[2].handicap || 0),
+          Number(p[3].handicap || 0)
+        );
+      });
+    }
+
+    if (publishAction === 'create_and_set_active' || isLive || publishAction === 'create_and_publish_leaderboard') {
+      setSetting('activeTournamentId', String(tournamentId));
+    }
+    if (publishAction === 'create_and_open_scoring') {
+      setControlSettings({ scoringOpen: true, scoringLocked: false, tournamentStatus: 'live' });
+    }
+    if (publishAction === 'create_and_publish_leaderboard') {
+      setControlSettings({ leaderboardVisible: true, tournamentStatus: 'live' });
+    }
+    return tournamentId;
+  });
+
+  try {
+    const id = tx();
+    res.json({ success: true, id });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.put('/api/admin/tournament/:id', requireAdmin, (req, res) => {
