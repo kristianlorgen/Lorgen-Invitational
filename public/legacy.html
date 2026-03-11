@@ -200,60 +200,40 @@ document.addEventListener('click', e => {
 
 async function loadLegacy() {
   try {
-    const r = await fetch('/api/legacy');
+    const r = await fetch('/api/hall-of-fame');
     const d = await r.json();
-    const legacy = d.legacy || [];
+    const entries = d.entries || [];
 
     const trophyRow   = document.getElementById('trophyRow');
     const historyBody = document.getElementById('historyBody');
     const noLegacy    = document.getElementById('noLegacy');
 
-    if (legacy.length === 0) {
+    if (entries.length === 0) {
       trophyRow.innerHTML = '';
       noLegacy.classList.remove('d-none');
-      historyBody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted)">Ingen resultater ennå</td></tr>';
+      historyBody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted)">Ingen Hall of Fame-data tilgjengelig ennå.</td></tr>';
       document.getElementById('historySection').classList.add('d-none');
       return;
     }
 
-    // Trofé-kort (nyeste mestere øverst)
-    const recent = legacy.slice(0, 6);
-    trophyRow.innerHTML = recent.map((c, i) => `
+    trophyRow.innerHTML = entries.slice(0, 6).map((c, i) => `
       <div class="trophy-card">
-        ${c.winner_photo ? `
-          <div style="position:relative;z-index:1;margin:-4px -4px 16px;border-radius:12px 12px 0 0;overflow:hidden">
-            <img src="${c.winner_photo}" alt="Vinnere ${c.year}"
-              style="width:100%;height:220px;object-fit:cover;display:block;opacity:.9;object-position:${c.winner_photo_focus||'50% 50%'}">
-            <div style="position:absolute;inset:0;background:linear-gradient(to bottom,transparent 50%,rgba(13,27,42,.85))"></div>
-          </div>` : ''}
         <div class="trophy-year">${c.year}</div>
         <div class="trophy-icon">${i === 0 ? '🥇' : i === 1 ? '🥈' : '🏆'}</div>
-        <div class="trophy-team">${c.winner_team}</div>
-        <div class="trophy-players">${c.player1} &amp; ${c.player2}</div>
-        ${c.score || c.score_to_par ? `<div class="trophy-score">${[c.score, c.score_to_par ? '(' + c.score_to_par + ')' : ''].filter(Boolean).join(' ')}</div>` : ''}
-        ${c.course ? `<div style="font-size:.72rem;color:rgba(255,255,255,.35);margin-top:6px;position:relative;z-index:1"><i class="fas fa-location-dot"></i> ${c.course}</div>` : ''}
+        <div class="trophy-team">${c.winnerLabel}</div>
+        <div class="trophy-players">${c.playerLabel || c.tournamentName}</div>
+        <div class="trophy-score">${c.scoreLabel || '—'}</div>
       </div>`).join('');
 
-    // Hall of Fametabell
-    historyBody.innerHTML = legacy.map((c, i) => {
-      const scoreParClass = c.score_to_par
-        ? (c.score_to_par.startsWith('-') ? 'score-under' : c.score_to_par === 'E' ? 'score-even' : 'score-over')
-        : '';
-      return `
-        <tr>
-          <td>
-            <div style="display:flex;align-items:center;gap:8px">
-              <span style="font-size:1rem">${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : ''}</span>
-              <strong>${c.year}</strong>
-            </div>
-          </td>
-          <td class="team-name-cell"><div class="team">${c.winner_team}</div></td>
-          <td class="team-name-cell"><div class="players">${c.player1} &amp; ${c.player2}</div></td>
-          <td style="font-weight:600">${c.score || '—'}</td>
-          <td>${c.score_to_par ? `<span class="score-par ${scoreParClass}">${c.score_to_par}</span>` : '—'}</td>
-          <td style="color:var(--text-muted);font-size:.875rem">${c.course || '—'}</td>
-        </tr>`;
-    }).join('');
+    historyBody.innerHTML = entries.map((c, i) => `
+      <tr>
+        <td><div style="display:flex;align-items:center;gap:8px"><span style="font-size:1rem">${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : ''}</span><strong>${c.year}</strong></div></td>
+        <td class="team-name-cell"><div class="team">${c.winnerLabel}</div></td>
+        <td class="team-name-cell"><div class="players">${c.playerLabel || c.tournamentName}</div></td>
+        <td style="font-weight:600">${c.scoreLabel || '—'}</td>
+        <td>${c.format || '—'}</td>
+        <td style="color:var(--text-muted);font-size:.875rem"><a href="/historikk/${c.tournamentId}">Detaljer</a></td>
+      </tr>`).join('');
   } catch (e) {
     console.error(e);
     document.getElementById('historyBody').innerHTML =

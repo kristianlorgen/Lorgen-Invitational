@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="nb">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Historisk turnering — Lorgen Invitational</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <main class="section" style="min-height:100vh;background:var(--off-white)">
+    <div class="container">
+      <a href="/historikk" class="btn btn--outline btn--sm">← Historikk</a>
+      <h1 id="title" style="margin-top:12px">Laster...</h1>
+      <div id="meta" style="color:var(--text-muted)"></div>
+      <div id="unpublished" class="d-none" style="margin-top:16px">Sluttresultater er ikke publisert for denne turneringen.</div>
+      <div id="content" style="margin-top:16px"></div>
+    </div>
+  </main>
+<script>
+function idFromPath(){ const m=location.pathname.match(/\/historikk\/(\d+)/); return m?m[1]:null; }
+async function load(){
+  const id=idFromPath(); if(!id) return;
+  const r=await fetch('/api/historikk/'+id); const d=await r.json();
+  const t=d.tournament; if(!t) return;
+  document.getElementById('title').textContent=`${t.name} (${t.year})`;
+  document.getElementById('meta').textContent=`${t.start_date||t.date||''} · ${t.format_label||t.format} · ${t.status}`;
+  if(d.isPublished===false){ document.getElementById('unpublished').classList.remove('d-none'); return; }
+  const c=document.getElementById('content');
+  if(d.mode==='ryder_cup'){
+    const totals=(d.cup?.totals||[]).sort((a,b)=>b.points-a.points);
+    c.innerHTML=`<div class="card" style="padding:16px;background:var(--white)"><h3>Ryder Cup-resultat</h3><p>${totals.map(x=>`${x.name}: ${x.points}`).join(' · ')||'Ingen data'}</p><p>Vinner: ${d.winner?.name||'Ukjent'}</p></div>`;
+    return;
+  }
+  const podium=d.podium||[];
+  c.innerHTML=`<div class="card" style="padding:16px;background:var(--white)"><h3>Podium</h3>${podium.length?podium.map((p,i)=>`<div>${i+1}. ${p.team_name} — ${p.player1} & ${p.player2} (${p.total_score})</div>`).join(''):'Ingen data'}</div>`;
+}
+load();
+</script>
+</body>
+</html>

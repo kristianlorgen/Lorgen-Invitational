@@ -11,6 +11,7 @@ const { normalizeTournamentFormat, getFormatDefinition } = require('./lib/tourna
 const app  = express();
 const PORT = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'LorgenAdmin2025';
+const TOURNAMENT_STATUSES = ['draft', 'published', 'live', 'paused', 'completed', 'archived'];
 
 const allowedImageExtensions = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.heic', '.heif', '.avif']);
 
@@ -148,19 +149,15 @@ function getActiveTournamentId() {
 function getActiveTournament() {
   const activeTournamentId = getActiveTournamentId();
   if (!activeTournamentId) return null;
-  const tournament = db.prepare('SELECT * FROM tournaments WHERE id=? LIMIT 1').get(activeTournamentId);
+  const tournament = getTournamentById(activeTournamentId);
   if (!tournament) return null;
-  const normalizedFormat = normalizeTournamentFormat(tournament.format);
-  return {
-    ...tournament,
-    format: normalizedFormat,
-    tournament_mode: tournament.tournament_mode || 'single_format',
-    format_label: getFormatDefinition(normalizedFormat).label
-  };
+  if (tournament.status === 'archived') return null;
+  return tournament;
 }
 
 const CONTROL_DEFAULTS = {
   scoringOpen: false,
+  scoringLocked: false,
   scorecardsOpen: false,
   leaderboardVisible: false,
   resultsPublished: false,
@@ -176,11 +173,12 @@ function getControlSettings() {
     return ['1', 'true', 'yes', 'on'].includes(String(raw).toLowerCase());
   };
   const statusRaw = String(getSetting('tournamentStatus') || CONTROL_DEFAULTS.tournamentStatus).toLowerCase();
-  const tournamentStatus = ['draft', 'live', 'paused', 'completed'].includes(statusRaw)
+  const tournamentStatus = TOURNAMENT_STATUSES.includes(statusRaw)
     ? statusRaw
     : CONTROL_DEFAULTS.tournamentStatus;
   return {
     scoringOpen: parseBool('scoringOpen', CONTROL_DEFAULTS.scoringOpen),
+    scoringLocked: parseBool('scoringLocked', CONTROL_DEFAULTS.scoringLocked),
     scorecardsOpen: parseBool('scorecardsOpen', CONTROL_DEFAULTS.scorecardsOpen),
     leaderboardVisible: parseBool('leaderboardVisible', CONTROL_DEFAULTS.leaderboardVisible),
     resultsPublished: parseBool('resultsPublished', CONTROL_DEFAULTS.resultsPublished),
@@ -193,16 +191,28 @@ function getControlSettings() {
 function setControlSettings(next = {}) {
   const current = getControlSettings();
   const merged = { ...current, ...next };
-  const normalizedStatus = ['draft', 'live', 'paused', 'completed'].includes(String(merged.tournamentStatus || '').toLowerCase())
+  const normalizedStatus = TOURNAMENT_STATUSES.includes(String(merged.tournamentStatus || '').toLowerCase())
     ? String(merged.tournamentStatus).toLowerCase()
     : CONTROL_DEFAULTS.tournamentStatus;
   setSetting('scoringOpen', merged.scoringOpen ? '1' : '0');
+  setSetting('scoringLocked', merged.scoringLocked ? '1' : '0');
   setSetting('scorecardsOpen', merged.scorecardsOpen ? '1' : '0');
   setSetting('leaderboardVisible', merged.leaderboardVisible ? '1' : '0');
   setSetting('resultsPublished', merged.resultsPublished ? '1' : '0');
   setSetting('showAudienceFeed', merged.showAudienceFeed ? '1' : '0');
   setSetting('showSponsors', merged.showSponsors ? '1' : '0');
   setSetting('tournamentStatus', normalizedStatus);
+
+  const activeId = getActiveTournamentId();
+  if (activeId) {
+    db.prepare(
+      `UPDATE tournaments
+       SET status=?, results_published=?, scoring_locked=?, archived_at=CASE WHEN ?='archived' THEN COALESCE(archived_at, CURRENT_TIMESTAMP) ELSE archived_at END, updated_at=CURRENT_TIMESTAMP
+       WHERE id=?`
+    ).run(normalizedStatus, merged.resultsPublished ? 1 : 0, merged.scoringLocked ? 1 : 0, normalizedStatus, activeId);
+    if (normalizedStatus === 'archived') setSetting('activeTournamentId', null);
+  }
+
   return getControlSettings();
 }
 
@@ -604,6 +614,118 @@ function buildScoreboard(tournament, activeStage = null) {
 }
 
 
+
+function normalizeTournamentStatus(status) {
+  const normalized = String(status || '').toLowerCase();
+  return TOURNAMENT_STATUSES.includes(normalized) ? normalized : 'draft';
+}
+
+function resolveTournamentControl(tournament = null) {
+  const control = getControlSettings();
+  if (!tournament) return { ...control, scoringLocked: Boolean(control.scoringLocked) };
+  return {
+    ...control,
+    resultsPublished: Boolean(tournament.results_published),
+    scoringLocked: Boolean(tournament.scoring_locked),
+    tournamentStatus: normalizeTournamentStatus(tournament.status)
+  };
+}
+
+function getTournamentById(tournamentId) {
+  const t = db.prepare('SELECT * FROM tournaments WHERE id=? LIMIT 1').get(tournamentId);
+  if (!t) return null;
+  const normalizedFormat = normalizeTournamentFormat(t.format);
+  return {
+    ...t,
+    status: normalizeTournamentStatus(t.status),
+    results_published: Number(t.results_published || 0),
+    scoring_locked: Number(t.scoring_locked || 0),
+    format: normalizedFormat,
+    tournament_mode: t.tournament_mode || 'single_format',
+    format_label: getFormatDefinition(normalizedFormat).label
+  };
+}
+
+function getArchivedTournaments() {
+  return db.prepare("SELECT * FROM tournaments WHERE status IN ('completed','archived') ORDER BY year DESC, date DESC, id DESC").all()
+    .map((t) => getTournamentById(t.id));
+}
+
+function getCompletedTournaments() {
+  return db.prepare("SELECT * FROM tournaments WHERE status='completed' ORDER BY year DESC, date DESC, id DESC").all()
+    .map((t) => getTournamentById(t.id));
+}
+
+function getTournamentResults(tournamentId) {
+  const tournament = getTournamentById(tournamentId);
+  if (!tournament) return null;
+  const stages = getStagesByTournament(tournament.id);
+  const activeStage = getActiveStage(tournament.id, tournament);
+  const isPublished = Boolean(tournament.results_published);
+
+  if ((tournament.tournament_mode || 'single_format') === 'ryder_cup') {
+    const sides = getTournamentSides(tournament.id);
+    const matchesByStage = stages.map((stage) => ({
+      ...stage,
+      matches: getStageMatches(stage.id)
+    }));
+    const allMatches = matchesByStage.flatMap((stage) => stage.matches);
+    const cup = buildCupStandings(allMatches, sides);
+    const sortedTotals = [...(cup.totals || [])].sort((a, b) => b.points - a.points);
+    const winner = sortedTotals[0] || null;
+    return { tournament, isPublished, stages: matchesByStage, activeStage, cup, winner, sides, mode: 'ryder_cup' };
+  }
+
+  const base = buildScoreboard(tournament, activeStage);
+  const podium = (base.scoreboard || []).slice(0, 3);
+  return {
+    tournament,
+    isPublished,
+    stages: stages.map((stage) => ({ ...stage, pairings: getStagePairings(stage.id), pairingMatches: getStagePairingMatches(stage.id) })),
+    activeStage,
+    mode: tournament.tournament_mode || 'single_format',
+    ...base,
+    podium,
+    winner: podium[0] || null
+  };
+}
+
+function getHallOfFameEntries() {
+  return getArchivedTournaments()
+    .filter((t) => t.results_published)
+    .map((t) => {
+      const result = getTournamentResults(t.id);
+      if (!result) return null;
+      if (result.mode === 'ryder_cup') {
+        return {
+          tournamentId: t.id,
+          year: t.year,
+          tournamentName: t.name,
+          format: t.format,
+          tournamentMode: t.tournament_mode,
+          winnerLabel: result.winner?.name || 'Ingen vinner',
+          winnerType: 'side',
+          scoreLabel: result.winner ? `${result.winner.points} poeng` : '—'
+        };
+      }
+      const winner = result.winner;
+      return {
+        tournamentId: t.id,
+        year: t.year,
+        tournamentName: t.name,
+        format: t.format,
+        tournamentMode: t.tournament_mode,
+        winnerLabel: winner ? winner.team_name : 'Ingen vinner',
+        winnerType: 'team',
+        playerLabel: winner ? `${winner.player1} & ${winner.player2}` : '',
+        scoreLabel: winner ? String(winner.total_score ?? '—') : '—',
+        toPar: winner ? winner.to_par : null
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.year - a.year);
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 //  PUBLIC API
 // ════════════════════════════════════════════════════════════════════════════
@@ -644,7 +766,7 @@ app.get('/api/control-state', (req, res) => {
 
 app.get('/api/sponsors', (req, res) => {
   try {
-    const control = getControlSettings();
+    let control = getControlSettings();
     if (!control.showSponsors) return res.json({ sponsors: [] });
     const placement = String(req.query.placement || 'home');
     if (!['home', 'hole'].includes(placement)) {
@@ -667,10 +789,11 @@ app.get('/api/sponsors', (req, res) => {
 
 app.get('/api/scoreboard', (req, res) => {
   try {
-    const control = getControlSettings();
+    let control = getControlSettings();
     const ctx = getActiveTournamentAndStage();
     const t = ctx.tournament;
     if (!t) return res.json({ scoreboard: [], holes: [], awards: [], tournament: null, activeStage: null, stages: [] });
+    control = resolveTournamentControl(t);
     if (!control.leaderboardVisible) {
       return res.json({
         hidden: true,
@@ -722,9 +845,61 @@ app.get('/api/scoreboard', (req, res) => {
 
 app.get('/api/legacy', (req, res) => {
   try {
-    const legacy = db.prepare('SELECT id,year,winner_team,player1,player2,score,score_to_par,course,notes,winner_photo,winner_photo_focus FROM legacy ORDER BY year DESC').all();
+    const entries = getHallOfFameEntries();
+    const legacy = entries.map((entry) => ({
+      id: entry.tournamentId,
+      year: entry.year,
+      winner_team: entry.winnerLabel,
+      player1: entry.playerLabel ? entry.playerLabel.split(' & ')[0] : '',
+      player2: entry.playerLabel ? entry.playerLabel.split(' & ')[1] || '' : '',
+      score: entry.scoreLabel || '',
+      score_to_par: entry.toPar === 0 ? 'E' : (entry.toPar > 0 ? `+${entry.toPar}` : `${entry.toPar || ''}`),
+      course: '',
+      notes: `${entry.tournamentName} (${entry.format})`,
+      winner_photo: null,
+      winner_photo_focus: null
+    }));
     res.json({ legacy });
   } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+
+app.get('/api/historikk', (req, res) => {
+  try {
+    const tournaments = getArchivedTournaments().map((t) => {
+      const result = getTournamentResults(t.id);
+      return {
+        ...t,
+        resultsPublished: Boolean(t.results_published),
+        archivedAt: t.archived_at || null,
+        winner: result?.winner || null,
+        podium: result?.podium || []
+      };
+    });
+    res.json({ tournaments });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/historikk/:id', (req, res) => {
+  try {
+    const result = getTournamentResults(req.params.id);
+    if (!result) return res.status(404).json({ error: 'Turnering ikke funnet' });
+    if (!result.isPublished) {
+      return res.json({
+        tournament: result.tournament,
+        isPublished: false,
+        message: 'Sluttresultater er ikke publisert for denne turneringen.'
+      });
+    }
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/hall-of-fame', (req, res) => {
+  try {
+    const entries = getHallOfFameEntries();
+    res.json({ entries });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/events', (req, res) => {
@@ -857,8 +1032,9 @@ app.get('/api/auth/status', (req, res) => {
 
 app.get('/api/team/scorecard', requireTeam, (req, res) => {
   try {
-    const control = getControlSettings();
+    let control = getControlSettings();
     if (!control.scorecardsOpen) return res.status(403).json({ error: 'Scorekort er ikke åpne akkurat nå.' });
+    if (control.scoringLocked) return res.status(403).json({ error: 'Scoring er låst av administrator.' });
     const team       = db.prepare('SELECT * FROM teams WHERE id=?').get(req.session.teamId);
     const tournament = db.prepare('SELECT id,name,slope_rating FROM tournaments WHERE id=?').get(req.session.tournamentId);
     const holes      = db.prepare('SELECT * FROM holes WHERE tournament_id=? ORDER BY hole_number').all(req.session.tournamentId);
@@ -878,8 +1054,9 @@ app.post('/api/team/submit-score', requireTeam, (req, res) => {
   if (isNaN(scoreNum) || scoreNum < 1 || scoreNum > 20)
     return res.status(400).json({ error: 'Poengsum må være mellom 1 og 20' });
   try {
-    const control = getControlSettings();
+    let control = getControlSettings();
     if (!control.scorecardsOpen) return res.status(403).json({ error: 'Scorekort er ikke åpne akkurat nå.' });
+    if (control.scoringLocked) return res.status(403).json({ error: 'Scoring er låst av administrator.' });
     if (!control.scoringOpen) return res.status(403).json({ error: 'Scoring er ikke åpen akkurat nå.' });
     const teamLock = db.prepare('SELECT locked FROM teams WHERE id=?').get(req.session.teamId);
     if (teamLock?.locked) return res.status(403).json({ error: 'Resultatkort er låst. Kontakt turnerings-administrator for å endre.' });
@@ -908,8 +1085,9 @@ app.post('/api/team/upload-photo/:hole', requireTeam, (req, res) => {
   const holeNum = parseInt(req.params.hole);
   const tid = req.session.tournamentId;
   try {
-    const control = getControlSettings();
+    let control = getControlSettings();
     if (!control.scorecardsOpen) return res.status(403).json({ error: 'Scorekort er ikke åpne akkurat nå.' });
+    if (control.scoringLocked) return res.status(403).json({ error: 'Scoring er låst av administrator.' });
     const hole = db.prepare('SELECT * FROM holes WHERE tournament_id=? AND hole_number=?').get(tid, holeNum);
     if (!hole) return res.status(404).json({ error: 'Hull ikke funnet' });
     const uploadDir = `./uploads/admin/t${tid}/scoreboard/h${holeNum}`;
@@ -956,7 +1134,7 @@ app.get('/api/admin/tournaments', requireAdmin, (req, res) => {
     const tournaments = db.prepare('SELECT * FROM tournaments ORDER BY year DESC').all()
       .map(t => {
         const format = normalizeTournamentFormat(t.format);
-        return { ...t, format, format_label: getFormatDefinition(format).label, is_active: Number.isFinite(activeTournamentId) && t.id === activeTournamentId };
+        return { ...t, status: normalizeTournamentStatus(t.status), format, format_label: getFormatDefinition(format).label, is_active: Number.isFinite(activeTournamentId) && t.id === activeTournamentId };
       });
     res.json({ tournaments, activeTournamentId: Number.isFinite(activeTournamentId) ? activeTournamentId : null });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -964,10 +1142,10 @@ app.get('/api/admin/tournaments', requireAdmin, (req, res) => {
 
 app.get('/api/admin/control-panel', requireAdmin, (req, res) => {
   try {
-    const control = getControlSettings();
+    let control = getControlSettings();
     const activeTournamentId = getActiveTournamentId();
     const tournaments = db.prepare('SELECT * FROM tournaments ORDER BY year DESC, id DESC').all()
-      .map((t) => ({ ...t, format: normalizeTournamentFormat(t.format), format_label: getFormatDefinition(normalizeTournamentFormat(t.format)).label }));
+      .map((t) => ({ ...t, status: normalizeTournamentStatus(t.status), format: normalizeTournamentFormat(t.format), format_label: getFormatDefinition(normalizeTournamentFormat(t.format)).label }));
     const tournament = activeTournamentId
       ? tournaments.find((t) => t.id === activeTournamentId) || null
       : null;
@@ -996,6 +1174,8 @@ app.get('/api/admin/control-panel', requireAdmin, (req, res) => {
       }
     }
 
+    if (tournament) control = resolveTournamentControl(tournament);
+
     const cup = tournament && tournament.tournament_mode === 'ryder_cup'
       ? buildCupStandings(stages.flatMap((st) => getStageMatches(st.id)), getTournamentSides(tournament.id))
       : null;
@@ -1023,7 +1203,7 @@ app.put('/api/admin/control-panel', requireAdmin, (req, res) => {
   try {
     const body = req.body || {};
     const next = {};
-    ['scoringOpen', 'scorecardsOpen', 'leaderboardVisible', 'resultsPublished', 'showAudienceFeed', 'showSponsors'].forEach((key) => {
+    ['scoringOpen', 'scoringLocked', 'scorecardsOpen', 'leaderboardVisible', 'resultsPublished', 'showAudienceFeed', 'showSponsors'].forEach((key) => {
       if (body[key] !== undefined) next[key] = Boolean(body[key]);
     });
     if (body.tournamentStatus !== undefined) next.tournamentStatus = String(body.tournamentStatus || '').toLowerCase();
@@ -1040,9 +1220,11 @@ app.post('/api/admin/control-panel/quick-action', requireAdmin, (req, res) => {
       start_tournament: { tournamentStatus: 'live', scorecardsOpen: true, scoringOpen: true, leaderboardVisible: true },
       pause_tournament: { tournamentStatus: 'paused', scoringOpen: false },
       resume_tournament: { tournamentStatus: 'live', scoringOpen: true },
-      complete_tournament: { tournamentStatus: 'completed', scoringOpen: false, scorecardsOpen: false, resultsPublished: true },
+      complete_tournament: { tournamentStatus: 'completed', scoringOpen: false, scorecardsOpen: false, scoringLocked: true, resultsPublished: true },
       open_scoring: { scoringOpen: true, scorecardsOpen: true },
       close_scoring: { scoringOpen: false },
+      lock_scoring: { scoringLocked: true, scoringOpen: false },
+      unlock_scoring: { scoringLocked: false },
       publish_leaderboard: { leaderboardVisible: true },
       hide_leaderboard: { leaderboardVisible: false },
       publish_results: { resultsPublished: true },
@@ -1069,7 +1251,7 @@ app.post('/api/admin/tournament', requireAdmin, (req, res) => {
     const result = db.prepare(
       `INSERT INTO tournaments (year, name, date, start_date, end_date, format, course, description, gameday_info, status, slope_rating, tournament_mode, updated_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)`
-    ).run(parsedYear, resolvedName, resolvedStartDate, resolvedStartDate, endDate || resolvedStartDate, normalizeTournamentFormat(format), course||'', description||'', gameday_info||'', status || 'draft', slope_rating||113, tournamentMode || 'single_format');
+    ).run(parsedYear, resolvedName, resolvedStartDate, resolvedStartDate, endDate || resolvedStartDate, normalizeTournamentFormat(format), course||'', description||'', gameday_info||'', normalizeTournamentStatus(status), slope_rating||113, tournamentMode || 'single_format');
     const tid = result.lastInsertRowid;
     const insertHole = db.prepare('INSERT INTO holes (tournament_id, hole_number, par, requires_photo) VALUES (?,?,4,0)');
     const insertAllHoles = db.transaction(() => {
@@ -1097,7 +1279,7 @@ app.put('/api/admin/tournament/:id', requireAdmin, (req, res) => {
       `UPDATE tournaments
        SET year=?, name=?, date=?, start_date=?, end_date=?, format=?, course=?, description=?, gameday_info=?, status=?, slope_rating=?, tournament_mode=?, updated_at=CURRENT_TIMESTAMP
        WHERE id=?`
-    ).run(parsedYear, resolvedName, resolvedStartDate, resolvedStartDate, endDate || resolvedStartDate, normalizeTournamentFormat(format), course||'', description||'', gameday_info||'', status || 'draft', slope_rating||113, tournamentMode || 'single_format', req.params.id);
+    ).run(parsedYear, resolvedName, resolvedStartDate, resolvedStartDate, endDate || resolvedStartDate, normalizeTournamentFormat(format), course||'', description||'', gameday_info||'', normalizeTournamentStatus(status), slope_rating||113, tournamentMode || 'single_format', req.params.id);
     const existingStage = db.prepare('SELECT id FROM tournament_stages WHERE tournament_id=? LIMIT 1').get(req.params.id);
     if (!existingStage) {
       const stageResult = db.prepare(
@@ -1108,6 +1290,49 @@ app.put('/api/admin/tournament/:id', requireAdmin, (req, res) => {
     }
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+
+app.post('/api/admin/tournament/:id/lifecycle', requireAdmin, (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const action = String(req.body?.action || '');
+    const tournament = db.prepare('SELECT * FROM tournaments WHERE id=? LIMIT 1').get(id);
+    if (!tournament) return res.status(404).json({ error: 'Turnering ikke funnet' });
+
+    if (action === 'publish_results') {
+      db.prepare("UPDATE tournaments SET results_published=1, updated_at=CURRENT_TIMESTAMP WHERE id=?").run(id);
+      return res.json({ success: true });
+    }
+    if (action === 'hide_results') {
+      db.prepare("UPDATE tournaments SET results_published=0, updated_at=CURRENT_TIMESTAMP WHERE id=?").run(id);
+      return res.json({ success: true });
+    }
+    if (action === 'lock_scoring') {
+      db.prepare("UPDATE tournaments SET scoring_locked=1, updated_at=CURRENT_TIMESTAMP WHERE id=?").run(id);
+      return res.json({ success: true });
+    }
+    if (action === 'unlock_scoring') {
+      db.prepare("UPDATE tournaments SET scoring_locked=0, updated_at=CURRENT_TIMESTAMP WHERE id=?").run(id);
+      return res.json({ success: true });
+    }
+    if (action === 'complete') {
+      db.prepare("UPDATE tournaments SET status='completed', updated_at=CURRENT_TIMESTAMP WHERE id=?").run(id);
+      if (getActiveTournamentId() === id) {
+        setControlSettings({ tournamentStatus: 'completed', scoringOpen: false, scorecardsOpen: false, scoringLocked: true, resultsPublished: true });
+      }
+      return res.json({ success: true });
+    }
+    if (action === 'archive') {
+      db.prepare("UPDATE tournaments SET status='archived', archived_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=?").run(id);
+      if (getActiveTournamentId() === id) {
+        setSetting('activeTournamentId', null);
+      }
+      return res.json({ success: true });
+    }
+
+    return res.status(400).json({ error: 'Ugyldig handling' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.put('/api/admin/tournament/:id/slope', requireAdmin, (req, res) => {
@@ -1134,7 +1359,7 @@ app.post('/api/admin/tournament/:id/stages', requireAdmin, (req, res) => {
     const row = db.prepare(
       `INSERT INTO tournament_stages (tournament_id, name, stage_order, date, format, status, is_published, leaderboard_type, settings, updated_at)
        VALUES (?,?,?,?,?,?,?, ?, ?, CURRENT_TIMESTAMP)`
-    ).run(tournamentId, name || 'Ny stage', parseInt(order, 10) || 1, date || null, normalizeTournamentFormat(format), status || 'draft', status === 'published' ? 1 : 0, leaderboardType || 'individual', settings ? JSON.stringify(settings) : null);
+    ).run(tournamentId, name || 'Ny stage', parseInt(order, 10) || 1, date || null, normalizeTournamentFormat(format), normalizeTournamentStatus(status), status === 'published' ? 1 : 0, leaderboardType || 'individual', settings ? JSON.stringify(settings) : null);
     const tournament = db.prepare('SELECT active_stage_id FROM tournaments WHERE id=?').get(tournamentId);
     if (!tournament?.active_stage_id) db.prepare('UPDATE tournaments SET active_stage_id=? WHERE id=?').run(row.lastInsertRowid, tournamentId);
     res.json({ success: true, id: row.lastInsertRowid });
@@ -1148,7 +1373,7 @@ app.put('/api/admin/stage/:id', requireAdmin, (req, res) => {
       `UPDATE tournament_stages
        SET name=?, stage_order=?, date=?, format=?, status=?, is_published=?, leaderboard_type=?, settings=?, updated_at=CURRENT_TIMESTAMP
        WHERE id=?`
-    ).run(name || 'Stage', parseInt(order, 10) || 1, date || null, normalizeTournamentFormat(format), status || 'draft', status === 'published' ? 1 : 0, leaderboardType || 'individual', settings ? JSON.stringify(settings) : null, req.params.id);
+    ).run(name || 'Stage', parseInt(order, 10) || 1, date || null, normalizeTournamentFormat(format), normalizeTournamentStatus(status), status === 'published' ? 1 : 0, leaderboardType || 'individual', settings ? JSON.stringify(settings) : null, req.params.id);
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1451,8 +1676,9 @@ app.put('/api/admin/active-tournament/:id', requireAdmin, (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!Number.isFinite(id)) return res.status(400).json({ error: 'Ugyldig turnerings-ID' });
   try {
-    const existing = db.prepare('SELECT id FROM tournaments WHERE id=?').get(id);
+    const existing = db.prepare('SELECT id, status FROM tournaments WHERE id=?').get(id);
     if (!existing) return res.status(404).json({ error: 'Turnering ikke funnet' });
+    if (normalizeTournamentStatus(existing.status) === 'archived') return res.status(400).json({ error: 'Arkiverte turneringer kan ikke settes som aktiv turnering' });
     setSetting('activeTournamentId', String(id));
     res.json({ success: true, activeTournamentId: id });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -2220,9 +2446,10 @@ app.get('/api/instagram-qr', (req, res) => {
 });
 
 // ── Clean URL routing ────────────────────────────────────────────────────────
-['gameday', 'scoreboard', 'legacy', 'enter-score', 'admin', 'gallery'].forEach(p => {
+['gameday', 'scoreboard', 'legacy', 'historikk', 'enter-score', 'admin', 'gallery'].forEach(p => {
   app.get(`/${p}`, (req, res) => res.sendFile(path.join(__dirname, `public/${p}.html`)));
 });
+app.get('/historikk/:id', (req, res) => res.sendFile(path.join(__dirname, 'public/historikk-detail.html')));
 app.get('/admin/control-panel', (req, res) => res.sendFile(path.join(__dirname, 'public/control-panel.html')));
 app.get('/admin-dashboard', (req, res) => res.redirect('/admin/control-panel'));
 

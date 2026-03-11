@@ -213,7 +213,7 @@
                 <option value="fourball">Bestball / Four-ball</option>
                 <option value="matchplay">Matchspill</option>
               </select></div>
-              <div class="form-group"><label class="form-label">Status</label><select class="form-select" id="tStatus"><option value="draft">Utkast</option><option value="upcoming">Kommende</option><option value="completed">Fullført</option></select></div>
+              <div class="form-group"><label class="form-label">Status</label><select class="form-select" id="tStatus"><option value="draft">Utkast</option><option value="published">Publisert</option><option value="live">Live</option><option value="paused">Pauset</option><option value="completed">Fullført</option><option value="archived">Arkivert</option></select></div>
               <div class="form-group"><label class="form-label">Slope Rating</label><input class="form-input" id="tSlope" type="number" min="55" max="155" value="113" placeholder="113"></div>
               <div class="form-group" style="grid-column:1/-1"><label class="form-label">Beskrivelse</label><textarea class="form-input form-textarea" id="tDesc" placeholder="Kort beskrivelse til forsiden..." style="min-height:70px"></textarea></div>
             </div>
@@ -254,7 +254,7 @@
                 <option value="fourball">Bestball / Four-ball</option>
                 <option value="matchplay">Matchspill</option>
               </select></div>
-              <div class="form-group"><label class="form-label">Status</label><select class="form-select" id="editTStatus"><option value="draft">Utkast</option><option value="upcoming">Kommende</option><option value="completed">Fullført</option></select></div>
+              <div class="form-group"><label class="form-label">Status</label><select class="form-select" id="editTStatus"><option value="draft">Utkast</option><option value="published">Publisert</option><option value="live">Live</option><option value="paused">Pauset</option><option value="completed">Fullført</option><option value="archived">Arkivert</option></select></div>
               <div class="form-group"><label class="form-label">Slope Rating</label><input class="form-input" id="editTSlope" type="number" min="55" max="155" value="113"></div>
               <div class="form-group" style="grid-column:1/-1"><label class="form-label">Beskrivelse</label><textarea class="form-input form-textarea" id="editTDesc" style="min-height:60px"></textarea></div>
             </div>
@@ -919,7 +919,7 @@ async function loadTournaments() {
 }
 
 function statusLabel(s) {
-  return s==='draft'?'Utkast':s==='upcoming'?'Kommende':s==='completed'?'Fullført':s;
+  return s==='draft'?'Utkast':s==='published'?'Publisert':s==='live'?'Live':s==='paused'?'Pauset':s==='completed'?'Fullført':s==='archived'?'Arkivert':s;
 }
 
 function formatLabel(format) {
@@ -945,7 +945,8 @@ function populateTournamentSelects() {
                'awardsTournamentSelect','gamedayTournamentSelect','photosTournamentSelect','sponsorsTournamentSelect','stagesTournamentSelect'];
   // Find the default (active > upcoming) tournament
   const defaultT = allTournaments.find(t => t.is_active) ||
-                   allTournaments.find(t => t.status === 'upcoming');
+                   allTournaments.find(t => t.status === 'published') ||
+                   allTournaments.find(t => t.status === 'live');
   ids.forEach(id => {
     const sel = document.getElementById(id);
     const cur = sel.value;
@@ -1260,7 +1261,7 @@ async function deletePairingMatch(id) {
 async function loadDashboard() {
   document.getElementById('statTournaments').textContent = allTournaments.length;
 
-  const upcoming = allTournaments.find(t=>t.status==='upcoming') || allTournaments.find(t=>t.status==='active');
+  const upcoming = allTournaments.find(t=>t.status==='published') || allTournaments.find(t=>t.status==='live');
   if (upcoming) {
     document.getElementById('dashNextName').textContent = upcoming.name;
     document.getElementById('dashNextDetails').textContent =

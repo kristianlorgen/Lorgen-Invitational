@@ -50,9 +50,11 @@
         <div class="cp-title">Turneringsstatus</div>
         <select id="tournamentStatus" class="form-select">
           <option value="draft">draft</option>
+          <option value="published">published</option>
           <option value="live">live</option>
           <option value="paused">paused</option>
           <option value="completed">completed</option>
+          <option value="archived">archived</option>
         </select>
         <button class="btn btn--dark btn--sm" style="margin-top:10px" onclick="saveControl({ tournamentStatus: document.getElementById('tournamentStatus').value })">Oppdater status</button>
       </div>
@@ -77,10 +79,23 @@
         <button class="btn btn--sm" onclick="confirmQuick('complete_tournament','Fullføre turneringen?')">Fullfør turnering</button>
         <button class="btn btn--sm" onclick="quick('open_scoring')">Åpne scoring</button>
         <button class="btn btn--sm" onclick="quick('close_scoring')">Lukk scoring</button>
+        <button class="btn btn--sm" onclick="quick('lock_scoring')">Lås scoring</button>
+        <button class="btn btn--sm" onclick="quick('unlock_scoring')">Lås opp scoring</button>
         <button class="btn btn--sm" onclick="quick('publish_leaderboard')">Publiser leaderboard</button>
         <button class="btn btn--sm" onclick="quick('hide_leaderboard')">Skjul leaderboard</button>
         <button class="btn btn--sm" onclick="quick('publish_results')">Publiser resultater</button>
         <button class="btn btn--sm" onclick="quick('hide_results')">Skjul resultater</button>
+      </div>
+    </div>
+
+    <div class="cp-card" style="margin-top:16px">
+      <div class="cp-title">Turnering avslutning/arkiv</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn--sm" onclick="lifecycle('publish_results')">Publiser sluttresultater</button>
+        <button class="btn btn--sm" onclick="lifecycle('lock_scoring')">Lås scoring</button>
+        <button class="btn btn--sm" onclick="lifecycle('complete')">Fullfør turnering</button>
+        <button class="btn btn--sm" onclick="lifecycle('archive')">Arkiver turnering</button>
+        <a class="btn btn--outline btn--sm" id="previewHistoryLink" href="/historikk">Forhåndsvis historikk</a>
       </div>
     </div>
 
@@ -115,12 +130,14 @@ function render() {
 
   document.getElementById('activeTournamentSelect').innerHTML = `<option value="">— Velg —</option>` + d.tournaments.map(tn => `<option value="${tn.id}" ${tn.id===d.activeTournamentId?'selected':''}>${tn.name} (${tn.year})</option>`).join('');
   document.getElementById('tournamentStatus').value = c.tournamentStatus;
+  document.getElementById('previewHistoryLink').href = t ? `/historikk/${t.id}` : '/historikk';
 
   document.getElementById('stageList').innerHTML = d.stages.length ? d.stages.map(st => `<div class="stage-item"><div><strong>${st.name}</strong><div style="font-size:.8rem;color:var(--text-muted)">${st.format_label}</div></div><button class="btn btn--sm ${d.activeStage?.id===st.id?'btn--gold':'btn--outline'}" onclick="setActiveStage(${st.id})">Sett som aktiv stage</button></div>`).join('') : '<div style="color:var(--text-muted)">Ingen stages.</div>';
 
   document.getElementById('controlToggles').innerHTML = [
     checkbox('Åpne scorekort', 'scorecardsOpen', c.scorecardsOpen),
     checkbox('Tillat scoreinnsending', 'scoringOpen', c.scoringOpen),
+    checkbox('Lås scoring', 'scoringLocked', c.scoringLocked),
     checkbox('Vis live leaderboard', 'leaderboardVisible', c.leaderboardVisible),
     checkbox('Publiser resultater', 'resultsPublished', c.resultsPublished),
     checkbox('Vis publikumsfeed på leaderboard', 'showAudienceFeed', c.showAudienceFeed),
@@ -153,6 +170,8 @@ async function setActiveTournament() {
   await api('/api/admin/active-tournament/' + id, { method: 'PUT' });
   await load();
 }
+async function lifecycle(action){ if(!state?.tournament?.id) return; await api(`/api/admin/tournament/${state.tournament.id}/lifecycle`, { method:'POST', body: JSON.stringify({ action }) }); await load(); }
+
 async function setActiveStage(stageId) {
   if (!state?.tournament?.id) return;
   await api(`/api/admin/tournament/${state.tournament.id}/active-stage/${stageId}`, { method: 'PUT' });

@@ -23,7 +23,10 @@ db.exec(`
     course TEXT DEFAULT '',
     description TEXT DEFAULT '',
     gameday_info TEXT DEFAULT '',
-    status TEXT DEFAULT 'upcoming',
+    status TEXT DEFAULT 'draft',
+    results_published INTEGER NOT NULL DEFAULT 0,
+    scoring_locked INTEGER NOT NULL DEFAULT 0,
+    archived_at DATETIME,
     tournament_mode TEXT DEFAULT 'single_format',
     active_stage_id INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -296,6 +299,13 @@ try { db.exec(`ALTER TABLE tournaments ADD COLUMN format_settings TEXT`); } catc
 try { db.exec(`ALTER TABLE tournaments ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP`); } catch(_) {}
 try { db.exec(`ALTER TABLE tournaments ADD COLUMN tournament_mode TEXT DEFAULT 'single_format'`); } catch(_) {}
 try { db.exec(`ALTER TABLE tournaments ADD COLUMN active_stage_id INTEGER`); } catch(_) {}
+
+try { db.exec(`ALTER TABLE tournaments ADD COLUMN results_published INTEGER NOT NULL DEFAULT 0`); } catch(_) {}
+try { db.exec(`ALTER TABLE tournaments ADD COLUMN scoring_locked INTEGER NOT NULL DEFAULT 0`); } catch(_) {}
+try { db.exec(`ALTER TABLE tournaments ADD COLUMN archived_at DATETIME`); } catch(_) {}
+try { db.exec(`UPDATE tournaments SET status='draft' WHERE status IS NULL OR TRIM(status)=''`); } catch(_) {}
+try { db.exec(`UPDATE tournaments SET status='published' WHERE LOWER(status)='upcoming'`); } catch(_) {}
+try { db.exec(`UPDATE tournaments SET status='live' WHERE LOWER(status)='active'`); } catch(_) {}
 try { db.exec(`ALTER TABLE teams ADD COLUMN player1_handicap REAL DEFAULT 0`); } catch(_) {}
 try { db.exec(`ALTER TABLE teams ADD COLUMN player2_handicap REAL DEFAULT 0`); } catch(_) {}
 try { db.exec(`ALTER TABLE holes ADD COLUMN stroke_index INTEGER DEFAULT 0`); } catch(_) {}
@@ -446,8 +456,7 @@ try {
 
 const existingActiveTournamentSetting = db.prepare("SELECT value FROM site_settings WHERE key='activeTournamentId' LIMIT 1").get();
 if (!existingActiveTournamentSetting) {
-  const fallback = db.prepare("SELECT id FROM tournaments WHERE status='active' ORDER BY date DESC LIMIT 1").get()
-    || db.prepare("SELECT id FROM tournaments WHERE status='upcoming' ORDER BY date ASC LIMIT 1").get()
+  const fallback = db.prepare("SELECT id FROM tournaments WHERE status IN ('live','published','draft','paused','completed') ORDER BY date DESC LIMIT 1").get()
     || null;
   db.prepare(
     "INSERT INTO site_settings (key, value, updated_at) VALUES ('activeTournamentId', ?, CURRENT_TIMESTAMP)"
