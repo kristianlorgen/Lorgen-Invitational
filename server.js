@@ -126,16 +126,28 @@ app.get('/ready', (req, res) => {
 });
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+function getSetting(key) {
+  const row = db.prepare('SELECT value FROM site_settings WHERE key=? LIMIT 1').get(key);
+  return row ? row.value : null;
+}
+
+function setSetting(key, value) {
+  db.prepare(
+    `INSERT INTO site_settings (key, value, updated_at)
+     VALUES (?, ?, CURRENT_TIMESTAMP)
+     ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=CURRENT_TIMESTAMP`
+  ).run(key, value === undefined ? null : value);
+}
+
 function getActiveTournament() {
-  return db.prepare(
-    `SELECT * FROM tournaments WHERE status IN ('active','upcoming') ORDER BY date ASC LIMIT 1`
-  ).get();
+  const activeTournamentId = parseInt(getSetting('activeTournamentId') || '', 10);
+  if (!Number.isFinite(activeTournamentId)) return null;
+  const tournament = db.prepare('SELECT * FROM tournaments WHERE id=? LIMIT 1').get(activeTournamentId);
+  return tournament || null;
 }
 
 function getScoreboardTournament() {
-  let t = db.prepare(`SELECT * FROM tournaments WHERE status='active' ORDER BY date DESC LIMIT 1`).get();
-  if (!t) t = db.prepare(`SELECT * FROM tournaments WHERE status='completed' ORDER BY date DESC LIMIT 1`).get();
-  return t || null;
+  return getActiveTournament();
 }
 
 function normalizePhotoPath(photoPath = '') {
@@ -268,7 +280,7 @@ function rebuildPhotoDatabase(tournamentId = null) {
 
 
 function resolveTeamForActiveTournament(req, pinInput) {
-  const t = db.prepare(`SELECT * FROM tournaments WHERE status='active' ORDER BY date DESC LIMIT 1`).get();
+  const t = getActiveTournament();
   if (!t) return { error: { status: 404, message: 'Ingen aktiv turnering' } };
 
   const pin = String(pinInput || '').trim();
@@ -401,6 +413,13 @@ app.get('/api/tournament', (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+app.get('/api/active-tournament', (req, res) => {
+  try {
+    const tournament = getActiveTournament();
+    res.json({ tournament });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/sponsors', (req, res) => {
   try {
     const placement = String(req.query.placement || 'home');
@@ -410,7 +429,7 @@ app.get('/api/sponsors', (req, res) => {
 
     let tournamentId = parseInt(req.query.tournament_id, 10);
     if (!Number.isFinite(tournamentId)) {
-      const t = getActiveTournament() || getScoreboardTournament();
+      const t = getActiveTournament();
       tournamentId = t?.id;
     }
     if (!tournamentId) return res.json({ sponsors: [] });
@@ -656,21 +675,25 @@ app.post('/api/team/upload-photo/:hole', requireTeam, (req, res) => {
 
 app.get('/api/admin/tournaments', requireAdmin, (req, res) => {
   try {
-    const tournaments = db.prepare('SELECT * FROM tournaments ORDER BY year DESC').all();
-    res.json({ tournaments });
+    const activeTournamentId = parseInt(getSetting('activeTournamentId') || '', 10);
+    const tournaments = db.prepare('SELECT * FROM tournaments ORDER BY year DESC').all()
+      .map(t => ({ ...t, is_active: Number.isFinite(activeTournamentId) && t.id === activeTournamentId }));
+    res.json({ tournaments, activeTournamentId: Number.isFinite(activeTournamentId) ? activeTournamentId : null });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/admin/tournament', requireAdmin, (req, res) => {
-  const { date, course, description, gameday_info, slope_rating } = req.body;
-  if (!date) return res.status(400).json({ error: 'Dato er påkrevd' });
-  const year = new Date(date).getFullYear();
-  if (!Number.isFinite(year)) return res.status(400).json({ error: 'Ugyldig dato' });
-  const name = 'Lorgen Invitational';
+  const { name, year, description, format, status, startDate, endDate, date, course, gameday_info, slope_rating } = req.body;
+  const resolvedStartDate = startDate || date;
+  if (!resolvedStartDate) return res.status(400).json({ error: 'Startdato er påkrevd' });
+  const parsedYear = parseInt(year, 10) || new Date(resolvedStartDate).getFullYear();
+  if (!Number.isFinite(parsedYear)) return res.status(400).json({ error: 'Ugyldig år' });
+  const resolvedName = (name || 'Lorgen Invitational').trim() || 'Lorgen Invitational';
   try {
     const result = db.prepare(
-      'INSERT INTO tournaments (year, name, date, course, description, gameday_info, slope_rating) VALUES (?,?,?,?,?,?,?)'
-    ).run(year, name, date, course||'', description||'', gameday_info||'', slope_rating||113);
+      `INSERT INTO tournaments (year, name, date, start_date, end_date, format, course, description, gameday_info, status, slope_rating, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)`
+    ).run(parsedYear, resolvedName, resolvedStartDate, resolvedStartDate, endDate || resolvedStartDate, format || '2-mann scramble', course||'', description||'', gameday_info||'', status || 'draft', slope_rating||113);
     const tid = result.lastInsertRowid;
     const insertHole = db.prepare('INSERT INTO holes (tournament_id, hole_number, par, requires_photo) VALUES (?,?,4,0)');
     const insertAllHoles = db.transaction(() => {
@@ -682,15 +705,18 @@ app.post('/api/admin/tournament', requireAdmin, (req, res) => {
 });
 
 app.put('/api/admin/tournament/:id', requireAdmin, (req, res) => {
-  const { date, course, description, gameday_info, status, slope_rating } = req.body;
-  if (!date) return res.status(400).json({ error: 'Dato er påkrevd' });
-  const year = new Date(date).getFullYear();
-  if (!Number.isFinite(year)) return res.status(400).json({ error: 'Ugyldig dato' });
-  const name = 'Lorgen Invitational';
+  const { name, year, description, format, status, startDate, endDate, date, course, gameday_info, slope_rating } = req.body;
+  const resolvedStartDate = startDate || date;
+  if (!resolvedStartDate) return res.status(400).json({ error: 'Startdato er påkrevd' });
+  const parsedYear = parseInt(year, 10) || new Date(resolvedStartDate).getFullYear();
+  if (!Number.isFinite(parsedYear)) return res.status(400).json({ error: 'Ugyldig år' });
+  const resolvedName = (name || 'Lorgen Invitational').trim() || 'Lorgen Invitational';
   try {
     db.prepare(
-      'UPDATE tournaments SET year=?, name=?, date=?, course=?, description=?, gameday_info=?, status=?, slope_rating=? WHERE id=?'
-    ).run(year, name, date, course||'', description||'', gameday_info||'', status, slope_rating||113, req.params.id);
+      `UPDATE tournaments
+       SET year=?, name=?, date=?, start_date=?, end_date=?, format=?, course=?, description=?, gameday_info=?, status=?, slope_rating=?, updated_at=CURRENT_TIMESTAMP
+       WHERE id=?`
+    ).run(parsedYear, resolvedName, resolvedStartDate, resolvedStartDate, endDate || resolvedStartDate, format || '2-mann scramble', course||'', description||'', gameday_info||'', status || 'draft', slope_rating||113, req.params.id);
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -781,6 +807,24 @@ app.post('/api/admin/tournament/:id/sponsor-logo', requireAdmin, (req, res) => {
   });
 });
 
+app.put('/api/admin/active-tournament/:id', requireAdmin, (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: 'Ugyldig turnerings-ID' });
+  try {
+    const existing = db.prepare('SELECT id FROM tournaments WHERE id=?').get(id);
+    if (!existing) return res.status(404).json({ error: 'Turnering ikke funnet' });
+    setSetting('activeTournamentId', String(id));
+    res.json({ success: true, activeTournamentId: id });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/admin/active-tournament', requireAdmin, (req, res) => {
+  try {
+    setSetting('activeTournamentId', null);
+    res.json({ success: true, activeTournamentId: null });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.put('/api/admin/tournament/:id/gameday', requireAdmin, (req, res) => {
   const { gameday_info } = req.body;
   try {
@@ -804,6 +848,10 @@ app.delete('/api/admin/tournament/:id', requireAdmin, (req, res) => {
     db.prepare('DELETE FROM awards WHERE tournament_id=?').run(id);
     db.prepare('DELETE FROM gallery_photos WHERE tournament_id=?').run(id);
     db.prepare('DELETE FROM tournaments WHERE id=?').run(id);
+    const activeTournamentId = parseInt(getSetting('activeTournamentId') || '', 10);
+    if (Number.isFinite(activeTournamentId) && activeTournamentId === parseInt(id, 10)) {
+      setSetting('activeTournamentId', null);
+    }
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -1032,19 +1080,6 @@ function getVoterIp(req) {
   return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
 }
 
-function getLatestTournamentWithPublishedPhotos() {
-  const latestWithPhotos = db.prepare(
-    `SELECT x.tournament_id FROM (
-       SELECT gp.tournament_id, gp.uploaded_at AS ts FROM gallery_photos gp WHERE gp.is_published=1
-     ) x
-     ORDER BY x.ts DESC
-     LIMIT 1`
-  ).get();
-
-  if (!latestWithPhotos?.tournament_id) return null;
-  return db.prepare('SELECT * FROM tournaments WHERE id=?').get(latestWithPhotos.tournament_id) || null;
-}
-
 function getTournamentForPhotoRef(photoRef) {
   if (!photoRef || typeof photoRef !== 'string') return null;
 
@@ -1073,11 +1108,7 @@ function getTournamentForPhotoRef(photoRef) {
 
 app.get('/api/gallery', (req, res) => {
   try {
-    // Show the most recently updated published gallery first, so users always
-    // see the same photos as in admin regardless of tournament status.
-    let t = getLatestTournamentWithPublishedPhotos();
-    if (!t) t = getActiveTournament();
-    if (!t) t = db.prepare(`SELECT * FROM tournaments WHERE status='completed' ORDER BY date DESC LIMIT 1`).get();
+    const t = getActiveTournament();
     const collectPhotosForTournament = (tournamentId) => {
       const items = [];
       const scoreIdsFromGallery = new Set();
@@ -1158,19 +1189,7 @@ app.get('/api/gallery', (req, res) => {
 
     if (!t) return res.json({ photos: [], tournament: null });
 
-    let photos = collectPhotosForTournament(t.id);
-    if (!photos.length) {
-      const fallbackTournament = getLatestTournamentWithPublishedPhotos();
-      if (fallbackTournament && fallbackTournament.id !== t.id) {
-        if (fallbackTournament) {
-          const fallbackPhotos = collectPhotosForTournament(fallbackTournament.id);
-          if (fallbackPhotos.length) {
-            t = fallbackTournament;
-            photos = fallbackPhotos;
-          }
-        }
-      }
-    }
+    const photos = collectPhotosForTournament(t.id);
 
     // Add vote counts and voter status
     const voterIp = getVoterIp(req);
@@ -1203,9 +1222,7 @@ app.post('/api/gallery/vote', (req, res) => {
   try {
     // Always store votes on the tournament that owns the selected image.
     let t = getTournamentForPhotoRef(photo_ref);
-    if (!t) t = getLatestTournamentWithPublishedPhotos();
     if (!t) t = getActiveTournament();
-    if (!t) t = db.prepare(`SELECT * FROM tournaments WHERE status='completed' ORDER BY date DESC LIMIT 1`).get();
     if (!t) return res.status(404).json({ error: 'Ingen aktiv turnering' });
     const voterIp = getVoterIp(req);
     // Toggle vote

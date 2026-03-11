@@ -151,7 +151,7 @@
         <div class="card">
           <div class="card-header"><strong>Aktiv Turnering</strong></div>
           <div class="card-body" id="dashActiveTournament">
-            <p style="color:var(--text-muted)">Ingen aktiv turnering. Opprett en under Turneringer og sett status til «aktiv».</p>
+            <p style="color:var(--text-muted)">Ingen aktiv turnering valgt ennå.</p>
           </div>
         </div>
 
@@ -195,9 +195,13 @@
           <div class="card-header"><strong>Opprett ny turnering</strong></div>
           <div class="card-body">
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px">
-              <div class="form-group"><label class="form-label">Turneringsnavn</label><input class="form-input" id="tName" type="text" value="Lorgen Invitational" readonly></div>
-              <div class="form-group"><label class="form-label">Dato og klokkeslett</label><input class="form-input" id="tDate" type="datetime-local"></div>
+              <div class="form-group"><label class="form-label">Turneringsnavn</label><input class="form-input" id="tNameInput" type="text" value="Lorgen Invitational"></div>
+              <div class="form-group"><label class="form-label">År</label><input class="form-input" id="tYear" type="number" min="2000" max="2100"></div>
+              <div class="form-group"><label class="form-label">Startdato og klokkeslett</label><input class="form-input" id="tDate" type="datetime-local"></div>
+              <div class="form-group"><label class="form-label">Sluttdato og klokkeslett</label><input class="form-input" id="tEndDate" type="datetime-local"></div>
               <div class="form-group"><label class="form-label">Bane</label><input class="form-input" id="tCourse" type="text" placeholder="f.eks. Bogstad Golfklubb"></div>
+              <div class="form-group"><label class="form-label">Format</label><input class="form-input" id="tFormat" type="text" value="2-mann scramble"></div>
+              <div class="form-group"><label class="form-label">Status</label><select class="form-select" id="tStatus"><option value="draft">Utkast</option><option value="upcoming">Kommende</option><option value="completed">Fullført</option></select></div>
               <div class="form-group"><label class="form-label">Slope Rating</label><input class="form-input" id="tSlope" type="number" min="55" max="155" value="113" placeholder="113"></div>
               <div class="form-group" style="grid-column:1/-1"><label class="form-label">Beskrivelse</label><textarea class="form-input form-textarea" id="tDesc" placeholder="Kort beskrivelse til forsiden..." style="min-height:70px"></textarea></div>
             </div>
@@ -211,8 +215,8 @@
           <div class="card-header"><strong>Alle turneringer</strong></div>
           <div style="overflow-x:auto">
             <table class="data-table">
-              <thead><tr><th>År</th><th>Navn</th><th>Dato</th><th>Bane</th><th>Status</th><th>Handlinger</th></tr></thead>
-              <tbody id="tournamentsTable"><tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Laster...</td></tr></tbody>
+              <thead><tr><th>År</th><th>Navn</th><th>Periode</th><th>Format</th><th>Status</th><th>Aktiv</th><th>Handlinger</th></tr></thead>
+              <tbody id="tournamentsTable"><tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted)">Laster...</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -221,11 +225,15 @@
           <div class="card-header"><strong>Rediger turnering</strong></div>
           <div class="card-body">
             <input type="hidden" id="editTId">
-            <input type="hidden" id="editTStatus">
+            
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px">
-              <div class="form-group"><label class="form-label">Navn</label><input class="form-input" id="editTName" value="Lorgen Invitational" readonly></div>
-              <div class="form-group"><label class="form-label">Dato og klokkeslett</label><input class="form-input" id="editTDate" type="datetime-local"></div>
+              <div class="form-group"><label class="form-label">Navn</label><input class="form-input" id="editTName"></div>
+              <div class="form-group"><label class="form-label">År</label><input class="form-input" id="editTYear" type="number" min="2000" max="2100"></div>
+              <div class="form-group"><label class="form-label">Startdato og klokkeslett</label><input class="form-input" id="editTDate" type="datetime-local"></div>
+              <div class="form-group"><label class="form-label">Sluttdato og klokkeslett</label><input class="form-input" id="editTEndDate" type="datetime-local"></div>
               <div class="form-group"><label class="form-label">Bane</label><input class="form-input" id="editTCourse"></div>
+              <div class="form-group"><label class="form-label">Format</label><input class="form-input" id="editTFormat"></div>
+              <div class="form-group"><label class="form-label">Status</label><select class="form-select" id="editTStatus"><option value="draft">Utkast</option><option value="upcoming">Kommende</option><option value="completed">Fullført</option></select></div>
               <div class="form-group"><label class="form-label">Slope Rating</label><input class="form-input" id="editTSlope" type="number" min="55" max="155" value="113"></div>
               <div class="form-group" style="grid-column:1/-1"><label class="form-label">Beskrivelse</label><textarea class="form-input form-textarea" id="editTDesc" style="min-height:60px"></textarea></div>
             </div>
@@ -852,7 +860,7 @@ async function loadTournaments() {
 }
 
 function statusLabel(s) {
-  return s==='upcoming'?'Kommende':s==='active'?'Aktiv':s==='completed'?'Fullført':s;
+  return s==='draft'?'Utkast':s==='upcoming'?'Kommende':s==='completed'?'Fullført':s;
 }
 
 function formatTournamentDate(dateValue, includeWeekday = false) {
@@ -873,7 +881,7 @@ function populateTournamentSelects() {
   const ids = ['teamsTournamentSelect','holesTournamentSelect','scoresTournamentSelect',
                'awardsTournamentSelect','gamedayTournamentSelect','photosTournamentSelect','sponsorsTournamentSelect'];
   // Find the default (active > upcoming) tournament
-  const defaultT = allTournaments.find(t => t.status === 'active') ||
+  const defaultT = allTournaments.find(t => t.is_active) ||
                    allTournaments.find(t => t.status === 'upcoming');
   ids.forEach(id => {
     const sel = document.getElementById(id);
@@ -888,22 +896,17 @@ function populateTournamentSelects() {
 function renderTournamentsTable() {
   const tbody = document.getElementById('tournamentsTable');
   if (!allTournaments.length) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen turneringer ennå</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen turneringer ennå</td></tr>';
     return;
   }
   tbody.innerHTML = allTournaments.map(t => `
     <tr>
       <td><strong>${t.year}</strong></td>
       <td>${t.name}</td>
-      <td>${formatTournamentDate(t.date)}</td>
-      <td>${t.course||'—'}</td>
-      <td>
-        <select onchange="changeTournamentStatus(${t.id},this.value)" style="padding:4px 8px;border:1px solid var(--gold-border);border-radius:4px;font-size:.8rem">
-          <option value="upcoming" ${t.status==='upcoming'?'selected':''}>Kommende</option>
-          <option value="active"   ${t.status==='active'  ?'selected':''}>Aktiv</option>
-          <option value="completed"${t.status==='completed'?'selected':''}>Fullført</option>
-        </select>
-      </td>
+      <td>${formatTournamentDate(t.start_date || t.date)}${t.end_date ? ` – ${formatTournamentDate(t.end_date)}` : ''}</td>
+      <td>${t.format || '—'}</td>
+      <td><span class="badge">${statusLabel(t.status)}</span></td>
+      <td>${t.is_active ? '<span class="badge badge--active">Aktiv turnering</span>' : `<button onclick="setActiveTournament(${t.id})" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)">Sett som aktiv turnering</button>`}</td>
       <td style="display:flex;gap:6px">
         <button onclick="editTournament(${t.id})" class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)" title="Rediger"><i class="fas fa-pen"></i></button>
         <button onclick="deleteTournament(${t.id},${JSON.stringify(t.name)})" class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
@@ -911,17 +914,28 @@ function renderTournamentsTable() {
     </tr>`).join('');
 }
 
+async function setActiveTournament(id) {
+  try {
+    await api('/api/admin/active-tournament/' + id, { method: 'PUT' });
+    showToast('Aktiv turnering oppdatert');
+    await loadTournaments();
+    await loadDashboard();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
 async function createTournament() {
-  const name='Lorgen Invitational', date=document.getElementById('tDate').value, course=document.getElementById('tCourse').value,
-        description=document.getElementById('tDesc').value,
+  const name=document.getElementById('tNameInput').value || 'Lorgen Invitational', date=document.getElementById('tDate').value, endDate=document.getElementById('tEndDate').value || date, course=document.getElementById('tCourse').value,
+        description=document.getElementById('tDesc').value, format=document.getElementById('tFormat').value || '2-mann scramble', status=document.getElementById('tStatus').value,
         slope_rating=document.getElementById('tSlope').value||113;
-  const year = date ? new Date(date).getFullYear() : null;
+  const year = parseInt(document.getElementById('tYear').value,10) || (date ? new Date(date).getFullYear() : null);
   if (!year||!date) { showToast('Dato og klokkeslett er påkrevd','error'); return; }
   try {
-    await api('/api/admin/tournament',{method:'POST',body:JSON.stringify({year,name,date,course,description,slope_rating})});
+    await api('/api/admin/tournament',{method:'POST',body:JSON.stringify({year,name,startDate:date,endDate,course,description,format,status,slope_rating})});
     showToast('Turnering opprettet!');
-    ['tDate','tCourse','tDesc'].forEach(id=>document.getElementById(id).value='');
-    document.getElementById('tName').value='Lorgen Invitational';
+    ['tDate','tEndDate','tCourse','tDesc','tYear'].forEach(id=>document.getElementById(id).value='');
+    document.getElementById('tNameInput').value='Lorgen Invitational';
+    document.getElementById('tFormat').value='2-mann scramble';
+    document.getElementById('tStatus').value='draft';
     document.getElementById('tSlope').value='113';
     await loadTournaments(); await loadDashboard();
   } catch(e) { showToast(e.message,'error'); }
@@ -941,11 +955,14 @@ function editTournament(id) {
   const t = allTournaments.find(x => x.id === id);
   if (!t) return;
   document.getElementById('editTId').value = t.id;
-  document.getElementById('editTStatus').value = t.status;
-  document.getElementById('editTName').value = 'Lorgen Invitational';
-  document.getElementById('editTDate').value = (t.date || '').slice(0,16);
+  document.getElementById('editTStatus').value = t.status || 'draft';
+  document.getElementById('editTName').value = t.name || 'Lorgen Invitational';
+  document.getElementById('editTYear').value = t.year || '';
+  document.getElementById('editTDate').value = (t.start_date || t.date || '').slice(0,16);
+  document.getElementById('editTEndDate').value = (t.end_date || t.start_date || t.date || '').slice(0,16);
   document.getElementById('editTCourse').value = t.course || '';
   document.getElementById('editTSlope').value = t.slope_rating || 113;
+  document.getElementById('editTFormat').value = t.format || '2-mann scramble';
   document.getElementById('editTDesc').value = t.description || '';
   document.getElementById('editTournamentCard').classList.remove('d-none');
   document.getElementById('editTournamentCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -953,16 +970,18 @@ function editTournament(id) {
 
 async function saveTournamentEdit() {
   const id = document.getElementById('editTId').value;
-  const name = 'Lorgen Invitational';
+  const name = document.getElementById('editTName').value || 'Lorgen Invitational';
   const date = document.getElementById('editTDate').value;
-  const year = date ? new Date(date).getFullYear() : null;
+  const endDate = document.getElementById('editTEndDate').value || date;
+  const year = parseInt(document.getElementById('editTYear').value,10) || (date ? new Date(date).getFullYear() : null);
   const course = document.getElementById('editTCourse').value;
   const slope_rating = document.getElementById('editTSlope').value || 113;
   const description = document.getElementById('editTDesc').value;
+  const format = document.getElementById('editTFormat').value || '2-mann scramble';
   const status = document.getElementById('editTStatus').value;
   if (!year || !date) { showToast('Dato og klokkeslett er påkrevd', 'error'); return; }
   try {
-    await api('/api/admin/tournament/' + id, { method: 'PUT', body: JSON.stringify({ year, name, date, course, slope_rating, description, status }) });
+    await api('/api/admin/tournament/' + id, { method: 'PUT', body: JSON.stringify({ year, name, startDate: date, endDate, course, slope_rating, description, format, status }) });
     showToast('Turnering oppdatert!');
     document.getElementById('editTournamentCard').classList.add('d-none');
     await loadTournaments(); await loadDashboard();
@@ -1008,7 +1027,7 @@ async function loadDashboard() {
     }
   } catch(_) {}
 
-  const active = allTournaments.find(t=>t.status==='active');
+  const active = allTournaments.find(t=>t.is_active);
   if (active) {
     try {
       const [teams, scores] = await Promise.all([
@@ -1027,7 +1046,7 @@ async function loadDashboard() {
     } catch(_) {}
   } else {
     document.getElementById('dashActiveTournament').innerHTML =
-      '<p style="color:var(--text-muted)">Ingen aktiv turnering. Opprett en under Turneringer og sett status til «aktiv».</p>';
+      '<p style="color:var(--text-muted)">Ingen aktiv turnering valgt ennå.</p>';
     document.getElementById('statTeams').textContent = '—';
     document.getElementById('statScores').textContent = '—';
   }

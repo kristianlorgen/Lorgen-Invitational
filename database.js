@@ -15,11 +15,21 @@ db.exec(`
     year INTEGER NOT NULL,
     name TEXT NOT NULL,
     date TEXT NOT NULL,
+    start_date TEXT,
+    end_date TEXT,
+    format TEXT DEFAULT '2-mann scramble',
     course TEXT DEFAULT '',
     description TEXT DEFAULT '',
     gameday_info TEXT DEFAULT '',
     status TEXT DEFAULT 'upcoming',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS site_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
   CREATE TABLE IF NOT EXISTS holes (
@@ -172,6 +182,10 @@ try { db.exec(`ALTER TABLE legacy ADD COLUMN winner_photo TEXT DEFAULT ''`); } c
 try { db.exec(`ALTER TABLE legacy ADD COLUMN winner_photo_focus TEXT DEFAULT ''`); } catch(_) {}
 try { db.exec(`ALTER TABLE teams ADD COLUMN locked INTEGER DEFAULT 0`); } catch(_) {}
 try { db.exec(`ALTER TABLE tournaments ADD COLUMN slope_rating INTEGER DEFAULT 113`); } catch(_) {}
+try { db.exec(`ALTER TABLE tournaments ADD COLUMN start_date TEXT`); } catch(_) {}
+try { db.exec(`ALTER TABLE tournaments ADD COLUMN end_date TEXT`); } catch(_) {}
+try { db.exec(`ALTER TABLE tournaments ADD COLUMN format TEXT DEFAULT '2-mann scramble'`); } catch(_) {}
+try { db.exec(`ALTER TABLE tournaments ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP`); } catch(_) {}
 try { db.exec(`ALTER TABLE teams ADD COLUMN player1_handicap REAL DEFAULT 0`); } catch(_) {}
 try { db.exec(`ALTER TABLE teams ADD COLUMN player2_handicap REAL DEFAULT 0`); } catch(_) {}
 try { db.exec(`ALTER TABLE holes ADD COLUMN stroke_index INTEGER DEFAULT 0`); } catch(_) {}
@@ -189,6 +203,21 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS photo_votes (
   voted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(tournament_id, photo_ref, voter_ip)
 )`); } catch(_) {}
+try { db.exec(`CREATE TABLE IF NOT EXISTS site_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`); } catch(_) {}
+
+const existingActiveTournamentSetting = db.prepare("SELECT value FROM site_settings WHERE key='activeTournamentId' LIMIT 1").get();
+if (!existingActiveTournamentSetting) {
+  const fallback = db.prepare("SELECT id FROM tournaments WHERE status='active' ORDER BY date DESC LIMIT 1").get()
+    || db.prepare("SELECT id FROM tournaments WHERE status='upcoming' ORDER BY date ASC LIMIT 1").get()
+    || null;
+  db.prepare(
+    "INSERT INTO site_settings (key, value, updated_at) VALUES ('activeTournamentId', ?, CURRENT_TIMESTAMP)"
+  ).run(fallback ? String(fallback.id) : null);
+}
 
 module.exports = db;
 
