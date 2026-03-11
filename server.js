@@ -90,6 +90,9 @@ app.use(express.static('public', {
     if (filePath.endsWith('.html')) {
       res.setHeader('Cache-Control', 'no-cache');
     }
+    if (filePath.endsWith('service-worker.js') || filePath.endsWith('manifest.webmanifest')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    }
   }
 }));
 let sessionStore;
