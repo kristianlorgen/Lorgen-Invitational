@@ -443,6 +443,7 @@
           <div class="page-hero-tag" style="margin-bottom:8px;text-align:left"><i class="fas fa-pencil"></i> &nbsp; Scorekort</div>
           <h1 class="page-hero-title" style="text-align:left;font-size:1.6rem" id="scTeamName">—</h1>
           <p class="page-hero-sub" style="text-align:left" id="scPlayers">—</p>
+          <div class="badge" id="scoreFormatBadge" style="display:inline-flex;margin-top:8px">Spillform: —</div>
         </div>
         <div style="display:flex;gap:10px;align-items:center">
           <div style="text-align:right">
@@ -561,6 +562,7 @@
 <input type="file" id="photoInput" accept="image/*" capture="environment" style="display:none">
 
 <script src="/js/active-tournament.js"></script>
+<script src="/js/tournament-formats.js"></script>
 <script>
 window.addEventListener('scroll', () => {
   document.getElementById('navbar').classList.toggle('scrolled', window.scrollY > 40);
@@ -620,6 +622,7 @@ let holesData      = [];
 let scoresData     = {};
 let claimsData     = {};
 let holeSponsorsMap = {};
+let activeFormatDef = TournamentFormats.getFormatDefinition('strokeplay');
 let pendingPhotoHole = null;
 let currentHoleIndex = 0;
 let teamPin = '';
@@ -735,6 +738,13 @@ async function notifyBirdieShot(payload) {
     }
     new Notification('Birdie shoutout', { body, icon: '/images/logo.png', tag: 'birdie-shoutout' });
   } catch (_) {}
+}
+
+function currentScoreInputLabel() {
+  if (activeFormatDef.key === 'matchplay') return 'Hullvinner';
+  if (['texas_scramble','greensome','foursome'].includes(activeFormatDef.key)) return 'Lagets score';
+  if (activeFormatDef.key === 'fourball') return 'Spiller A/B (bestball)';
+  return activeFormatDef.key === 'stableford' ? 'Slag (poeng beregnes automatisk)' : 'Slag';
 }
 
 function allHolesCompleted() {
@@ -865,6 +875,8 @@ async function loadScorecard() {
   const r = await fetch('/api/team/scorecard');
   const d = await r.json();
   teamData = d.team; holesData = d.holes; tournamentData = d.tournament || null;
+  activeFormatDef = TournamentFormats.getFormatDefinition(tournamentData?.format);
+  document.getElementById('scoreFormatBadge').textContent = `Spillform: ${activeFormatDef.label}`;
   d.scores.forEach(s => { scoresData[s.hole_number] = s; });
   if (d.claims) d.claims.forEach(c => { claimsData[c.hole_number + '_' + c.award_type] = c; });
   holeSponsorsMap = {};
@@ -1200,6 +1212,7 @@ function renderCurrentHole() {
       ${hasPhoto ? `<img class="photo-preview" src="${saved.photo_path}" alt="Hull ${h.hole_number} bilde">` : ''}
     ` : ''}
 
+    <div style="text-align:center;font-size:.8rem;color:var(--text-muted);margin-top:6px">${currentScoreInputLabel()}</div>
     <div class="score-stepper">
       <button class="stepper-btn" onclick="changeScore(${h.hole_number},-1)" ${blocked ? 'disabled' : ''}>−</button>
       <input class="stepper-val ${hasScore ? 'saved' : ''}" type="number" min="1" max="20"
@@ -1217,7 +1230,7 @@ function renderCurrentHole() {
       ${blocked ? 'disabled' : ''}>
       ${hasScore
         ? '<i class="fas fa-circle-check"></i> Lagret'
-        : '<i class="fas fa-floppy-disk"></i> Lagre poengsum'}
+        : '<i class="fas fa-floppy-disk"></i> Lagre resultat'}
     </button>
 
     ${ldSection}
@@ -1394,14 +1407,14 @@ async function submitScore(holeNum) {
       loadPosition();
       renderScoreStatus(allHolesCompleted() ? 'finished' : 'active');
     } else {
-      showToast(d.error || 'Kunne ikke lagre poengsum', 'error');
+      showToast(d.error || 'Kunne ikke lagre resultat', 'error');
       btn.disabled = false;
-      btn.innerHTML = '<i class="fas fa-floppy-disk"></i> Lagre poengsum';
+      btn.innerHTML = '<i class="fas fa-floppy-disk"></i> Lagre resultat';
     }
   } catch (e) {
     showToast('Tilkoblingsfeil — prøv igjen', 'error');
     btn.disabled = false;
-    btn.innerHTML = '<i class="fas fa-floppy-disk"></i> Lagre poengsum';
+    btn.innerHTML = '<i class="fas fa-floppy-disk"></i> Lagre resultat';
   }
 }
 

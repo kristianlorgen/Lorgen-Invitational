@@ -6,6 +6,7 @@ const multer  = require('multer');
 const path    = require('path');
 const fs      = require('fs');
 const db      = require('./database');
+const { normalizeTournamentFormat, getFormatDefinition } = require('./lib/tournament-formats');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -148,7 +149,9 @@ function getActiveTournament() {
   const activeTournamentId = getActiveTournamentId();
   if (!activeTournamentId) return null;
   const tournament = db.prepare('SELECT * FROM tournaments WHERE id=? LIMIT 1').get(activeTournamentId);
-  return tournament || null;
+  if (!tournament) return null;
+  const normalizedFormat = normalizeTournamentFormat(tournament.format);
+  return { ...tournament, format: normalizedFormat, format_label: getFormatDefinition(normalizedFormat).label };
 }
 
 function normalizePhotoPath(photoPath = '') {
@@ -317,6 +320,8 @@ function getSponsorsForTournament(tournamentId, placement) {
 }
 
 function buildScoreboard(tournament) {
+  const formatKey = normalizeTournamentFormat(tournament.format);
+  const formatDef = getFormatDefinition(formatKey);
   const teams     = db.prepare('SELECT * FROM teams WHERE tournament_id=?').all(tournament.id);
   const holes     = db.prepare('SELECT * FROM holes WHERE tournament_id=? ORDER BY hole_number').all(tournament.id);
   const allScoreRows = teams.length
@@ -376,12 +381,19 @@ function buildScoreboard(tournament) {
     });
     const netScore = total > 0 ? total - usedHandicapStrokes : 0;
     const netToPar = total > 0 ? netScore - par : 0;
+    const stablefordPoints = teamScores.reduce((sum, sc) => {
+      const h = holes.find(x => x.hole_number === sc.hole_number);
+      if (!h) return sum;
+      const diff = sc.score - h.par;
+      const pts = diff <= -3 ? 5 : diff === -2 ? 4 : diff === -1 ? 3 : diff === 0 ? 2 : diff === 1 ? 1 : 0;
+      return sum + pts;
+    }, 0);
     return {
       team_id: team.id, team_name: team.team_name,
       player1: team.player1, player2: team.player2,
       player1_handicap: team.player1_handicap || 0, player2_handicap: team.player2_handicap || 0,
       handicap: courseHcp, used_handicap_strokes: usedHandicapStrokes, net_score: netScore, net_to_par: netToPar,
-      total_score: total, total_par: par, to_par: total - par,
+      total_score: total, total_par: par, to_par: total - par, stableford_points: stablefordPoints,
       holes_completed: done, hole_scores: holeScores
     };
   });
@@ -391,11 +403,21 @@ function buildScoreboard(tournament) {
     if (a.holes_completed === 0 && b.holes_completed === 0) return 0;
     if (a.holes_completed === 0) return 1;
     if (b.holes_completed === 0) return -1;
+    if (formatKey === 'stableford') {
+      const ap = (a.stableford_points || 0);
+      const bp = (b.stableford_points || 0);
+      if (bp !== ap) return bp - ap;
+      return a.total_score - b.total_score;
+    }
+    if (formatKey === 'matchplay') {
+      return a.team_name.localeCompare(b.team_name, 'nb');
+    }
     return hasHandicaps ? (a.net_to_par - b.net_to_par) : (a.to_par - b.to_par);
   });
 
-  return { tournament, scoreboard, holes, awards };
+  return { tournament: { ...tournament, format: formatKey, format_label: formatDef.label }, scoreboard, holes, awards };
 }
+
 
 // ════════════════════════════════════════════════════════════════════════════
 //  PUBLIC API
@@ -674,7 +696,10 @@ app.get('/api/admin/tournaments', requireAdmin, (req, res) => {
   try {
     const activeTournamentId = parseInt(getSetting('activeTournamentId') || '', 10);
     const tournaments = db.prepare('SELECT * FROM tournaments ORDER BY year DESC').all()
-      .map(t => ({ ...t, is_active: Number.isFinite(activeTournamentId) && t.id === activeTournamentId }));
+      .map(t => {
+        const format = normalizeTournamentFormat(t.format);
+        return { ...t, format, format_label: getFormatDefinition(format).label, is_active: Number.isFinite(activeTournamentId) && t.id === activeTournamentId };
+      });
     res.json({ tournaments, activeTournamentId: Number.isFinite(activeTournamentId) ? activeTournamentId : null });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -690,7 +715,7 @@ app.post('/api/admin/tournament', requireAdmin, (req, res) => {
     const result = db.prepare(
       `INSERT INTO tournaments (year, name, date, start_date, end_date, format, course, description, gameday_info, status, slope_rating, updated_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)`
-    ).run(parsedYear, resolvedName, resolvedStartDate, resolvedStartDate, endDate || resolvedStartDate, format || '2-mann scramble', course||'', description||'', gameday_info||'', status || 'draft', slope_rating||113);
+    ).run(parsedYear, resolvedName, resolvedStartDate, resolvedStartDate, endDate || resolvedStartDate, normalizeTournamentFormat(format), course||'', description||'', gameday_info||'', status || 'draft', slope_rating||113);
     const tid = result.lastInsertRowid;
     const insertHole = db.prepare('INSERT INTO holes (tournament_id, hole_number, par, requires_photo) VALUES (?,?,4,0)');
     const insertAllHoles = db.transaction(() => {
@@ -713,7 +738,7 @@ app.put('/api/admin/tournament/:id', requireAdmin, (req, res) => {
       `UPDATE tournaments
        SET year=?, name=?, date=?, start_date=?, end_date=?, format=?, course=?, description=?, gameday_info=?, status=?, slope_rating=?, updated_at=CURRENT_TIMESTAMP
        WHERE id=?`
-    ).run(parsedYear, resolvedName, resolvedStartDate, resolvedStartDate, endDate || resolvedStartDate, format || '2-mann scramble', course||'', description||'', gameday_info||'', status || 'draft', slope_rating||113, req.params.id);
+    ).run(parsedYear, resolvedName, resolvedStartDate, resolvedStartDate, endDate || resolvedStartDate, normalizeTournamentFormat(format), course||'', description||'', gameday_info||'', status || 'draft', slope_rating||113, req.params.id);
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });

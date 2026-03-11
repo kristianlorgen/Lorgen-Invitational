@@ -200,7 +200,15 @@
               <div class="form-group"><label class="form-label">Startdato og klokkeslett</label><input class="form-input" id="tDate" type="datetime-local"></div>
               <div class="form-group"><label class="form-label">Sluttdato og klokkeslett</label><input class="form-input" id="tEndDate" type="datetime-local"></div>
               <div class="form-group"><label class="form-label">Bane</label><input class="form-input" id="tCourse" type="text" placeholder="f.eks. Bogstad Golfklubb"></div>
-              <div class="form-group"><label class="form-label">Format</label><input class="form-input" id="tFormat" type="text" value="2-mann scramble"></div>
+              <div class="form-group"><label class="form-label">Spillform</label><select class="form-select" id="tFormat">
+                <option value="stableford">Stableford</option>
+                <option value="strokeplay" selected>Slagspill</option>
+                <option value="texas_scramble">Texas Scramble</option>
+                <option value="greensome">Greensome</option>
+                <option value="foursome">Foursome</option>
+                <option value="fourball">Bestball / Four-ball</option>
+                <option value="matchplay">Matchspill</option>
+              </select></div>
               <div class="form-group"><label class="form-label">Status</label><select class="form-select" id="tStatus"><option value="draft">Utkast</option><option value="upcoming">Kommende</option><option value="completed">Fullført</option></select></div>
               <div class="form-group"><label class="form-label">Slope Rating</label><input class="form-input" id="tSlope" type="number" min="55" max="155" value="113" placeholder="113"></div>
               <div class="form-group" style="grid-column:1/-1"><label class="form-label">Beskrivelse</label><textarea class="form-input form-textarea" id="tDesc" placeholder="Kort beskrivelse til forsiden..." style="min-height:70px"></textarea></div>
@@ -232,7 +240,15 @@
               <div class="form-group"><label class="form-label">Startdato og klokkeslett</label><input class="form-input" id="editTDate" type="datetime-local"></div>
               <div class="form-group"><label class="form-label">Sluttdato og klokkeslett</label><input class="form-input" id="editTEndDate" type="datetime-local"></div>
               <div class="form-group"><label class="form-label">Bane</label><input class="form-input" id="editTCourse"></div>
-              <div class="form-group"><label class="form-label">Format</label><input class="form-input" id="editTFormat"></div>
+              <div class="form-group"><label class="form-label">Spillform</label><select class="form-select" id="editTFormat">
+                <option value="stableford">Stableford</option>
+                <option value="strokeplay">Slagspill</option>
+                <option value="texas_scramble">Texas Scramble</option>
+                <option value="greensome">Greensome</option>
+                <option value="foursome">Foursome</option>
+                <option value="fourball">Bestball / Four-ball</option>
+                <option value="matchplay">Matchspill</option>
+              </select></div>
               <div class="form-group"><label class="form-label">Status</label><select class="form-select" id="editTStatus"><option value="draft">Utkast</option><option value="upcoming">Kommende</option><option value="completed">Fullført</option></select></div>
               <div class="form-group"><label class="form-label">Slope Rating</label><input class="form-input" id="editTSlope" type="number" min="55" max="155" value="113"></div>
               <div class="form-group" style="grid-column:1/-1"><label class="form-label">Beskrivelse</label><textarea class="form-input form-textarea" id="editTDesc" style="min-height:60px"></textarea></div>
@@ -737,6 +753,7 @@
   </div>
 </div>
 
+<script src="/js/tournament-formats.js"></script>
 <script>
 // ── Hjelpefunksjoner ──────────────────────────────────────────────────────────
 function showToast(msg, type='success') {
@@ -863,6 +880,10 @@ function statusLabel(s) {
   return s==='draft'?'Utkast':s==='upcoming'?'Kommende':s==='completed'?'Fullført':s;
 }
 
+function formatLabel(format) {
+  return TournamentFormats.getFormatDefinition(format).label;
+}
+
 function formatTournamentDate(dateValue, includeWeekday = false) {
   const dt = new Date(dateValue);
   if (Number.isNaN(dt.getTime())) return '—';
@@ -904,7 +925,7 @@ function renderTournamentsTable() {
       <td><strong>${t.year}</strong></td>
       <td>${t.name}</td>
       <td>${formatTournamentDate(t.start_date || t.date)}${t.end_date ? ` – ${formatTournamentDate(t.end_date)}` : ''}</td>
-      <td>${t.format || '—'}</td>
+      <td><span class="badge" style="background:var(--gold-pale);color:var(--gold-dark)">${formatLabel(t.format)}</span></td>
       <td><span class="badge">${statusLabel(t.status)}</span></td>
       <td>${t.is_active ? '<span class="badge badge--active">Aktiv turnering</span>' : `<button onclick="setActiveTournament(${t.id})" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)">Sett som aktiv turnering</button>`}</td>
       <td style="display:flex;gap:6px">
@@ -925,7 +946,7 @@ async function setActiveTournament(id) {
 
 async function createTournament() {
   const name=document.getElementById('tNameInput').value || 'Lorgen Invitational', date=document.getElementById('tDate').value, endDate=document.getElementById('tEndDate').value || date, course=document.getElementById('tCourse').value,
-        description=document.getElementById('tDesc').value, format=document.getElementById('tFormat').value || '2-mann scramble', status=document.getElementById('tStatus').value,
+        description=document.getElementById('tDesc').value, format=document.getElementById('tFormat').value || 'strokeplay', status=document.getElementById('tStatus').value,
         slope_rating=document.getElementById('tSlope').value||113;
   const year = parseInt(document.getElementById('tYear').value,10) || (date ? new Date(date).getFullYear() : null);
   if (!year||!date) { showToast('Dato og klokkeslett er påkrevd','error'); return; }
@@ -934,7 +955,7 @@ async function createTournament() {
     showToast('Turnering opprettet!');
     ['tDate','tEndDate','tCourse','tDesc','tYear'].forEach(id=>document.getElementById(id).value='');
     document.getElementById('tNameInput').value='Lorgen Invitational';
-    document.getElementById('tFormat').value='2-mann scramble';
+    document.getElementById('tFormat').value='strokeplay';
     document.getElementById('tStatus').value='draft';
     document.getElementById('tSlope').value='113';
     await loadTournaments(); await loadDashboard();
@@ -962,7 +983,7 @@ function editTournament(id) {
   document.getElementById('editTEndDate').value = (t.end_date || t.start_date || t.date || '').slice(0,16);
   document.getElementById('editTCourse').value = t.course || '';
   document.getElementById('editTSlope').value = t.slope_rating || 113;
-  document.getElementById('editTFormat').value = t.format || '2-mann scramble';
+  document.getElementById('editTFormat').value = TournamentFormats.normalizeFormat(t.format);
   document.getElementById('editTDesc').value = t.description || '';
   document.getElementById('editTournamentCard').classList.remove('d-none');
   document.getElementById('editTournamentCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -977,7 +998,7 @@ async function saveTournamentEdit() {
   const course = document.getElementById('editTCourse').value;
   const slope_rating = document.getElementById('editTSlope').value || 113;
   const description = document.getElementById('editTDesc').value;
-  const format = document.getElementById('editTFormat').value || '2-mann scramble';
+  const format = document.getElementById('editTFormat').value || 'strokeplay';
   const status = document.getElementById('editTStatus').value;
   if (!year || !date) { showToast('Dato og klokkeslett er påkrevd', 'error'); return; }
   try {
@@ -1042,6 +1063,7 @@ async function loadDashboard() {
           <div><div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em">Dato</div><strong>${formatTournamentDate(active.date)}</strong></div>
           <div><div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em">Bane</div><strong>${active.course||'—'}</strong></div>
           <div><div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em">Status</div><span class="badge badge--active">Aktiv</span></div>
+          <div><div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em">Spillform</div><strong>${formatLabel(active.format)}</strong></div>
         </div>`;
     } catch(_) {}
   } else {

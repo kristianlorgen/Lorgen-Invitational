@@ -132,6 +132,7 @@
       <div class="hero-meta-item">
         <div class="label">Bane</div>
         <div class="value" id="heroCourse">TBA</div>
+        <div class="badge" id="heroFormatBadge" style="margin-top:8px;display:inline-flex">Spillform: —</div>
       </div>
       <div class="hero-divider"></div>
       <div class="hero-meta-item">
@@ -332,6 +333,7 @@
 </footer>
 
 <script src="/js/active-tournament.js"></script>
+<script src="/js/tournament-formats.js"></script>
 <script>
 document.getElementById('footerYear').textContent = new Date().getFullYear();
 window.addEventListener('scroll', () => {
@@ -368,6 +370,7 @@ async function loadTournament() {
       document.getElementById('heroTournamentName').textContent = tournament.name;
       document.getElementById('heroDate').textContent = formatTournamentDate(tournament.date);
       document.getElementById('heroCourse').textContent = tournament.course || 'TBA';
+      document.getElementById('heroFormatBadge').textContent = `Spillform: ${TournamentFormats.getFormatDefinition(tournament.format).label}`;
       startCountdown(tournament.date);
       document.getElementById('countdownDate').textContent = formatTournamentDate(tournament.date, true);
     } else {
