@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="nb">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Turnering Kontrollpanel — Lorgen Invitational</title>
+  <link rel="icon" type="image/png" href="/images/logo.png">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    body{background:var(--off-white)}
+    .cp-wrap{max-width:1200px;margin:0 auto;padding:24px}
+    .cp-grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
+    .cp-card{background:var(--white);border:1px solid var(--gold-border);border-radius:var(--radius);padding:16px}
+    .cp-title{font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--gold-dark);font-weight:700;margin-bottom:8px}
+    .cp-value{font-family:var(--font-heading);font-size:1.2rem;color:var(--dark)}
+    .toggle-row{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:8px 0}
+    .quick-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+    .stage-item{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--gold-border)}
+    .stage-item:last-child{border-bottom:none}
+    .live-dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:#22c55e;margin-right:8px}
+  </style>
+</head>
+<body>
+  <div class="cp-wrap">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:18px">
+      <h1 style="margin:0">Tournament Control Panel</h1>
+      <div style="display:flex;gap:8px">
+        <a class="btn btn--outline btn--sm" href="/admin"><i class="fas fa-lock"></i> Admin</a>
+        <a class="btn btn--outline btn--sm" href="/scoreboard"><i class="fas fa-list-ol"></i> Live resultater</a>
+      </div>
+    </div>
+
+    <div class="cp-card" style="margin-bottom:16px">
+      <div class="cp-title">Live nå</div>
+      <div id="heroStatus" class="cp-value">Laster...</div>
+      <div id="heroMeta" style="color:var(--text-muted);font-size:.85rem;margin-top:6px"></div>
+    </div>
+
+    <div class="cp-grid" id="statusCards"></div>
+
+    <div class="cp-grid" style="margin-top:16px">
+      <div class="cp-card">
+        <div class="cp-title">Aktiv turnering</div>
+        <select id="activeTournamentSelect" class="form-select"></select>
+        <button class="btn btn--gold btn--sm" style="margin-top:10px" onclick="setActiveTournament()">Bytt aktiv turnering</button>
+      </div>
+
+      <div class="cp-card">
+        <div class="cp-title">Turneringsstatus</div>
+        <select id="tournamentStatus" class="form-select">
+          <option value="draft">draft</option>
+          <option value="live">live</option>
+          <option value="paused">paused</option>
+          <option value="completed">completed</option>
+        </select>
+        <button class="btn btn--dark btn--sm" style="margin-top:10px" onclick="saveControl({ tournamentStatus: document.getElementById('tournamentStatus').value })">Oppdater status</button>
+      </div>
+
+      <div class="cp-card">
+        <div class="cp-title">Aktiv stage</div>
+        <div id="stageList"></div>
+      </div>
+    </div>
+
+    <div class="cp-card" style="margin-top:16px">
+      <div class="cp-title">Kontroller</div>
+      <div id="controlToggles"></div>
+    </div>
+
+    <div class="cp-card" style="margin-top:16px">
+      <div class="cp-title">Quick actions</div>
+      <div class="quick-actions">
+        <button class="btn btn--gold btn--sm" onclick="quick('start_tournament')">Start turnering</button>
+        <button class="btn btn--sm" onclick="quick('pause_tournament')">Pause turnering</button>
+        <button class="btn btn--sm" onclick="quick('resume_tournament')">Gjenoppta turnering</button>
+        <button class="btn btn--sm" onclick="confirmQuick('complete_tournament','Fullføre turneringen?')">Fullfør turnering</button>
+        <button class="btn btn--sm" onclick="quick('open_scoring')">Åpne scoring</button>
+        <button class="btn btn--sm" onclick="quick('close_scoring')">Lukk scoring</button>
+        <button class="btn btn--sm" onclick="quick('publish_leaderboard')">Publiser leaderboard</button>
+        <button class="btn btn--sm" onclick="quick('hide_leaderboard')">Skjul leaderboard</button>
+        <button class="btn btn--sm" onclick="quick('publish_results')">Publiser resultater</button>
+        <button class="btn btn--sm" onclick="quick('hide_results')">Skjul resultater</button>
+      </div>
+    </div>
+
+    <div class="cp-card" id="ryderCard" style="margin-top:16px;display:none"></div>
+  </div>
+
+<script>
+let state = null;
+async function api(url, opt={}) { const r = await fetch(url, { headers:{'Content-Type':'application/json'}, ...opt }); const d = await r.json(); if(!r.ok) throw new Error(d.error||'Feil'); return d; }
+
+function checkbox(label, key, checked) {
+  return `<div class="toggle-row"><label>${label}</label><input type="checkbox" ${checked?'checked':''} onchange="saveControl({ ${key}: this.checked })"></div>`;
+}
+
+function render() {
+  const d = state;
+  const t = d.tournament;
+  const s = d.activeStage;
+  const c = d.control;
+  const isLiveNow = c.tournamentStatus === 'live';
+  document.getElementById('heroStatus').innerHTML = `${isLiveNow ? '<span class="live-dot"></span>Live nå' : 'Ikke live'} · ${t ? t.name : 'Ingen aktiv turnering'}`;
+  document.getElementById('heroMeta').textContent = t ? `${t.tournament_mode || 'single_format'} · ${s ? s.name : 'Ingen aktiv stage'} · ${t.start_date || t.date || '-'} → ${t.end_date || '-'}` : 'Velg aktiv turnering for å aktivere kontrollpanelet.';
+
+  document.getElementById('statusCards').innerHTML = `
+    <div class="cp-card"><div class="cp-title">Aktiv turnering</div><div class="cp-value">${t ? t.name : '—'}</div></div>
+    <div class="cp-card"><div class="cp-title">Aktiv stage</div><div class="cp-value">${s ? s.name : '—'}</div><div style="color:var(--text-muted)">${s?.format_label || '—'}</div></div>
+    <div class="cp-card"><div class="cp-title">Scoreoppføringer</div><div class="cp-value">${d.stats.totalScoreEntries}</div></div>
+    <div class="cp-card"><div class="cp-title">Publikumskommentarer</div><div class="cp-value">${d.stats.totalAudienceComments}</div></div>
+    <div class="cp-card"><div class="cp-title">Matcher i stage</div><div class="cp-value">${d.stats.totalMatches}</div><div style="color:var(--text-muted)">Ferdige ${d.stats.completedMatches} · Live ${d.stats.liveMatches}</div></div>
+    <div class="cp-card"><div class="cp-title">Leaderboard</div><div class="cp-value">${c.leaderboardVisible ? 'Synlig' : 'Skjult'}</div></div>
+  `;
+
+  document.getElementById('activeTournamentSelect').innerHTML = `<option value="">— Velg —</option>` + d.tournaments.map(tn => `<option value="${tn.id}" ${tn.id===d.activeTournamentId?'selected':''}>${tn.name} (${tn.year})</option>`).join('');
+  document.getElementById('tournamentStatus').value = c.tournamentStatus;
+
+  document.getElementById('stageList').innerHTML = d.stages.length ? d.stages.map(st => `<div class="stage-item"><div><strong>${st.name}</strong><div style="font-size:.8rem;color:var(--text-muted)">${st.format_label}</div></div><button class="btn btn--sm ${d.activeStage?.id===st.id?'btn--gold':'btn--outline'}" onclick="setActiveStage(${st.id})">Sett som aktiv stage</button></div>`).join('') : '<div style="color:var(--text-muted)">Ingen stages.</div>';
+
+  document.getElementById('controlToggles').innerHTML = [
+    checkbox('Åpne scorekort', 'scorecardsOpen', c.scorecardsOpen),
+    checkbox('Tillat scoreinnsending', 'scoringOpen', c.scoringOpen),
+    checkbox('Vis live leaderboard', 'leaderboardVisible', c.leaderboardVisible),
+    checkbox('Publiser resultater', 'resultsPublished', c.resultsPublished),
+    checkbox('Vis publikumsfeed på leaderboard', 'showAudienceFeed', c.showAudienceFeed),
+    checkbox('Vis sponsorer på nettsiden', 'showSponsors', c.showSponsors)
+  ].join('');
+
+  const ry = document.getElementById('ryderCard');
+  if (t?.tournament_mode === 'ryder_cup' && d.cup) {
+    ry.style.display = 'block';
+    const totals = d.cup.totals || [];
+    ry.innerHTML = `<div class="cp-title">Ryder Cup-kontroll</div><div class="cp-value">${totals.map(x => `${x.name}: ${x.points}`).join(' · ') || 'Ingen lag'}</div><div style="margin-top:8px">Aktiv stage: ${s?.name || '—'} · Matcher: ${d.stats.totalMatches} · Ferdige: ${d.stats.completedMatches} · Live: ${d.stats.liveMatches}</div><div style="margin-top:10px"><a href="/admin" class="btn btn--outline btn--sm">Gå til stages</a> <a href="/admin" class="btn btn--outline btn--sm">Gå til matcher</a> <a href="/admin" class="btn btn--outline btn--sm">Gå til lineups</a></div>`;
+  } else {
+    ry.style.display = 'none';
+  }
+}
+
+async function load() {
+  const auth = await api('/api/auth/status');
+  if (auth.type !== 'admin') { location.href = '/admin'; return; }
+  state = await api('/api/admin/control-panel');
+  render();
+}
+
+async function saveControl(payload) { await api('/api/admin/control-panel', { method:'PUT', body: JSON.stringify(payload) }); await load(); }
+async function quick(action) { await api('/api/admin/control-panel/quick-action', { method:'POST', body: JSON.stringify({ action }) }); await load(); }
+async function confirmQuick(action, message) { if (confirm(message)) await quick(action); }
+async function setActiveTournament() {
+  const id = document.getElementById('activeTournamentSelect').value;
+  if (!id) return;
+  await api('/api/admin/active-tournament/' + id, { method: 'PUT' });
+  await load();
+}
+async function setActiveStage(stageId) {
+  if (!state?.tournament?.id) return;
+  await api(`/api/admin/tournament/${state.tournament.id}/active-stage/${stageId}`, { method: 'PUT' });
+  await load();
+}
+
+load();
+</script>
+</body>
+</html>

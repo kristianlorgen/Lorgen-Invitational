@@ -874,6 +874,15 @@ window.addEventListener('beforeunload', (e) => {
 async function loadScorecard() {
   const r = await fetch('/api/team/scorecard');
   const d = await r.json();
+  if (!r.ok) {
+    showToast(d.error || 'Kunne ikke laste scorekort akkurat nå.', 'error');
+    renderScoreStatus('idle');
+    const statusCard = document.getElementById('statusCard');
+    if (statusCard) {
+      statusCard.innerHTML = `<div class="empty-state__icon">⛔</div><h2 class="empty-state__title">Scoring er ikke åpen akkurat nå.</h2><p class="empty-state__description">Prøv igjen senere eller kontakt turneringsledelsen.</p>`;
+    }
+    return;
+  }
   teamData = d.team; holesData = d.holes; tournamentData = d.tournament || null;
   activeFormatDef = TournamentFormats.getFormatDefinition(tournamentData?.format);
   document.getElementById('scoreFormatBadge').textContent = `Spillform: ${activeFormatDef.label}`;
@@ -939,6 +948,11 @@ async function loadChatMessages() {
   try {
     const r = await fetch('/api/chat/messages');
     const d = await r.json();
+    if (d.disabled) {
+      const wrap = document.getElementById('chatMessages');
+      if (wrap) wrap.innerHTML = '<div class="team-chat-empty">Publikumsfeed er slått av av turneringsledelsen.</div>';
+      return;
+    }
     chatMessages = Array.isArray(d.messages) ? d.messages : [];
     renderChatMessages();
   } catch (_) {

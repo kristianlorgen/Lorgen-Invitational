@@ -103,6 +103,13 @@
   </div>
 </div>
 
+<div id="leaderboardHiddenState" class="d-none" style="padding:70px 24px;background:var(--off-white)">
+  <div class="empty-state">
+    <div class="empty-state__icon">📢</div>
+    <h2 class="empty-state__title">Leaderboard er ikke publisert ennå.</h2>
+    <p class="empty-state__description">Resultattavlen åpnes av turneringsledelsen når den er klar.</p>
+  </div>
+</div>
 
 <!-- ── Ledertavle ─────────────────────────────────────────────────────────── -->
 <section class="section" style="background:var(--white)" id="sbMain">
@@ -265,6 +272,7 @@ let holes = [];
 let scoreboard = [];
 let currentTournament = null;
 let currentFormatDef = TournamentFormats.getFormatDefinition('strokeplay');
+let controlState = null;
 
 function formatToPar(n, holesCompleted) {
   if (holesCompleted === 0) return '<span class="score-par score-even">–</span>';
@@ -516,13 +524,26 @@ async function loadScoreboard() {
     const d = await r.json();
     if (!d.tournament) {
       document.getElementById('noTournamentState').classList.remove('d-none');
+      document.getElementById('leaderboardHiddenState').classList.add('d-none');
       document.getElementById('sbMain').classList.add('d-none');
       document.getElementById('scorecardSection').classList.add('d-none');
       document.getElementById('awardsSection').classList.add('d-none');
       document.getElementById('sbTournamentName').textContent = 'Ingen aktiv turnering valgt ennå';
       return;
     }
+
+    if (d.hidden) {
+      document.getElementById('noTournamentState').classList.add('d-none');
+      document.getElementById('leaderboardHiddenState').classList.remove('d-none');
+      document.getElementById('sbMain').classList.add('d-none');
+      document.getElementById('scorecardSection').classList.add('d-none');
+      document.getElementById('awardsSection').classList.add('d-none');
+      document.getElementById('sbTournamentName').textContent = d.tournament.name;
+      document.getElementById('sbFormatBadge').textContent = `Spillform: ${d.activeStage?.format_label || d.tournament.format_label || '—'}`;
+      return;
+    }
     document.getElementById('noTournamentState').classList.add('d-none');
+    document.getElementById('leaderboardHiddenState').classList.add('d-none');
     document.getElementById('cupSection').classList.add('d-none');
     document.getElementById('sbMain').classList.remove('d-none');
     document.getElementById('scorecardSection').classList.remove('d-none');
@@ -540,6 +561,7 @@ async function loadScoreboard() {
     }
 
     currentTournament = d.tournament;
+    controlState = d.control || null;
     currentFormatDef = TournamentFormats.getFormatDefinition(currentTournament?.format);
     holes = d.holes || [];
     scoreboard = d.scoreboard || [];
@@ -549,6 +571,9 @@ async function loadScoreboard() {
     renderStageNav(d.stages || [], d.activeStage?.id);
     document.getElementById('leaderboardFormatHint').textContent = `Visning: ${currentFormatDef.label}`;
     document.getElementById('scorecardFormatHint').textContent = `Scorekort tilpasses automatisk for ${currentFormatDef.label.toLowerCase()}.`;
+    if (controlState && !controlState.resultsPublished) {
+      document.getElementById('leaderboardFormatHint').textContent += ' · Resultater er foreløpige (ikke offisielt publisert).';
+    }
 
     document.getElementById('sbTournamentName').textContent =
       d.tournament.name + (d.tournament.course ? ' · ' + d.tournament.course : '');
