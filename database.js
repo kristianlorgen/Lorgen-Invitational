@@ -20,6 +20,7 @@ db.exec(`
     end_date TEXT,
     format TEXT DEFAULT 'strokeplay',
     format_settings TEXT,
+    handicap_percentage REAL,
     course TEXT DEFAULT '',
     description TEXT DEFAULT '',
     gameday_info TEXT DEFAULT '',
@@ -44,6 +45,7 @@ db.exec(`
     is_published INTEGER NOT NULL DEFAULT 0,
     is_active INTEGER NOT NULL DEFAULT 0,
     leaderboard_type TEXT DEFAULT 'individual',
+    handicap_percentage REAL,
     settings TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -158,7 +160,13 @@ db.exec(`
     team_name TEXT NOT NULL,
     player1 TEXT NOT NULL,
     player2 TEXT NOT NULL,
+    player3 TEXT DEFAULT '',
+    player4 TEXT DEFAULT '',
     pin_code TEXT NOT NULL,
+    player1_handicap REAL DEFAULT 0,
+    player2_handicap REAL DEFAULT 0,
+    player3_handicap REAL DEFAULT 0,
+    player4_handicap REAL DEFAULT 0,
     FOREIGN KEY (tournament_id) REFERENCES tournaments(id)
   );
 
@@ -309,6 +317,7 @@ try { db.exec(`ALTER TABLE tournaments ADD COLUMN start_date TEXT`); } catch(_) 
 try { db.exec(`ALTER TABLE tournaments ADD COLUMN end_date TEXT`); } catch(_) {}
 try { db.exec(`ALTER TABLE tournaments ADD COLUMN format TEXT DEFAULT 'strokeplay'`); } catch(_) {}
 try { db.exec(`ALTER TABLE tournaments ADD COLUMN format_settings TEXT`); } catch(_) {}
+try { db.exec(`ALTER TABLE tournaments ADD COLUMN handicap_percentage REAL`); } catch(_) {}
 try { db.exec(`ALTER TABLE tournaments ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP`); } catch(_) {}
 try { db.exec(`ALTER TABLE tournaments ADD COLUMN tournament_mode TEXT DEFAULT 'single_format'`); } catch(_) {}
 try { db.exec(`ALTER TABLE tournaments ADD COLUMN active_stage_id INTEGER`); } catch(_) {}
@@ -321,6 +330,10 @@ try { db.exec(`UPDATE tournaments SET status='published' WHERE LOWER(status)='up
 try { db.exec(`UPDATE tournaments SET status='live' WHERE LOWER(status)='active'`); } catch(_) {}
 try { db.exec(`ALTER TABLE teams ADD COLUMN player1_handicap REAL DEFAULT 0`); } catch(_) {}
 try { db.exec(`ALTER TABLE teams ADD COLUMN player2_handicap REAL DEFAULT 0`); } catch(_) {}
+try { db.exec(`ALTER TABLE teams ADD COLUMN player3 TEXT DEFAULT ''`); } catch(_) {}
+try { db.exec(`ALTER TABLE teams ADD COLUMN player4 TEXT DEFAULT ''`); } catch(_) {}
+try { db.exec(`ALTER TABLE teams ADD COLUMN player3_handicap REAL DEFAULT 0`); } catch(_) {}
+try { db.exec(`ALTER TABLE teams ADD COLUMN player4_handicap REAL DEFAULT 0`); } catch(_) {}
 try { db.exec(`ALTER TABLE holes ADD COLUMN stroke_index INTEGER DEFAULT 0`); } catch(_) {}
 try { db.exec(`ALTER TABLE course_holes ADD COLUMN stroke_index INTEGER DEFAULT 0`); } catch(_) {}
 try { db.exec(`ALTER TABLE scores ADD COLUMN is_published INTEGER NOT NULL DEFAULT 1`); } catch(_) {}
@@ -353,6 +366,7 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS site_settings (
   value TEXT,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`); } catch(_) {}
+try { db.exec(`ALTER TABLE tournament_stages ADD COLUMN handicap_percentage REAL`); } catch(_) {}
 try { db.exec(`CREATE TABLE IF NOT EXISTS tournament_stages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   tournament_id INTEGER NOT NULL,
@@ -364,6 +378,7 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS tournament_stages (
   is_published INTEGER NOT NULL DEFAULT 0,
   is_active INTEGER NOT NULL DEFAULT 0,
   leaderboard_type TEXT DEFAULT 'individual',
+  handicap_percentage REAL,
   settings TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
