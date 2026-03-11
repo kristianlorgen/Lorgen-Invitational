@@ -60,6 +60,51 @@ db.exec(`
     FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS players (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tournament_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    handicap REAL,
+    team_id INTEGER,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE,
+    FOREIGN KEY (team_id) REFERENCES tournament_sides(id) ON DELETE SET NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS stage_pairings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    stage_id INTEGER NOT NULL,
+    team_id INTEGER,
+    player_ids TEXT NOT NULL,
+    pairing_order INTEGER NOT NULL DEFAULT 1,
+    tee_time TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (stage_id) REFERENCES tournament_stages(id) ON DELETE CASCADE,
+    FOREIGN KEY (team_id) REFERENCES tournament_sides(id) ON DELETE SET NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS stage_pairing_matches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    stage_id INTEGER NOT NULL,
+    pairing_a_id INTEGER NOT NULL,
+    pairing_b_id INTEGER,
+    format TEXT DEFAULT 'matchplay',
+    match_order INTEGER NOT NULL DEFAULT 1,
+    tee_time TEXT,
+    status TEXT DEFAULT 'scheduled',
+    winner_pairing_id INTEGER,
+    result_text TEXT DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (stage_id) REFERENCES tournament_stages(id) ON DELETE CASCADE,
+    FOREIGN KEY (pairing_a_id) REFERENCES stage_pairings(id) ON DELETE CASCADE,
+    FOREIGN KEY (pairing_b_id) REFERENCES stage_pairings(id) ON DELETE SET NULL,
+    FOREIGN KEY (winner_pairing_id) REFERENCES stage_pairings(id) ON DELETE SET NULL
+  );
+
   CREATE TABLE IF NOT EXISTS stage_matches (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     stage_id INTEGER NOT NULL,
@@ -300,6 +345,48 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS tournament_sides (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE
+)`); } catch(_) {}
+try { db.exec(`CREATE TABLE IF NOT EXISTS players (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tournament_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  handicap REAL,
+  team_id INTEGER,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE,
+  FOREIGN KEY (team_id) REFERENCES tournament_sides(id) ON DELETE SET NULL
+)`); } catch(_) {}
+try { db.exec(`CREATE TABLE IF NOT EXISTS stage_pairings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  stage_id INTEGER NOT NULL,
+  team_id INTEGER,
+  player_ids TEXT NOT NULL,
+  pairing_order INTEGER NOT NULL DEFAULT 1,
+  tee_time TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (stage_id) REFERENCES tournament_stages(id) ON DELETE CASCADE,
+  FOREIGN KEY (team_id) REFERENCES tournament_sides(id) ON DELETE SET NULL
+)`); } catch(_) {}
+try { db.exec(`CREATE TABLE IF NOT EXISTS stage_pairing_matches (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  stage_id INTEGER NOT NULL,
+  pairing_a_id INTEGER NOT NULL,
+  pairing_b_id INTEGER,
+  format TEXT DEFAULT 'matchplay',
+  match_order INTEGER NOT NULL DEFAULT 1,
+  tee_time TEXT,
+  status TEXT DEFAULT 'scheduled',
+  winner_pairing_id INTEGER,
+  result_text TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (stage_id) REFERENCES tournament_stages(id) ON DELETE CASCADE,
+  FOREIGN KEY (pairing_a_id) REFERENCES stage_pairings(id) ON DELETE CASCADE,
+  FOREIGN KEY (pairing_b_id) REFERENCES stage_pairings(id) ON DELETE SET NULL,
+  FOREIGN KEY (winner_pairing_id) REFERENCES stage_pairings(id) ON DELETE SET NULL
 )`); } catch(_) {}
 try { db.exec(`CREATE TABLE IF NOT EXISTS stage_matches (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

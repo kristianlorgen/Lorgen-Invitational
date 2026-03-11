@@ -100,6 +100,7 @@
         <div class="sidebar-label">Turnering</div>
         <div class="sidebar-link" onclick="showPanel('tournament')"><i class="fas fa-calendar-star"></i> Turneringer</div>
         <div class="sidebar-link" onclick="showPanel('teams')"><i class="fas fa-users"></i> Lag</div>
+        <div class="sidebar-link" onclick="showPanel('players')"><i class="fas fa-user-group"></i> Spillere</div>
           <div class="sidebar-link" onclick="showPanel('stages')"><i class="fas fa-layer-group"></i> Stages</div>
         <div class="sidebar-link" onclick="showPanel('holes')"><i class="fas fa-golf-ball-tee"></i> Bane og Hull</div>
         <div class="sidebar-link" onclick="showPanel('courses')"><i class="fas fa-map-location-dot"></i> Baner</div>
@@ -281,6 +282,8 @@
 
         <div class="card" style="margin-bottom:16px"><div class="card-header"><strong>Turneringsdager</strong></div><div class="card-body" id="stagesList">Velg turnering for å se stages.</div></div>
         <div class="card"><div class="card-header"><strong>Ryder Cup-oppsett</strong></div><div class="card-body" id="cupSetup">Velg en turnering med modus Ryder Cup.</div></div>
+        <div class="card" style="margin-top:16px"><div class="card-header"><strong>Pairings</strong></div><div class="card-body" id="pairingsSetup">Velg en stage.</div></div>
+        <div class="card" style="margin-top:16px"><div class="card-header"><strong>Matcher</strong></div><div class="card-body" id="pairingMatchesSetup">Velg en stage.</div></div>
       </div>
 
       <!-- ── LAG ───────────────────────────────────────────────────────────── -->
@@ -349,6 +352,22 @@
             </div>
           </div>
         </div>
+      </div>
+
+      <div class="admin-panel" id="panel-players">
+        <div class="admin-panel-title">Spillere</div>
+        <div class="admin-panel-sub">Opprett enkeltspillere, knytt handicap og Ryder Cup-side</div>
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-body" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px">
+            <div class="form-group" style="margin:0"><label class="form-label">Velg turnering</label><select class="form-select" id="playersTournamentSelect" onchange="loadPlayersPanel()"><option value="">— Velg turnering —</option></select></div>
+            <div class="form-group" style="margin:0"><label class="form-label">Navn</label><input id="playerName" class="form-input" placeholder="Spillernavn"></div>
+            <div class="form-group" style="margin:0"><label class="form-label">Handicap</label><input id="playerHcp" class="form-input" type="number" step="0.1" min="0" max="54" placeholder="Valgfri"></div>
+            <div class="form-group" style="margin:0"><label class="form-label">Lag / side (Ryder Cup)</label><select class="form-select" id="playerSide"><option value="">— Ingen —</option></select></div>
+            <div class="form-group" style="margin:0"><label class="form-label">Aktiv</label><select class="form-select" id="playerActive"><option value="1">Ja</option><option value="0">Nei</option></select></div>
+          </div>
+          <div class="card-body" style="padding-top:0"><button onclick="addPlayer()" class="btn btn--gold btn--sm">Legg til spiller</button></div>
+        </div>
+        <div class="card"><div class="card-header"><strong>Spillere</strong></div><div class="card-body" id="playersList">Velg turnering.</div></div>
       </div>
 
       <!-- ── BANE OG HULL ───────────────────────────────────────────────────── -->
@@ -873,7 +892,7 @@ function showPanel(id) {
     if (l.getAttribute('onclick') && l.getAttribute('onclick').includes("'"+id+"'")) l.classList.add('active');
   });
   // Auto-trigger data loading for panels with a tournament select
-  const loaders = { holes: loadHoles, teams: loadTeams, scores: loadScores,
+  const loaders = { holes: loadHoles, teams: loadTeams, players: loadPlayersPanel, scores: loadScores,
                     photos: loadPhotos, awards: loadAwards, gameday: loadGameday,
                     courses: loadCourses, sponsors: loadSponsorsAdmin, stages: loadStagesPanel };
   if (loaders[id]) loaders[id]();
@@ -921,7 +940,7 @@ function formatTournamentDate(dateValue, includeWeekday = false) {
 }
 
 function populateTournamentSelects() {
-  const ids = ['teamsTournamentSelect','holesTournamentSelect','scoresTournamentSelect',
+  const ids = ['teamsTournamentSelect','playersTournamentSelect','holesTournamentSelect','scoresTournamentSelect',
                'awardsTournamentSelect','gamedayTournamentSelect','photosTournamentSelect','sponsorsTournamentSelect','stagesTournamentSelect'];
   // Find the default (active > upcoming) tournament
   const defaultT = allTournaments.find(t => t.is_active) ||
@@ -1052,15 +1071,57 @@ async function loadStagesPanel() {
   const tid = document.getElementById('stagesTournamentSelect')?.value;
   if (!tid) return;
   try {
-    const [stagesData, tSides] = await Promise.all([
+    const [stagesData, tSides, playersData] = await Promise.all([
       api('/api/admin/tournament/' + tid + '/stages'),
-      api('/api/admin/tournament/' + tid + '/sides')
+      api('/api/admin/tournament/' + tid + '/sides'),
+      api('/api/admin/tournament/' + tid + '/players')
     ]);
     const list = document.getElementById('stagesList');
     if (!stagesData.stages.length) {
       list.innerHTML = '<div style="color:var(--text-muted)">Ingen stage ennå.</div>';
+      document.getElementById('pairingsSetup').innerHTML = 'Opprett en stage først.';
+      document.getElementById('pairingMatchesSetup').innerHTML = 'Opprett en stage først.';
     } else {
       list.innerHTML = stagesData.stages.map(st => `<div style="padding:10px;border:1px solid var(--gold-border);border-radius:12px;margin-bottom:8px;display:flex;justify-content:space-between;gap:8px;align-items:center"><div><strong>${st.name}</strong><div style="font-size:.75rem;color:var(--text-muted)">Dato: ${st.date || '—'} · Spillform: ${TournamentFormats.getFormatDefinition(st.format).label} · Rekkefølge: ${st.stage_order}</div></div><div style="display:flex;gap:6px">${st.id===stagesData.activeStageId?'<span class="badge badge--active">Aktiv stage</span>':`<button class="btn btn--outline btn--sm" onclick="setActiveStage(${tid}, ${st.id})">Sett som aktiv stage</button>`}<button class="btn btn--danger btn--sm" onclick="deleteStage(${st.id})"><i class="fas fa-trash"></i></button></div></div>`).join('');
+
+      const activeStageId = stagesData.activeStageId || stagesData.stages[0].id;
+      const [pairingsData, pairingMatchesData] = await Promise.all([
+        api('/api/admin/stage/' + activeStageId + '/pairings'),
+        api('/api/admin/stage/' + activeStageId + '/pairing-matches')
+      ]);
+      const stageOptions = stagesData.stages.map((st) => `<option value="${st.id}" ${Number(st.id)===Number(activeStageId)?'selected':''}>${st.name}</option>`).join('');
+      const playerOptions = (playersData.players || []).map((p) => `<option value="${p.id}">${p.name}${p.side_name ? ' (' + p.side_name + ')' : ''}</option>`).join('');
+      const sideOptions = (tSides.sides || []).map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
+      const pairingOptions = (pairingsData.pairings || []).map((p) => `<option value="${p.id}">${p.label}</option>`).join('');
+
+      document.getElementById('pairingsSetup').innerHTML = `
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:10px">
+          <div><label class="form-label">Stage</label><select id="pairingStageSelect" class="form-select" onchange="loadStagesPanel()">${stageOptions}</select></div>
+          <div><label class="form-label">Lag/side</label><select id="pairingTeam" class="form-select"><option value="">— Ingen —</option>${sideOptions}</select></div>
+          <div><label class="form-label">Spillere (1/2/4)</label><select id="pairingPlayers" class="form-select" multiple size="4">${playerOptions}</select></div>
+          <div><label class="form-label">Rekkefølge</label><input id="pairingOrder" class="form-input" type="number" value="1"></div>
+          <div><label class="form-label">Tee time</label><input id="pairingTee" class="form-input" type="datetime-local"></div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+          <button class="btn btn--gold btn--sm" onclick="addPairing()">Legg til pairing</button>
+          <button class="btn btn--outline btn--sm" onclick="autoGeneratePairings(2)">Auto generer par</button>
+          <button class="btn btn--outline btn--sm" onclick="autoGeneratePairings(1)">Auto singler</button>
+          <button class="btn btn--outline btn--sm" onclick="autoGeneratePairings(4)">Auto scramble (4)</button>
+        </div>
+        ${(pairingsData.pairings||[]).map((p) => `<div style="padding:8px;border:1px solid var(--gold-border);border-radius:10px;margin-bottom:6px;display:flex;justify-content:space-between;gap:8px"><span><strong>${p.label}</strong>${p.side_name ? ' · ' + p.side_name : ''} · #${p.pairing_order}${p.tee_time ? ' · ' + p.tee_time : ''}</span><button class="btn btn--danger btn--sm" onclick="deletePairing(${p.id})"><i class="fas fa-trash"></i></button></div>`).join('') || '<div style="color:var(--text-muted)">Ingen pairings ennå.</div>'}
+      `;
+
+      document.getElementById('pairingMatchesSetup').innerHTML = `
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:10px">
+          <div><label class="form-label">Pairing A</label><select id="matchPairA" class="form-select">${pairingOptions}</select></div>
+          <div><label class="form-label">Pairing B</label><select id="matchPairB" class="form-select"><option value="">— Tom —</option>${pairingOptions}</select></div>
+          <div><label class="form-label">Format</label><select id="matchFormat" class="form-select"><option value="matchplay">Matchplay</option><option value="fourball">Four-ball</option><option value="foursome">Foursome</option><option value="strokeplay">Strokeplay</option><option value="texas_scramble">Scramble</option></select></div>
+          <div><label class="form-label">Rekkefølge</label><input id="matchOrder" class="form-input" type="number" value="1"></div>
+          <div><label class="form-label">Tee time</label><input id="matchTee" class="form-input" type="datetime-local"></div>
+        </div>
+        <button class="btn btn--gold btn--sm" onclick="addPairingMatch()">Legg til match</button>
+        <div style="margin-top:12px">${(pairingMatchesData.matches||[]).map((m) => `<div style="padding:8px;border:1px solid var(--gold-border);border-radius:10px;margin-bottom:6px;display:flex;justify-content:space-between;gap:8px"><span><strong>${m.pairing_a?.label || 'TBD'}</strong> vs <strong>${m.pairing_b?.label || 'TBD'}</strong> · ${TournamentFormats.getFormatDefinition(m.format).label} · #${m.match_order}</span><button class="btn btn--danger btn--sm" onclick="deletePairingMatch(${m.id})"><i class="fas fa-trash"></i></button></div>`).join('') || '<div style="color:var(--text-muted)">Ingen matcher ennå.</div>'}</div>
+      `;
     }
     const cupBox = document.getElementById('cupSetup');
     const t = allTournaments.find(x => String(x.id) === String(tid));
@@ -1103,6 +1164,94 @@ async function addCupSide(tid) {
 
 async function deleteCupSide(id) {
   await api('/api/admin/side/' + id, { method: 'DELETE' });
+  loadStagesPanel();
+}
+
+
+async function loadPlayersPanel() {
+  const tid = document.getElementById('playersTournamentSelect')?.value;
+  if (!tid) return;
+  const [playersData, sidesData] = await Promise.all([
+    api('/api/admin/tournament/' + tid + '/players'),
+    api('/api/admin/tournament/' + tid + '/sides')
+  ]);
+  document.getElementById('playerSide').innerHTML = '<option value="">— Ingen —</option>' +
+    (sidesData.sides || []).map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
+  const rows = playersData.players || [];
+  document.getElementById('playersList').innerHTML = !rows.length ? '<div style="color:var(--text-muted)">Ingen spillere ennå.</div>' :
+    `<div style="overflow:auto"><table class="data-table"><thead><tr><th>Navn</th><th>Hcp</th><th>Lag</th><th>Aktiv</th><th>Handling</th></tr></thead><tbody>${rows.map((p) => `<tr><td>${p.name}</td><td>${p.handicap ?? '—'}</td><td>${p.side_name || '—'}</td><td>${p.active ? 'Ja' : 'Nei'}</td><td><button class="btn btn--danger btn--sm" onclick="deletePlayer(${p.id})"><i class="fas fa-trash"></i></button></td></tr>`).join('')}</tbody></table></div>`;
+}
+
+async function addPlayer() {
+  const tid = document.getElementById('playersTournamentSelect').value;
+  if (!tid) return;
+  const name = document.getElementById('playerName').value.trim();
+  if (!name) return showToast('Navn er påkrevd', 'error');
+  await api('/api/admin/tournament/' + tid + '/players', { method: 'POST', body: JSON.stringify({
+    name,
+    handicap: document.getElementById('playerHcp').value,
+    teamId: document.getElementById('playerSide').value || null,
+    active: parseInt(document.getElementById('playerActive').value, 10) || 1
+  })});
+  document.getElementById('playerName').value = '';
+  document.getElementById('playerHcp').value = '';
+  showToast('Spiller opprettet');
+  loadPlayersPanel();
+}
+
+async function deletePlayer(id) {
+  if (!confirm('Slette spiller?')) return;
+  await api('/api/admin/player/' + id, { method: 'DELETE' });
+  showToast('Spiller slettet');
+  loadPlayersPanel();
+}
+
+async function autoGeneratePairings(size) {
+  const st = document.getElementById('pairingStageSelect').value;
+  if (!st) return;
+  await api('/api/admin/stage/' + st + '/pairings/auto-generate', { method: 'POST', body: JSON.stringify({ size, randomize: true }) });
+  showToast('Pairings auto-generert');
+  loadStagesPanel();
+}
+
+async function addPairing() {
+  const stageId = document.getElementById('pairingStageSelect').value;
+  if (!stageId) return;
+  const playerIds = Array.from(document.getElementById('pairingPlayers').selectedOptions).map((o) => Number(o.value));
+  await api('/api/admin/stage/' + stageId + '/pairing', { method: 'POST', body: JSON.stringify({
+    teamId: document.getElementById('pairingTeam').value || null,
+    playerIds,
+    order: document.getElementById('pairingOrder').value || 1,
+    teeTime: document.getElementById('pairingTee').value || null
+  })});
+  showToast('Pairing lagt til');
+  loadStagesPanel();
+}
+
+async function deletePairing(id) {
+  await api('/api/admin/pairing/' + id, { method: 'DELETE' });
+  showToast('Pairing slettet');
+  loadStagesPanel();
+}
+
+async function addPairingMatch() {
+  const stageId = document.getElementById('pairingStageSelect').value;
+  if (!stageId) return;
+  await api('/api/admin/stage/' + stageId + '/pairing-match', { method: 'POST', body: JSON.stringify({
+    pairingAId: document.getElementById('matchPairA').value,
+    pairingBId: document.getElementById('matchPairB').value || null,
+    format: document.getElementById('matchFormat').value,
+    order: document.getElementById('matchOrder').value || 1,
+    teeTime: document.getElementById('matchTee').value || null,
+    status: 'scheduled'
+  })});
+  showToast('Match opprettet');
+  loadStagesPanel();
+}
+
+async function deletePairingMatch(id) {
+  await api('/api/admin/pairing-match/' + id, { method: 'DELETE' });
+  showToast('Match slettet');
   loadStagesPanel();
 }
 
