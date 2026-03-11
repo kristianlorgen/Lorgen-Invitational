@@ -36,8 +36,6 @@
     <a href="/admin.html#dashboard">Dashboard</a>
     <a href="/admin.html#tournament">Tournament</a>
     <a href="/admin/setup-wizard" class="active">Wizard</a>
-    <a href="/enter-score">Scorecard</a>
-    <a href="/scoreboard">Leaderboard</a>
     <a href="/admin.html#sponsors">Sponsors</a>
     <a href="/admin/control-panel">Settings</a>
   </div>
@@ -173,20 +171,53 @@ function generateTeams(strategy){
   state.teams = teams; renderParticipants();
 }
 
-function validateAll(){
-  const errors=[]; const cfg=selectedFormatConfig(); const pins=[];
+function uniqErrors(errors){ return [...new Set(errors)]; }
+function validateStep1(){
+  const errors=[];
   if(!document.getElementById('name').value.trim()) errors.push('Turneringsnavn mangler');
   if(!state.selectedFormat) errors.push('Velg turneringsformat');
+  if(!document.getElementById('date').value) errors.push('Dato mangler');
+  const hcpValue = document.getElementById('hcpPercent').value;
+  const hcpNumber = Number(hcpValue);
+  if(hcpValue === '' || !Number.isFinite(hcpNumber) || hcpNumber < 0 || hcpNumber > 100) errors.push('Handicapprosent må være et tall mellom 0 og 100');
+  return uniqErrors(errors);
+}
+function validateStep2(){
+  const errors=[];
+  const cfg=selectedFormatConfig();
+  const pins=[];
+
   if(cfg.mode==='individual'){
     if(!state.participants.length) errors.push('Legg til minst én spiller');
-    state.participants.forEach(p=>{ if(!String(p.name||'').trim()) errors.push('Alle spillere må ha navn'); if(!pinValid(p.pin)) errors.push('PIN må være nøyaktig 4 siffer'); if(!Number.isFinite(Number(p.handicap))) errors.push('Alle spillere må ha handicap'); else pins.push(p.pin); });
+    state.participants.forEach(p=>{
+      if(!String(p.name||'').trim()) errors.push('Alle spillere må ha navn');
+      if(!pinValid(p.pin)) errors.push('PIN må være nøyaktig 4 siffer');
+      if(!Number.isFinite(Number(p.handicap))) errors.push('Alle spillere må ha handicap');
+      if(pinValid(p.pin)) pins.push(p.pin);
+    });
   } else {
     if(!state.teams.length) errors.push('Legg til minst ett lag');
-    state.teams.forEach(t=>{ if(!String(t.name||'').trim()) errors.push('Alle lag må ha navn'); if(!pinValid(t.pin)) errors.push('PIN må være nøyaktig 4 siffer'); else pins.push(t.pin); if((t.players||[]).length !== cfg.playersPerUnit) errors.push(`Hvert lag må ha nøyaktig ${cfg.playersPerUnit} spillere`); (t.players||[]).forEach(p=>{ if(!String(p.name||'').trim()) errors.push('Alle spillere må ha navn'); if(!Number.isFinite(Number(p.handicap))) errors.push('Alle spillere må ha handicap');}); });
+    state.teams.forEach(t=>{
+      if(!String(t.name||'').trim()) errors.push('Alle lag må ha navn');
+      if(!pinValid(t.pin)) errors.push('PIN må være nøyaktig 4 siffer');
+      if(pinValid(t.pin)) pins.push(t.pin);
+      if((t.players||[]).length !== cfg.playersPerUnit) errors.push(`Hvert lag må ha nøyaktig ${cfg.playersPerUnit} spillere`);
+      (t.players||[]).forEach(p=>{
+        if(!String(p.name||'').trim()) errors.push('Alle spillere må ha navn');
+        if(!Number.isFinite(Number(p.handicap))) errors.push('Alle spillere må ha handicap');
+      });
+    });
   }
+
   if(new Set(pins).size !== pins.length) errors.push('Denne PIN-koden er allerede i bruk');
-  return [...new Set(errors)];
+  return uniqErrors(errors);
 }
+function validateStep(currentStep){
+  if(currentStep === 0) return validateStep1();
+  if(currentStep === 1) return validateStep2();
+  return validateAll();
+}
+function validateAll(){ return uniqErrors([...validateStep1(), ...validateStep2()]); }
 function fillReview(){
   const cfg=selectedFormatConfig();
   const rows = cfg.mode==='individual' ? state.participants.map(p=>`<li>${p.name} — PIN ${p.pin} — HCP ${p.handicap}</li>`).join('') : state.teams.map(t=>{ const h=hcpTeam(t); return `<li><strong>${t.name}</strong> (PIN ${t.pin}) — Spillere: ${(t.players||[]).map(p=>`${p.name} (${p.handicap})`).join(', ')} — Total HCP ${h.total}, ${document.getElementById('hcpPercent').value}% => ${h.adjusted}</li>`; }).join('');
@@ -204,7 +235,23 @@ function buildPayload(action='draft'){
   };
 }
 
+function clearStepErrors(){
+  document.getElementById('step1Error').textContent = '';
+  document.getElementById('step2Error').textContent = '';
+  document.getElementById('validationSummary').textContent = '';
+  document.getElementById('step4Error').textContent = '';
+}
+
+function setActiveStepError(errors){
+  if(!errors.length) return;
+  if(step===0) document.getElementById('step1Error').textContent = errors.join(' · ');
+  else if(step===1) document.getElementById('step2Error').textContent = errors.join(' · ');
+  else if(step===2) document.getElementById('validationSummary').textContent = errors.join(' · ');
+  else document.getElementById('step4Error').textContent = errors.join(' · ');
+}
+
 function renderStep(){
+  clearStepErrors();
   document.querySelectorAll('.step').forEach((el,i)=>el.classList.toggle('active',i===step));
   document.getElementById('stepLabel').textContent = `Steg ${step+1} av ${totalSteps}`;
   document.getElementById('bar').style.width = `${((step+1)/totalSteps)*100}%`;
@@ -213,7 +260,24 @@ function renderStep(){
   if(step===2) fillReview();
   document.getElementById('saveBtn').disabled = validateAll().length > 0;
 }
-function changeStep(delta){ if(delta>0 && validateAll().length && step!==2){ document.getElementById(`step${step+1}Error`).textContent = validateAll()[0]; return; } step=Math.max(0,Math.min(totalSteps-1,step+delta)); renderStep(); }
+
+function changeStep(delta){
+  if(delta < 0){
+    step=Math.max(0,step+delta);
+    renderStep();
+    return;
+  }
+
+  const validationErrors = validateStep(step);
+  if(validationErrors.length){
+    setActiveStepError(validationErrors);
+    return;
+  }
+
+  step=Math.max(0,Math.min(totalSteps-1,step+delta));
+  renderStep();
+}
+
 async function saveDraft(){ try{ await api('/api/admin/tournament-wizard',{ method:'POST', body:JSON.stringify(buildPayload('draft'))}); alert('Utkast lagret'); }catch(e){ alert(e.message);} }
 async function submitWizard(){ const errs=validateAll(); if(errs.length){ document.getElementById('step4Error').textContent=errs.join(' · '); return; } try{ const r=await api('/api/admin/tournament-wizard',{ method:'POST', body:JSON.stringify(buildPayload(document.getElementById('publishAction').value))}); window.location.href=`/admin.html#tournament-created-${r.id}`; } catch(e){ document.getElementById('step4Error').textContent=e.message; }}
 
