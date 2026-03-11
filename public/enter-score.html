@@ -261,6 +261,34 @@
     .team-chat-name { font-weight: 700; color: var(--gold-dark); }
     .team-chat-time { color: var(--text-muted); }
     .team-chat-text { color: var(--text); font-size: .82rem; line-height: 1.35; white-space: pre-wrap; }
+    .chat-reactions {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+      flex-wrap: wrap;
+    }
+    .chat-reaction-btn {
+      border: 1px solid var(--gold-border);
+      background: #f8f7f3;
+      color: var(--text-muted);
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: .72rem;
+      line-height: 1.2;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+    }
+    .chat-reaction-btn.is-selected {
+      border-color: var(--gold-dark);
+      color: var(--gold-dark);
+      background: #fff6df;
+    }
+    .chat-reaction-btn:disabled {
+      opacity: .6;
+      cursor: wait;
+    }
     .team-chat-form {
       display: flex;
       gap: 8px;
@@ -705,6 +733,8 @@ let photoProcessingInFlight = false;
 let chatLoaded = false;
 let chatMessages = [];
 let chatEventSource = null;
+const CHAT_REACTIONS = ['👍', '🔥', '⛳'];
+const pendingReactionKeys = new Set();
 let notificationRegistration = null;
 let unreadChatCount = 0;
 let lastSeenChatId = 0;
@@ -1002,6 +1032,41 @@ function escapeHtml(text) {
     .replaceAll("'", '&#39;');
 }
 
+function normalizeReactions(reactions) {
+  const safe = reactions && typeof reactions === 'object' ? reactions : {};
+  const normalized = {};
+  CHAT_REACTIONS.forEach((type) => {
+    const row = safe[type] || {};
+    normalized[type] = {
+      count: Number(row.count) || 0,
+      selected: Boolean(row.selected)
+    };
+  });
+  return normalized;
+}
+
+function renderReactionButtons(message) {
+  const reactions = normalizeReactions(message?.reactions);
+  const messageId = Number(message?.id) || 0;
+  return `<div class="chat-reactions">${CHAT_REACTIONS.map((type) => {
+    const row = reactions[type];
+    const pending = pendingReactionKeys.has(`${messageId}:${type}`);
+    return `<button type="button" class="chat-reaction-btn ${row.selected ? 'is-selected' : ''}" data-message-id="${messageId}" data-reaction-type="${type}" ${pending ? 'disabled' : ''} aria-label="Reager med ${type}">${type} <span>${row.count}</span></button>`;
+  }).join('')}</div>`;
+}
+
+function upsertChatMessage(nextMessage) {
+  const id = Number(nextMessage?.id) || 0;
+  if (!id) return;
+  const idx = chatMessages.findIndex((m) => Number(m.id) === id);
+  if (idx >= 0) {
+    chatMessages[idx] = { ...chatMessages[idx], ...nextMessage, reactions: normalizeReactions(nextMessage.reactions || chatMessages[idx].reactions) };
+    return;
+  }
+  chatMessages.push({ ...nextMessage, reactions: normalizeReactions(nextMessage.reactions) });
+  if (chatMessages.length > 100) chatMessages = chatMessages.slice(-100);
+}
+
 function renderChatMessages() {
   const wrap = document.getElementById('chatMessages');
   if (!wrap) return;
@@ -1017,8 +1082,12 @@ function renderChatMessages() {
       </div>
       ${m.message ? `<div class="team-chat-text">${escapeHtml(m.message)}</div>` : ''}
       ${m.image_path ? `<img class="team-chat-image" src="${escapeHtml(m.image_path)}" alt="Bilde sendt i chat" loading="lazy">` : ''}
+      ${renderReactionButtons(m)}
     </div>
   `).join('');
+  wrap.querySelectorAll('.chat-reaction-btn').forEach((btn) => {
+    btn.addEventListener('click', onChatReactionClick);
+  });
   wrap.scrollTop = wrap.scrollHeight;
   const newestMessage = chatMessages[chatMessages.length - 1];
   if (newestMessage?.id) lastSeenChatId = Math.max(lastSeenChatId, Number(newestMessage.id) || 0);
@@ -1034,7 +1103,9 @@ async function loadChatMessages() {
       if (wrap) wrap.innerHTML = '<div class="team-chat-empty">Publikumsfeed er slått av av turneringsledelsen.</div>';
       return;
     }
-    chatMessages = Array.isArray(d.messages) ? d.messages : [];
+    chatMessages = Array.isArray(d.messages)
+      ? d.messages.map((m) => ({ ...m, reactions: normalizeReactions(m.reactions) }))
+      : [];
     renderChatMessages();
   } catch (_) {
     const wrap = document.getElementById('chatMessages');
@@ -1049,12 +1120,22 @@ function startChatEvents() {
     try {
       const payload = JSON.parse(evt.data);
       if (payload.type === 'chat_message' && payload.data) {
-        chatMessages.push(payload.data);
-        if (chatMessages.length > 100) chatMessages = chatMessages.slice(-100);
+        upsertChatMessage(payload.data);
         const incomingId = Number(payload.data.id) || 0;
         if (!isChatWidgetOpen() && incomingId > lastSeenChatId) {
           unreadChatCount += 1;
           syncChatUnreadIndicator();
+        }
+        renderChatMessages();
+      }
+      if (payload.type === 'chat_reaction_updated' && payload.data) {
+        if (payload.data.message) {
+          upsertChatMessage(payload.data.message);
+        } else if (payload.data.messageId) {
+          const idx = chatMessages.findIndex((m) => Number(m.id) === Number(payload.data.messageId));
+          if (idx >= 0) {
+            chatMessages[idx].reactions = normalizeReactions(payload.data.reactions);
+          }
         }
         renderChatMessages();
       }
@@ -1078,6 +1159,36 @@ function startChatEvents() {
       setTimeout(startChatEvents, 3000);
     }
   };
+}
+
+async function onChatReactionClick(event) {
+  const btn = event.currentTarget;
+  if (!btn) return;
+  const messageId = Number(btn.dataset.messageId) || 0;
+  const reactionType = String(btn.dataset.reactionType || '');
+  if (!messageId || !CHAT_REACTIONS.includes(reactionType)) return;
+  const key = `${messageId}:${reactionType}`;
+  if (pendingReactionKeys.has(key)) return;
+  pendingReactionKeys.add(key);
+  renderChatMessages();
+  try {
+    const r = await apiFetch(`/api/chat/messages/${messageId}/react`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reactionType, ...(teamPin ? { pin: teamPin } : {}) })
+    });
+    const d = await r.json();
+    if (!r.ok || !d.success) throw new Error(d.error || 'Kunne ikke reagere');
+    const idx = chatMessages.findIndex((m) => Number(m.id) === messageId);
+    if (idx >= 0) {
+      chatMessages[idx].reactions = normalizeReactions(d.reactions);
+    }
+  } catch (_) {
+    showToast('Kunne ikke oppdatere reaksjon', 'error');
+  } finally {
+    pendingReactionKeys.delete(key);
+    renderChatMessages();
+  }
 }
 
 
