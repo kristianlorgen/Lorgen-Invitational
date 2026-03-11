@@ -151,7 +151,94 @@ function getActiveTournament() {
   const tournament = db.prepare('SELECT * FROM tournaments WHERE id=? LIMIT 1').get(activeTournamentId);
   if (!tournament) return null;
   const normalizedFormat = normalizeTournamentFormat(tournament.format);
-  return { ...tournament, format: normalizedFormat, format_label: getFormatDefinition(normalizedFormat).label };
+  return {
+    ...tournament,
+    format: normalizedFormat,
+    tournament_mode: tournament.tournament_mode || 'single_format',
+    format_label: getFormatDefinition(normalizedFormat).label
+  };
+}
+
+function safeJsonParse(raw, fallback = null) {
+  if (!raw) return fallback;
+  try { return JSON.parse(raw); } catch (_) { return fallback; }
+}
+
+function getStagesByTournament(tournamentId) {
+  return db.prepare(
+    `SELECT * FROM tournament_stages WHERE tournament_id=? ORDER BY stage_order ASC, id ASC`
+  ).all(tournamentId).map((stage) => {
+    const format = normalizeTournamentFormat(stage.format);
+    return { ...stage, format, format_label: getFormatDefinition(format).label, settings: safeJsonParse(stage.settings, null) };
+  });
+}
+
+function getActiveStage(tournamentId, tournament = null) {
+  const t = tournament || db.prepare('SELECT * FROM tournaments WHERE id=? LIMIT 1').get(tournamentId);
+  if (!t) return null;
+  const stages = getStagesByTournament(tournamentId);
+  if (!stages.length) return null;
+  if (t.active_stage_id) {
+    const explicit = stages.find((stage) => stage.id === t.active_stage_id);
+    if (explicit) return explicit;
+  }
+  if ((t.tournament_mode || 'single_format') === 'single_format' && stages.length === 1) return stages[0];
+  return stages.find((stage) => stage.is_active) || stages[0];
+}
+
+function getTournamentSides(tournamentId) {
+  return db.prepare('SELECT * FROM tournament_sides WHERE tournament_id=? ORDER BY side_order ASC, id ASC').all(tournamentId);
+}
+
+function getStageMatches(stageId) {
+  return db.prepare(
+    `SELECT m.*, sa.name AS side_a_name, sb.name AS side_b_name, ws.name AS winner_side_name
+     FROM stage_matches m
+     LEFT JOIN tournament_sides sa ON sa.id=m.side_a_id
+     LEFT JOIN tournament_sides sb ON sb.id=m.side_b_id
+     LEFT JOIN tournament_sides ws ON ws.id=m.winner_side_id
+     WHERE m.stage_id=?
+     ORDER BY m.match_order ASC, m.id ASC`
+  ).all(stageId).map((match) => ({
+    ...match,
+    lineup_a: safeJsonParse(match.lineup_a, []),
+    lineup_b: safeJsonParse(match.lineup_b, [])
+  }));
+}
+
+function buildCupStandings(matches = [], sides = []) {
+  const sideTotals = {};
+  sides.forEach((side) => {
+    sideTotals[side.id] = { sideId: side.id, name: side.name, points: 0, matchesWon: 0, matchesHalved: 0 };
+  });
+  let completedMatches = 0;
+  let inProgressMatches = 0;
+  matches.forEach((m) => {
+    if (sideTotals[m.side_a_id]) sideTotals[m.side_a_id].points += Number(m.points_awarded_a || 0);
+    if (sideTotals[m.side_b_id]) sideTotals[m.side_b_id].points += Number(m.points_awarded_b || 0);
+    if (m.status === 'completed') completedMatches += 1;
+    if (m.status === 'in_progress') inProgressMatches += 1;
+    if (m.is_halved) {
+      if (sideTotals[m.side_a_id]) sideTotals[m.side_a_id].matchesHalved += 1;
+      if (sideTotals[m.side_b_id]) sideTotals[m.side_b_id].matchesHalved += 1;
+    } else if (m.winner_side_id && sideTotals[m.winner_side_id]) {
+      sideTotals[m.winner_side_id].matchesWon += 1;
+    }
+  });
+  return {
+    totals: Object.values(sideTotals),
+    completedMatches,
+    inProgressMatches,
+    totalMatches: matches.length
+  };
+}
+
+function getActiveTournamentAndStage() {
+  const tournament = getActiveTournament();
+  if (!tournament) return { tournament: null, stage: null, stages: [] };
+  const stages = getStagesByTournament(tournament.id);
+  const stage = getActiveStage(tournament.id, tournament);
+  return { tournament, stage, stages };
 }
 
 function normalizePhotoPath(photoPath = '') {
@@ -319,8 +406,9 @@ function getSponsorsForTournament(tournamentId, placement) {
   }));
 }
 
-function buildScoreboard(tournament) {
-  const formatKey = normalizeTournamentFormat(tournament.format);
+function buildScoreboard(tournament, activeStage = null) {
+  const effectiveFormat = activeStage?.format || tournament.format;
+  const formatKey = normalizeTournamentFormat(effectiveFormat);
   const formatDef = getFormatDefinition(formatKey);
   const teams     = db.prepare('SELECT * FROM teams WHERE tournament_id=?').all(tournament.id);
   const holes     = db.prepare('SELECT * FROM holes WHERE tournament_id=? ORDER BY hole_number').all(tournament.id);
@@ -415,7 +503,7 @@ function buildScoreboard(tournament) {
     return hasHandicaps ? (a.net_to_par - b.net_to_par) : (a.to_par - b.to_par);
   });
 
-  return { tournament: { ...tournament, format: formatKey, format_label: formatDef.label }, scoreboard, holes, awards };
+  return { tournament: { ...tournament, format: formatKey, format_label: formatDef.label }, activeStage, scoreboard, holes, awards };
 }
 
 
@@ -438,8 +526,15 @@ app.get('/api/tournament', (req, res) => {
 
 app.get('/api/active-tournament', (req, res) => {
   try {
-    const tournament = getActiveTournament();
-    res.json({ tournament });
+    const { tournament, stage, stages } = getActiveTournamentAndStage();
+    res.json({ tournament, activeStage: stage, stages });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/active-tournament-stage', (req, res) => {
+  try {
+    const { tournament, stage, stages } = getActiveTournamentAndStage();
+    res.json({ tournament, stage, stages });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -466,9 +561,41 @@ app.get('/api/sponsors', (req, res) => {
 
 app.get('/api/scoreboard', (req, res) => {
   try {
-    const t = getActiveTournament();
-    if (!t) return res.json({ scoreboard: [], holes: [], awards: [], tournament: null });
-    res.json(buildScoreboard(t));
+    const ctx = getActiveTournamentAndStage();
+    const t = ctx.tournament;
+    if (!t) return res.json({ scoreboard: [], holes: [], awards: [], tournament: null, activeStage: null, stages: [] });
+
+    if ((t.tournament_mode || 'single_format') === 'ryder_cup') {
+      const sides = getTournamentSides(t.id);
+      const stage = ctx.stage;
+      if (!stage) {
+        return res.json({
+          mode: 'ryder_cup',
+          tournament: t,
+          activeStage: null,
+          stages: ctx.stages,
+          sides,
+          matches: [],
+          cup: buildCupStandings([], sides),
+          message: 'Ingen aktiv stage valgt ennå.'
+        });
+      }
+      const stageMatches = getStageMatches(stage.id);
+      const allMatches = ctx.stages.flatMap((st) => getStageMatches(st.id));
+      const cup = buildCupStandings(allMatches, sides);
+      return res.json({
+        mode: 'ryder_cup',
+        tournament: t,
+        activeStage: stage,
+        stages: ctx.stages,
+        sides,
+        matches: stageMatches,
+        cup
+      });
+    }
+
+    const base = buildScoreboard(t, ctx.stage);
+    res.json({ ...base, mode: t.tournament_mode || 'single_format', stages: ctx.stages });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -705,7 +832,7 @@ app.get('/api/admin/tournaments', requireAdmin, (req, res) => {
 });
 
 app.post('/api/admin/tournament', requireAdmin, (req, res) => {
-  const { name, year, description, format, status, startDate, endDate, date, course, gameday_info, slope_rating } = req.body;
+  const { name, year, description, format, status, startDate, endDate, date, course, gameday_info, slope_rating, tournamentMode } = req.body;
   const resolvedStartDate = startDate || date;
   if (!resolvedStartDate) return res.status(400).json({ error: 'Startdato er påkrevd' });
   const parsedYear = parseInt(year, 10) || new Date(resolvedStartDate).getFullYear();
@@ -713,21 +840,26 @@ app.post('/api/admin/tournament', requireAdmin, (req, res) => {
   const resolvedName = (name || 'Lorgen Invitational').trim() || 'Lorgen Invitational';
   try {
     const result = db.prepare(
-      `INSERT INTO tournaments (year, name, date, start_date, end_date, format, course, description, gameday_info, status, slope_rating, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)`
-    ).run(parsedYear, resolvedName, resolvedStartDate, resolvedStartDate, endDate || resolvedStartDate, normalizeTournamentFormat(format), course||'', description||'', gameday_info||'', status || 'draft', slope_rating||113);
+      `INSERT INTO tournaments (year, name, date, start_date, end_date, format, course, description, gameday_info, status, slope_rating, tournament_mode, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)`
+    ).run(parsedYear, resolvedName, resolvedStartDate, resolvedStartDate, endDate || resolvedStartDate, normalizeTournamentFormat(format), course||'', description||'', gameday_info||'', status || 'draft', slope_rating||113, tournamentMode || 'single_format');
     const tid = result.lastInsertRowid;
     const insertHole = db.prepare('INSERT INTO holes (tournament_id, hole_number, par, requires_photo) VALUES (?,?,4,0)');
     const insertAllHoles = db.transaction(() => {
       for (let i = 1; i <= 18; i++) insertHole.run(tid, i);
     });
     insertAllHoles();
+    const stageResult = db.prepare(
+      `INSERT INTO tournament_stages (tournament_id, name, stage_order, date, format, status, is_published, is_active, leaderboard_type, updated_at)
+       VALUES (?, ?, 1, ?, ?, 'published', 1, 1, ?, CURRENT_TIMESTAMP)`
+    ).run(tid, 'Dag 1', resolvedStartDate, normalizeTournamentFormat(format), (tournamentMode === 'ryder_cup' ? 'cup' : 'individual'));
+    db.prepare('UPDATE tournaments SET active_stage_id=? WHERE id=?').run(stageResult.lastInsertRowid, tid);
     res.json({ success: true, id: tid });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.put('/api/admin/tournament/:id', requireAdmin, (req, res) => {
-  const { name, year, description, format, status, startDate, endDate, date, course, gameday_info, slope_rating } = req.body;
+  const { name, year, description, format, status, startDate, endDate, date, course, gameday_info, slope_rating, tournamentMode } = req.body;
   const resolvedStartDate = startDate || date;
   if (!resolvedStartDate) return res.status(400).json({ error: 'Startdato er påkrevd' });
   const parsedYear = parseInt(year, 10) || new Date(resolvedStartDate).getFullYear();
@@ -736,9 +868,17 @@ app.put('/api/admin/tournament/:id', requireAdmin, (req, res) => {
   try {
     db.prepare(
       `UPDATE tournaments
-       SET year=?, name=?, date=?, start_date=?, end_date=?, format=?, course=?, description=?, gameday_info=?, status=?, slope_rating=?, updated_at=CURRENT_TIMESTAMP
+       SET year=?, name=?, date=?, start_date=?, end_date=?, format=?, course=?, description=?, gameday_info=?, status=?, slope_rating=?, tournament_mode=?, updated_at=CURRENT_TIMESTAMP
        WHERE id=?`
-    ).run(parsedYear, resolvedName, resolvedStartDate, resolvedStartDate, endDate || resolvedStartDate, normalizeTournamentFormat(format), course||'', description||'', gameday_info||'', status || 'draft', slope_rating||113, req.params.id);
+    ).run(parsedYear, resolvedName, resolvedStartDate, resolvedStartDate, endDate || resolvedStartDate, normalizeTournamentFormat(format), course||'', description||'', gameday_info||'', status || 'draft', slope_rating||113, tournamentMode || 'single_format', req.params.id);
+    const existingStage = db.prepare('SELECT id FROM tournament_stages WHERE tournament_id=? LIMIT 1').get(req.params.id);
+    if (!existingStage) {
+      const stageResult = db.prepare(
+        `INSERT INTO tournament_stages (tournament_id, name, stage_order, date, format, status, is_published, is_active, leaderboard_type, updated_at)
+         VALUES (?, ?, 1, ?, ?, 'published', 1, 1, ?, CURRENT_TIMESTAMP)`
+      ).run(req.params.id, 'Dag 1', resolvedStartDate, normalizeTournamentFormat(format), (tournamentMode === 'ryder_cup' ? 'cup' : 'individual'));
+      db.prepare('UPDATE tournaments SET active_stage_id=? WHERE id=?').run(stageResult.lastInsertRowid, req.params.id);
+    }
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -750,6 +890,125 @@ app.put('/api/admin/tournament/:id/slope', requireAdmin, (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+
+
+app.get('/api/admin/tournament/:id/stages', requireAdmin, (req, res) => {
+  try {
+    const stages = getStagesByTournament(req.params.id);
+    const tournament = db.prepare('SELECT id, active_stage_id, tournament_mode FROM tournaments WHERE id=?').get(req.params.id);
+    res.json({ stages, activeStageId: tournament?.active_stage_id || null, tournamentMode: tournament?.tournament_mode || 'single_format' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/admin/tournament/:id/stages', requireAdmin, (req, res) => {
+  try {
+    const tournamentId = parseInt(req.params.id, 10);
+    const { name, order, date, format, status, leaderboardType, settings } = req.body || {};
+    const row = db.prepare(
+      `INSERT INTO tournament_stages (tournament_id, name, stage_order, date, format, status, is_published, leaderboard_type, settings, updated_at)
+       VALUES (?,?,?,?,?,?,?, ?, ?, CURRENT_TIMESTAMP)`
+    ).run(tournamentId, name || 'Ny stage', parseInt(order, 10) || 1, date || null, normalizeTournamentFormat(format), status || 'draft', status === 'published' ? 1 : 0, leaderboardType || 'individual', settings ? JSON.stringify(settings) : null);
+    const tournament = db.prepare('SELECT active_stage_id FROM tournaments WHERE id=?').get(tournamentId);
+    if (!tournament?.active_stage_id) db.prepare('UPDATE tournaments SET active_stage_id=? WHERE id=?').run(row.lastInsertRowid, tournamentId);
+    res.json({ success: true, id: row.lastInsertRowid });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/admin/stage/:id', requireAdmin, (req, res) => {
+  try {
+    const { name, order, date, format, status, leaderboardType, settings } = req.body || {};
+    db.prepare(
+      `UPDATE tournament_stages
+       SET name=?, stage_order=?, date=?, format=?, status=?, is_published=?, leaderboard_type=?, settings=?, updated_at=CURRENT_TIMESTAMP
+       WHERE id=?`
+    ).run(name || 'Stage', parseInt(order, 10) || 1, date || null, normalizeTournamentFormat(format), status || 'draft', status === 'published' ? 1 : 0, leaderboardType || 'individual', settings ? JSON.stringify(settings) : null, req.params.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/admin/stage/:id', requireAdmin, (req, res) => {
+  try {
+    const stage = db.prepare('SELECT id, tournament_id FROM tournament_stages WHERE id=?').get(req.params.id);
+    if (!stage) return res.status(404).json({ error: 'Stage finnes ikke' });
+    const count = db.prepare('SELECT COUNT(*) as c FROM tournament_stages WHERE tournament_id=?').get(stage.tournament_id);
+    if ((count?.c || 0) <= 1) return res.status(400).json({ error: 'Kan ikke slette eneste stage' });
+    db.prepare('DELETE FROM tournament_stages WHERE id=?').run(req.params.id);
+    const active = db.prepare('SELECT active_stage_id FROM tournaments WHERE id=?').get(stage.tournament_id);
+    if (active?.active_stage_id === Number(req.params.id)) {
+      const fallback = db.prepare('SELECT id FROM tournament_stages WHERE tournament_id=? ORDER BY stage_order ASC, id ASC LIMIT 1').get(stage.tournament_id);
+      db.prepare('UPDATE tournaments SET active_stage_id=? WHERE id=?').run(fallback?.id || null, stage.tournament_id);
+    }
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/admin/tournament/:id/active-stage/:stageId', requireAdmin, (req, res) => {
+  try {
+    const stage = db.prepare('SELECT id FROM tournament_stages WHERE id=? AND tournament_id=?').get(req.params.stageId, req.params.id);
+    if (!stage) return res.status(404).json({ error: 'Stage finnes ikke for turneringen' });
+    db.prepare('UPDATE tournaments SET active_stage_id=? WHERE id=?').run(req.params.stageId, req.params.id);
+    res.json({ success: true, activeStageId: Number(req.params.stageId) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/admin/tournament/:id/sides', requireAdmin, (req, res) => {
+  try { res.json({ sides: getTournamentSides(req.params.id) }); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/admin/tournament/:id/sides', requireAdmin, (req, res) => {
+  try {
+    const { name, shortName, color, logo, order } = req.body || {};
+    const row = db.prepare(
+      `INSERT INTO tournament_sides (tournament_id, name, short_name, color, logo, side_order, updated_at)
+       VALUES (?,?,?,?,?,?,CURRENT_TIMESTAMP)`
+    ).run(req.params.id, name || 'Nytt lag', shortName || '', color || '', logo || '', parseInt(order, 10) || 1);
+    res.json({ success: true, id: row.lastInsertRowid });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/admin/side/:id', requireAdmin, (req, res) => {
+  try {
+    const { name, shortName, color, logo, order } = req.body || {};
+    db.prepare('UPDATE tournament_sides SET name=?, short_name=?, color=?, logo=?, side_order=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
+      .run(name || 'Lag', shortName || '', color || '', logo || '', parseInt(order, 10) || 1, req.params.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/admin/side/:id', requireAdmin, (req, res) => {
+  try { db.prepare('DELETE FROM tournament_sides WHERE id=?').run(req.params.id); res.json({ success: true }); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/admin/stage/:id/matches', requireAdmin, (req, res) => {
+  try { res.json({ matches: getStageMatches(req.params.id) }); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/admin/stage/:id/match', requireAdmin, (req, res) => {
+  try {
+    const { sideAId, sideBId, teamAId, teamBId, lineupA, lineupB, format, order, teeTime, status } = req.body || {};
+    const row = db.prepare(
+      `INSERT INTO stage_matches (stage_id, side_a_id, side_b_id, team_a_id, team_b_id, lineup_a, lineup_b, format, match_order, tee_time, status, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)`
+    ).run(req.params.id, sideAId, sideBId, teamAId || null, teamBId || null, JSON.stringify(lineupA || []), JSON.stringify(lineupB || []), normalizeTournamentFormat(format || 'matchplay'), parseInt(order, 10) || 1, teeTime || null, status || 'scheduled');
+    res.json({ success: true, id: row.lastInsertRowid });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/admin/match/:id', requireAdmin, (req, res) => {
+  try {
+    const { winnerSideId, isHalved, pointsAwardedA, pointsAwardedB, resultText, status } = req.body || {};
+    db.prepare(
+      `UPDATE stage_matches
+       SET winner_side_id=?, is_halved=?, points_awarded_a=?, points_awarded_b=?, result_text=?, status=?, updated_at=CURRENT_TIMESTAMP
+       WHERE id=?`
+    ).run(winnerSideId || null, isHalved ? 1 : 0, Number(pointsAwardedA || 0), Number(pointsAwardedB || 0), resultText || '', status || 'completed', req.params.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/admin/match/:id', requireAdmin, (req, res) => {
+  try { db.prepare('DELETE FROM stage_matches WHERE id=?').run(req.params.id); res.json({ success: true }); } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 app.get('/api/admin/tournament/:id/sponsors', requireAdmin, (req, res) => {
   try {

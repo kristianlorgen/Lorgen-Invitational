@@ -1,13 +1,22 @@
 (function (global) {
-  async function getActiveTournament() {
+  async function getActiveTournamentContext() {
     try {
-      const response = await fetch('/api/active-tournament');
-      if (!response.ok) return null;
+      const response = await fetch('/api/active-tournament-stage');
+      if (!response.ok) return { tournament: null, stage: null, stages: [] };
       const data = await response.json();
-      return data && data.tournament ? data.tournament : null;
+      return {
+        tournament: data?.tournament || null,
+        stage: data?.stage || data?.activeStage || null,
+        stages: Array.isArray(data?.stages) ? data.stages : []
+      };
     } catch (_) {
-      return null;
+      return { tournament: null, stage: null, stages: [] };
     }
+  }
+
+  async function getActiveTournament() {
+    const ctx = await getActiveTournamentContext();
+    return ctx.tournament;
   }
 
   async function getActiveTournamentId() {
@@ -15,15 +24,27 @@
     return tournament ? tournament.id : null;
   }
 
+  async function getActiveStage(tournamentId) {
+    const ctx = await getActiveTournamentContext();
+    if (!ctx.stage) return null;
+    if (tournamentId && ctx.stage.tournament_id !== tournamentId) return null;
+    return ctx.stage;
+  }
+
+  async function getActiveTournamentAndStage() {
+    const ctx = await getActiveTournamentContext();
+    return { tournament: ctx.tournament, activeStage: ctx.stage, stages: ctx.stages };
+  }
 
   async function getActiveTournamentFormat() {
-    const tournament = await getActiveTournament();
-    if (!tournament) return null;
-    if (global.TournamentFormats) {
-      return global.TournamentFormats.normalizeFormat(tournament.format);
-    }
-    return tournament.format || null;
+    const ctx = await getActiveTournamentContext();
+    const formatRaw = ctx.stage?.format || ctx.tournament?.format;
+    if (!formatRaw) return null;
+    if (global.TournamentFormats) return global.TournamentFormats.normalizeFormat(formatRaw);
+    return formatRaw;
   }
+
+  async function useActiveStage() { return getActiveStage(); }
 
   async function useTournamentFormat() {
     const format = await getActiveTournamentFormat();
@@ -31,11 +52,12 @@
     return global.TournamentFormats.getFormatDefinition(format);
   }
 
-  function resolveTournamentPresentation(tournament) {
+  function resolveTournamentPresentation(tournament, activeStage = null) {
+    const effectiveFormat = activeStage?.format || tournament?.format;
     const format = global.TournamentFormats
-      ? global.TournamentFormats.getFormatDefinition(tournament?.format)
-      : { key: tournament?.format || 'strokeplay', label: tournament?.format || 'Slagspill' };
-    return { tournament, format };
+      ? global.TournamentFormats.getFormatDefinition(effectiveFormat)
+      : { key: effectiveFormat || 'strokeplay', label: effectiveFormat || 'Slagspill' };
+    return { tournament, activeStage, format };
   }
 
   function renderEmptyTournamentState(container, options = {}) {
@@ -54,6 +76,9 @@
   global.ActiveTournament = {
     getActiveTournament,
     getActiveTournamentId,
+    getActiveStage,
+    getActiveTournamentAndStage,
+    useActiveStage,
     useActiveTournament: getActiveTournament,
     getActiveTournamentFormat,
     useTournamentFormat,

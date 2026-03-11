@@ -84,6 +84,8 @@
     <h1 class="page-hero-title">Resultattavle</h1>
     <p class="page-hero-sub" id="sbTournamentName">Laster...</p>
     <div id="sbFormatBadge" class="badge" style="display:inline-flex;margin-top:8px">Spillform: —</div>
+    <div id="stageBadge" class="badge" style="display:none;margin-top:8px;margin-left:8px"></div>
+    <div id="stageNav" style="margin-top:14px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap"></div>
     <div style="margin-top:12px;font-size:.78rem;color:var(--text-muted)" id="lastUpdated">Oppdateres automatisk i sanntid</div>
   </div>
 </div>
@@ -132,6 +134,17 @@
           <tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text-muted)"><i class="fas fa-spinner fa-spin" style="margin-right:8px"></i>Laster poeng...</td></tr>
         </tbody>
       </table>
+    </div>
+  </div>
+</section>
+
+<section class="section--sm d-none" id="cupSection" style="background:var(--off-white)">
+  <div class="container">
+    <div id="cupHeader" class="card" style="margin-bottom:16px"></div>
+    <div id="cupMatches" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px"></div>
+    <div id="cupEmpty" class="empty-state d-none" style="padding:24px">
+      <div class="empty-state__icon">🏆</div>
+      <h2 class="empty-state__title">Ingen matcher er satt opp for denne dagen ennå.</h2>
     </div>
   </div>
 </section>
@@ -468,6 +481,35 @@ function renderAwards(awards) {
 }
 
 
+function renderStageNav(stages, activeStageId) {
+  const nav = document.getElementById('stageNav');
+  if (!Array.isArray(stages) || stages.length < 2) { nav.innerHTML = ''; return; }
+  nav.innerHTML = stages.map(st => `<span class="badge" style="${st.id===activeStageId?'background:var(--gold);color:var(--navy)':''}">${st.name}</span>`).join('');
+}
+
+function renderCupView(d) {
+  document.getElementById('sbMain').classList.add('d-none');
+  document.getElementById('scorecardSection').classList.add('d-none');
+  document.getElementById('awardsSection').classList.add('d-none');
+  document.getElementById('cupSection').classList.remove('d-none');
+  const sides = d.sides || [];
+  if (sides.length < 2) {
+    document.getElementById('cupHeader').innerHTML = '<div class="card-body">Ryder Cup-oppsettet er ikke ferdig konfigurert.</div>';
+    document.getElementById('cupMatches').innerHTML = '';
+    document.getElementById('cupEmpty').classList.remove('d-none');
+    return;
+  }
+  const totals = d.cup?.totals || [];
+  const left = totals.find(t => t.sideId === sides[0].id) || { points: 0 };
+  const right = totals.find(t => t.sideId === sides[1].id) || { points: 0 };
+  document.getElementById('cupHeader').innerHTML = `<div class="card-body"><div style="font-size:1.5rem;font-weight:700">${sides[0].name} ${left.points} — ${right.points} ${sides[1].name}</div><div style="color:var(--text-muted);margin-top:6px">Ferdige matcher: ${d.cup?.completedMatches||0} · Pågående: ${d.cup?.inProgressMatches||0}</div></div>`;
+  const matches = d.matches || [];
+  const wrap = document.getElementById('cupMatches');
+  if (!matches.length) { wrap.innerHTML=''; document.getElementById('cupEmpty').classList.remove('d-none'); return; }
+  document.getElementById('cupEmpty').classList.add('d-none');
+  wrap.innerHTML = matches.map(m => `<div class="card"><div class="card-body"><div style="font-weight:700">${m.side_a_name} vs ${m.side_b_name}</div><div style="font-size:.8rem;color:var(--text-muted)">${m.format} · ${m.status}</div><div style="margin-top:8px">${m.result_text || (m.is_halved ? 'Halved' : '—')}</div><div style="margin-top:6px;color:var(--gold-dark)">${m.points_awarded_a} - ${m.points_awarded_b} poeng</div></div></div>`).join('');
+}
+
 async function loadScoreboard() {
   try {
     const r = await fetch('/api/scoreboard');
@@ -481,15 +523,30 @@ async function loadScoreboard() {
       return;
     }
     document.getElementById('noTournamentState').classList.add('d-none');
+    document.getElementById('cupSection').classList.add('d-none');
     document.getElementById('sbMain').classList.remove('d-none');
     document.getElementById('scorecardSection').classList.remove('d-none');
     document.getElementById('awardsSection').classList.remove('d-none');
+
+    if (d.mode === 'ryder_cup') {
+      currentTournament = d.tournament;
+      document.getElementById('sbTournamentName').textContent = d.tournament.name;
+      document.getElementById('sbFormatBadge').textContent = `Spillform: ${d.activeStage?.format_label || 'Matchplay'}`;
+      document.getElementById('stageBadge').style.display = d.activeStage ? 'inline-flex' : 'none';
+      document.getElementById('stageBadge').textContent = d.activeStage ? `Aktiv stage: ${d.activeStage.name}` : '';
+      renderStageNav(d.stages || [], d.activeStage?.id);
+      renderCupView(d);
+      return;
+    }
 
     currentTournament = d.tournament;
     currentFormatDef = TournamentFormats.getFormatDefinition(currentTournament?.format);
     holes = d.holes || [];
     scoreboard = d.scoreboard || [];
     document.getElementById('sbFormatBadge').textContent = `Spillform: ${currentFormatDef.label}`;
+    document.getElementById('stageBadge').style.display = d.activeStage ? 'inline-flex' : 'none';
+    document.getElementById('stageBadge').textContent = d.activeStage ? `Aktiv stage: ${d.activeStage.name}` : '';
+    renderStageNav(d.stages || [], d.activeStage?.id);
     document.getElementById('leaderboardFormatHint').textContent = `Visning: ${currentFormatDef.label}`;
     document.getElementById('scorecardFormatHint').textContent = `Scorekort tilpasses automatisk for ${currentFormatDef.label.toLowerCase()}.`;
 

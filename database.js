@@ -24,8 +24,68 @@ db.exec(`
     description TEXT DEFAULT '',
     gameday_info TEXT DEFAULT '',
     status TEXT DEFAULT 'upcoming',
+    tournament_mode TEXT DEFAULT 'single_format',
+    active_stage_id INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS tournament_stages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tournament_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    stage_order INTEGER NOT NULL DEFAULT 1,
+    date TEXT,
+    format TEXT DEFAULT 'strokeplay',
+    status TEXT DEFAULT 'draft',
+    is_published INTEGER NOT NULL DEFAULT 0,
+    is_active INTEGER NOT NULL DEFAULT 0,
+    leaderboard_type TEXT DEFAULT 'individual',
+    settings TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS tournament_sides (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tournament_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    short_name TEXT DEFAULT '',
+    color TEXT DEFAULT '',
+    logo TEXT DEFAULT '',
+    side_order INTEGER NOT NULL DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS stage_matches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    stage_id INTEGER NOT NULL,
+    side_a_id INTEGER NOT NULL,
+    side_b_id INTEGER NOT NULL,
+    team_a_id INTEGER,
+    team_b_id INTEGER,
+    lineup_a TEXT,
+    lineup_b TEXT,
+    format TEXT DEFAULT 'matchplay',
+    match_order INTEGER NOT NULL DEFAULT 1,
+    tee_time TEXT,
+    status TEXT DEFAULT 'scheduled',
+    winner_side_id INTEGER,
+    result_text TEXT DEFAULT '',
+    points_awarded_a REAL NOT NULL DEFAULT 0,
+    points_awarded_b REAL NOT NULL DEFAULT 0,
+    is_halved INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (stage_id) REFERENCES tournament_stages(id) ON DELETE CASCADE,
+    FOREIGN KEY (side_a_id) REFERENCES tournament_sides(id) ON DELETE CASCADE,
+    FOREIGN KEY (side_b_id) REFERENCES tournament_sides(id) ON DELETE CASCADE,
+    FOREIGN KEY (winner_side_id) REFERENCES tournament_sides(id) ON DELETE SET NULL,
+    FOREIGN KEY (team_a_id) REFERENCES teams(id) ON DELETE SET NULL,
+    FOREIGN KEY (team_b_id) REFERENCES teams(id) ON DELETE SET NULL
   );
 
   CREATE TABLE IF NOT EXISTS site_settings (
@@ -189,6 +249,8 @@ try { db.exec(`ALTER TABLE tournaments ADD COLUMN end_date TEXT`); } catch(_) {}
 try { db.exec(`ALTER TABLE tournaments ADD COLUMN format TEXT DEFAULT 'strokeplay'`); } catch(_) {}
 try { db.exec(`ALTER TABLE tournaments ADD COLUMN format_settings TEXT`); } catch(_) {}
 try { db.exec(`ALTER TABLE tournaments ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP`); } catch(_) {}
+try { db.exec(`ALTER TABLE tournaments ADD COLUMN tournament_mode TEXT DEFAULT 'single_format'`); } catch(_) {}
+try { db.exec(`ALTER TABLE tournaments ADD COLUMN active_stage_id INTEGER`); } catch(_) {}
 try { db.exec(`ALTER TABLE teams ADD COLUMN player1_handicap REAL DEFAULT 0`); } catch(_) {}
 try { db.exec(`ALTER TABLE teams ADD COLUMN player2_handicap REAL DEFAULT 0`); } catch(_) {}
 try { db.exec(`ALTER TABLE holes ADD COLUMN stroke_index INTEGER DEFAULT 0`); } catch(_) {}
@@ -211,6 +273,61 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS site_settings (
   value TEXT,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`); } catch(_) {}
+try { db.exec(`CREATE TABLE IF NOT EXISTS tournament_stages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tournament_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  stage_order INTEGER NOT NULL DEFAULT 1,
+  date TEXT,
+  format TEXT DEFAULT 'strokeplay',
+  status TEXT DEFAULT 'draft',
+  is_published INTEGER NOT NULL DEFAULT 0,
+  is_active INTEGER NOT NULL DEFAULT 0,
+  leaderboard_type TEXT DEFAULT 'individual',
+  settings TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE
+)`); } catch(_) {}
+try { db.exec(`CREATE TABLE IF NOT EXISTS tournament_sides (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tournament_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  short_name TEXT DEFAULT '',
+  color TEXT DEFAULT '',
+  logo TEXT DEFAULT '',
+  side_order INTEGER NOT NULL DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE
+)`); } catch(_) {}
+try { db.exec(`CREATE TABLE IF NOT EXISTS stage_matches (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  stage_id INTEGER NOT NULL,
+  side_a_id INTEGER NOT NULL,
+  side_b_id INTEGER NOT NULL,
+  team_a_id INTEGER,
+  team_b_id INTEGER,
+  lineup_a TEXT,
+  lineup_b TEXT,
+  format TEXT DEFAULT 'matchplay',
+  match_order INTEGER NOT NULL DEFAULT 1,
+  tee_time TEXT,
+  status TEXT DEFAULT 'scheduled',
+  winner_side_id INTEGER,
+  result_text TEXT DEFAULT '',
+  points_awarded_a REAL NOT NULL DEFAULT 0,
+  points_awarded_b REAL NOT NULL DEFAULT 0,
+  is_halved INTEGER NOT NULL DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (stage_id) REFERENCES tournament_stages(id) ON DELETE CASCADE,
+  FOREIGN KEY (side_a_id) REFERENCES tournament_sides(id) ON DELETE CASCADE,
+  FOREIGN KEY (side_b_id) REFERENCES tournament_sides(id) ON DELETE CASCADE,
+  FOREIGN KEY (winner_side_id) REFERENCES tournament_sides(id) ON DELETE SET NULL,
+  FOREIGN KEY (team_a_id) REFERENCES teams(id) ON DELETE SET NULL,
+  FOREIGN KEY (team_b_id) REFERENCES teams(id) ON DELETE SET NULL
+)`); } catch(_) {}
 
 
 try {
@@ -221,6 +338,22 @@ try {
     if ((t.format || '').trim().toLowerCase() !== normalized) {
       updateFormat.run(normalized, t.id);
     }
+  });
+} catch (_) {}
+
+try {
+  const tournaments = db.prepare('SELECT id, name, date, format FROM tournaments').all();
+  const selectStages = db.prepare('SELECT id FROM tournament_stages WHERE tournament_id=? LIMIT 1');
+  const insertStage = db.prepare(
+    `INSERT INTO tournament_stages (tournament_id, name, stage_order, date, format, status, is_published, is_active, leaderboard_type, updated_at)
+     VALUES (?, ?, 1, ?, ?, 'published', 1, 1, 'individual', CURRENT_TIMESTAMP)`
+  );
+  const updateTournament = db.prepare('UPDATE tournaments SET active_stage_id=COALESCE(active_stage_id, ?), tournament_mode=COALESCE(tournament_mode, ?) WHERE id=?');
+  tournaments.forEach((t) => {
+    const existing = selectStages.get(t.id);
+    const stageName = t.name ? `${t.name} – Dag 1` : 'Dag 1';
+    const stageId = existing ? existing.id : insertStage.run(t.id, stageName, t.date || null, normalizeTournamentFormat(t.format)).lastInsertRowid;
+    updateTournament.run(stageId, 'single_format', t.id);
   });
 } catch (_) {}
 
