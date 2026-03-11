@@ -235,6 +235,7 @@
             </div>
             <div style="margin-top:16px">
               <button onclick="createTournament()" class="btn btn--gold btn--sm"><i class="fas fa-plus"></i> Opprett turnering</button>
+              <a href="/admin/setup-wizard" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border);text-decoration:none"><i class="fas fa-wand-magic-sparkles"></i> Åpne Tournament Setup Wizard</a>
             </div>
           </div>
         </div>
@@ -1035,6 +1036,7 @@ function renderTournamentsTable() {
       <td>${t.is_active ? '<span class="badge badge--active">Aktiv turnering</span>' : `<button onclick="setActiveTournament(${t.id})" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)">Sett som aktiv turnering</button>`}</td>
       <td style="display:flex;gap:6px">
         <button onclick="editTournament(${t.id})" class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)" title="Rediger"><i class="fas fa-pen"></i></button>
+        <a href="/admin/setup-wizard?tournamentId=${t.id}" class="btn btn--sm" style="background:var(--dark);color:var(--gold-light);border:1px solid rgba(201,168,76,.3);text-decoration:none" title="Rediger med wizard"><i class="fas fa-wand-magic-sparkles"></i></a>
         <button onclick="deleteTournament(${t.id},${JSON.stringify(t.name)})" class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
       </td>
     </tr>`).join('');

@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="nb">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Turneringsoppsett — Wizard</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    body { background: linear-gradient(160deg,var(--dark),var(--dark-mid)); min-height: 100vh; }
+    .wizard-shell { max-width: 1060px; margin: 30px auto; padding: 0 16px 36px; }
+    .wizard-header { background: rgba(255,255,255,.05); border: 1px solid rgba(201,168,76,.28); border-radius: 18px; padding: 16px; margin-bottom: 16px; }
+    .wizard-progress { height: 10px; background: rgba(255,255,255,.09); border-radius: 100px; overflow: hidden; }
+    .wizard-progress > div { height: 100%; background: linear-gradient(90deg,var(--gold),var(--gold-light)); transition: width .2s ease; }
+    .wizard-step { display: none; }
+    .wizard-step.active { display: block; }
+    .wizard-card { background: var(--off-white); border-radius: 18px; border:1px solid var(--gold-border); padding: 16px; margin-top: 14px; }
+    .wizard-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill,minmax(190px,1fr)); }
+    .wizard-actions { display:flex; gap:10px; flex-wrap:wrap; margin-top: 14px; }
+    .row { display:grid; grid-template-columns: 1fr 1fr auto; gap:8px; margin-bottom:8px; }
+    .row.team { grid-template-columns: 1fr 1fr 1fr 1fr auto; }
+    @media (max-width: 760px) { .row, .row.team { grid-template-columns: 1fr; } }
+    .muted { color: var(--text-muted); font-size: .85rem; }
+    .summary-list { display:grid; gap:8px; }
+    .summary-item { border:1px solid var(--gold-border); border-radius:12px; padding:10px; background:#fff; }
+    .error-box { display:none; margin-top: 10px; color:#ef4444; font-weight:600; }
+  </style>
+</head>
+<body>
+  <div class="wizard-shell">
+    <div class="wizard-header">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div>
+          <div style="font-family:var(--font-heading);font-size:1.35rem;color:var(--gold-light)">Turneringsoppsett</div>
+          <div class="muted" id="stepLabel">Steg 1 av 5</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <a href="/admin.html" class="btn btn--outline btn--sm" style="color:var(--gold-light);border-color:rgba(201,168,76,.45)"><i class="fas fa-arrow-left"></i> Til admin</a>
+          <button class="btn btn--dark btn--sm" onclick="saveDraft()"><i class="fas fa-floppy-disk"></i> Lagre som utkast</button>
+        </div>
+      </div>
+      <div class="wizard-progress" style="margin-top:12px"><div id="progressBar" style="width:20%"></div></div>
+    </div>
+
+    <div class="wizard-card" id="loginCard" style="display:none;max-width:520px;margin:0 auto;">
+      <h3>Admin-innlogging</h3>
+      <div class="form-group"><label class="form-label">Passord</label><input id="adminPass" type="password" class="form-input"></div>
+      <div class="wizard-actions"><button onclick="doAdminLogin()" class="btn btn--gold">Logg inn</button></div>
+      <div id="loginError" class="error-box"></div>
+    </div>
+
+    <div id="wizardBody" style="display:none;">
+      <section class="wizard-step active" data-step="0">
+        <div class="wizard-card">
+          <h3>Steg 1 — Grunnoppsett</h3>
+          <div class="wizard-grid">
+            <div class="form-group"><label class="form-label">Turneringsnavn</label><input id="name" class="form-input" value="Lorgen Invitational"></div>
+            <div class="form-group"><label class="form-label">År</label><input id="year" type="number" class="form-input"></div>
+            <div class="form-group"><label class="form-label">Startdato</label><input id="startDate" type="datetime-local" class="form-input"></div>
+            <div class="form-group"><label class="form-label">Sluttdato</label><input id="endDate" type="datetime-local" class="form-input"></div>
+            <div class="form-group"><label class="form-label">Turneringstype / modus</label><select id="mode" class="form-select"><option value="single_format">Enkeltturnering</option><option value="multi_stage">Flerdagers turnering</option><option value="ryder_cup">Ryder Cup</option></select></div>
+            <div class="form-group"><label class="form-label">Spillform</label><select id="format" class="form-select"><option value="stableford">Stableford</option><option value="strokeplay">Slagspill</option><option value="texas_scramble">2-manns scramble</option><option value="texas_scramble_4">Texas Scramble</option><option value="greensome">Greensome</option><option value="foursome">Foursome</option><option value="fourball">Four-ball</option><option value="matchplay">Matchplay</option></select></div>
+            <div class="form-group" style="grid-column:1/-1"><label class="form-label">Beskrivelse (valgfri)</label><textarea id="description" class="form-input form-textarea"></textarea></div>
+          </div>
+          <div id="step1Error" class="error-box"></div>
+        </div>
+      </section>
+
+      <section class="wizard-step" data-step="1">
+        <div class="wizard-card">
+          <h3>Steg 2 — Deltakere</h3>
+          <p class="muted" id="participantHint"></p>
+          <div class="wizard-actions">
+            <button class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)" onclick="addParticipantRow()">Legg til rad</button>
+            <button class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)" onclick="autoGenerateTeams()">Generer lag automatisk</button>
+          </div>
+          <div id="participantsWrap" style="margin-top:10px"></div>
+          <div id="step2Error" class="error-box"></div>
+        </div>
+      </section>
+
+      <section class="wizard-step" data-step="2">
+        <div class="wizard-card">
+          <h3>Steg 3 — Regler og handicap</h3>
+          <div class="wizard-grid">
+            <div class="form-group"><label class="form-label">Bruk handicap</label><select id="useHandicap" class="form-select"><option value="1">Ja</option><option value="0">Nei</option></select></div>
+            <div class="form-group"><label class="form-label">Handicap-metode</label><select id="handicapMethod" class="form-select"><option value="percentage">Prosent</option><option value="weighted">Vektet</option></select></div>
+            <div class="form-group" id="handicapPctGroup"><label class="form-label">Handicap-prosent</label><input id="handicapPercentage" type="number" min="0" max="100" class="form-input"></div>
+          </div>
+          <div id="weightsWrap" style="margin-top:10px"></div>
+          <div class="wizard-actions"><button class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)" onclick="applyHandicapDefaults()">Bruk standard handicap-regler</button></div>
+          <div id="step3Error" class="error-box"></div>
+        </div>
+      </section>
+
+      <section class="wizard-step" data-step="3">
+        <div class="wizard-card">
+          <h3>Steg 4 — Bane / stages / struktur</h3>
+          <div class="wizard-grid">
+            <div class="form-group"><label class="form-label">Bane</label><input id="course" class="form-input" placeholder="f.eks. Bogstad Golfklubb"></div>
+            <div class="form-group"><label class="form-label">Hulloppsett (antall hull)</label><select id="holesCount" class="form-select"><option value="9">9 hull</option><option value="18" selected>18 hull</option></select></div>
+            <div class="form-group"><label class="form-label">Slope rating</label><input id="slopeRating" type="number" class="form-input" value="113"></div>
+          </div>
+          <div class="wizard-actions" id="stageButtons" style="margin-top:12px;display:none;">
+            <button class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)" onclick="addStageRow()">Legg til stage</button>
+            <button class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)" onclick="applyRyderTemplate()">Lag standard Ryder Cup-oppsett</button>
+          </div>
+          <div id="stagesWrap" style="margin-top:10px"></div>
+          <div id="step4Error" class="error-box"></div>
+        </div>
+      </section>
+
+      <section class="wizard-step" data-step="4">
+        <div class="wizard-card">
+          <h3>Steg 5 — Publisering</h3>
+          <div class="summary-list" id="summary"></div>
+          <div class="form-group" style="margin-top:10px;"><label class="form-label">Handling ved opprettelse</label><select id="publishAction" class="form-select"><option value="draft">Lagre som utkast</option><option value="create">Opprett turnering</option><option value="create_and_set_active">Opprett og sett som aktiv turnering</option><option value="create_and_open_scoring">Opprett og åpne scoring</option><option value="create_and_publish_leaderboard">Opprett og publiser leaderboard</option></select></div>
+          <div class="wizard-actions"><button class="btn btn--gold" onclick="submitWizard()"><i class="fas fa-check"></i> Fullfør oppsett</button></div>
+          <div id="step5Error" class="error-box"></div>
+        </div>
+      </section>
+
+      <div class="wizard-actions" style="justify-content:space-between; margin-top:12px;">
+        <button class="btn btn--outline" id="prevBtn" style="color:var(--gold-light);border-color:rgba(201,168,76,.45)" onclick="changeStep(-1)">Tilbake</button>
+        <button class="btn btn--gold" id="nextBtn" onclick="changeStep(1)">Neste</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/tournament-formats.js"></script>
+  <script>
+    let step = 0;
+    const totalSteps = 5;
+    const state = { participants: [], sideA: [], sideB: [], stages: [] };
+
+    const api = async (url, options = {}) => {
+      const r = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...options });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Forespørsel feilet');
+      return d;
+    };
+
+    function setError(id, msg='') { const el = document.getElementById(id); el.style.display = msg ? 'block' : 'none'; el.textContent = msg; }
+    function getMode() { return document.getElementById('mode').value; }
+    function getFormat() { return getMode() === 'ryder_cup' ? 'ryder_cup' : document.getElementById('format').value; }
+
+    async function boot() {
+      document.getElementById('year').value = new Date().getFullYear();
+      const now = new Date(); now.setMinutes(0,0,0);
+      document.getElementById('startDate').value = now.toISOString().slice(0,16);
+      const e = new Date(now); e.setHours(e.getHours() + 5);
+      document.getElementById('endDate').value = e.toISOString().slice(0,16);
+      try {
+        const status = await api('/api/auth/status');
+        if (status.type === 'admin') {
+          document.getElementById('wizardBody').style.display = 'block';
+          await loadExistingTournamentIfRequested();
+          renderByFormat();
+        } else {
+          document.getElementById('loginCard').style.display = 'block';
+        }
+      } catch (_) { document.getElementById('loginCard').style.display = 'block'; }
+    }
+
+    async function doAdminLogin() {
+      setError('loginError', '');
+      try {
+        await api('/api/auth/admin-login', { method: 'POST', body: JSON.stringify({ password: document.getElementById('adminPass').value }) });
+        document.getElementById('loginCard').style.display = 'none';
+        document.getElementById('wizardBody').style.display = 'block';
+        renderByFormat();
+      } catch (e) { setError('loginError', e.message); }
+    }
+
+    function renderParticipants() {
+      const wrap = document.getElementById('participantsWrap');
+      const mode = getMode();
+      const format = getFormat();
+      const def = TournamentFormats.getFormatDefinition(format);
+      if (mode === 'ryder_cup') {
+        const rowTpl = (list, side) => list.map((p, i) => `<div class="row"><input class="form-input" placeholder="Spillernavn" value="${p.name||''}" oninput="state.${side}[${i}].name=this.value"><input type="number" class="form-input" placeholder="Handicap" value="${p.handicap??''}" oninput="state.${side}[${i}].handicap=this.value"><button class="btn btn--outline btn--sm" onclick="state.${side}.splice(${i},1);renderParticipants()">Fjern</button></div>`).join('');
+        wrap.innerHTML = `<div class="summary-item"><strong>Lag A</strong>${rowTpl(state.sideA,'sideA')}<button class="btn btn--outline btn--sm" onclick="state.sideA.push({name:'',handicap:''});renderParticipants()">Legg til spiller</button></div><div class="summary-item"><strong>Lag B</strong>${rowTpl(state.sideB,'sideB')}<button class="btn btn--outline btn--sm" onclick="state.sideB.push({name:'',handicap:''});renderParticipants()">Legg til spiller</button></div>`;
+        return;
+      }
+      if (!state.participants.length) state.participants.push({ name: '', handicap: '', teamName: '', pin: '', players: Array.from({ length: def.teamSize }, () => ({ name: '', handicap: '' })) });
+      wrap.innerHTML = state.participants.map((row, i) => {
+        if (def.leaderboardMode === 'individual') {
+          return `<div class="row"><input class="form-input" placeholder="Spillernavn" value="${row.name||''}" oninput="state.participants[${i}].name=this.value"><input type="number" class="form-input" placeholder="Handicap" value="${row.handicap??''}" oninput="state.participants[${i}].handicap=this.value"><button class="btn btn--outline btn--sm" onclick="state.participants.splice(${i},1);renderParticipants()">Fjern</button></div>`;
+        }
+        const players = Array.from({ length: def.teamSize }).map((_, pIdx) => `<input class="form-input" placeholder="Spiller ${pIdx+1}" value="${row.players[pIdx]?.name||''}" oninput="state.participants[${i}].players[${pIdx}].name=this.value"><input type="number" class="form-input" placeholder="Hcp ${pIdx+1}" value="${row.players[pIdx]?.handicap??''}" oninput="state.participants[${i}].players[${pIdx}].handicap=this.value">`).join('');
+        return `<div class="summary-item"><div class="row"><input class="form-input" placeholder="Lagnavn / Par" value="${row.teamName||''}" oninput="state.participants[${i}].teamName=this.value"><input class="form-input" placeholder="PIN" value="${row.pin||''}" oninput="state.participants[${i}].pin=this.value"><button class="btn btn--outline btn--sm" onclick="state.participants.splice(${i},1);renderParticipants()">Fjern</button></div><div class="row team">${players}</div></div>`;
+      }).join('');
+    }
+
+    function renderStages() {
+      const mode = getMode();
+      const show = mode === 'multi_stage' || mode === 'ryder_cup';
+      document.getElementById('stageButtons').style.display = show ? 'flex' : 'none';
+      const wrap = document.getElementById('stagesWrap');
+      if (!show) { wrap.innerHTML = '<p class="muted">Enkeltturnering bruker automatisk én stage.</p>'; return; }
+      if (!state.stages.length) {
+        if (mode === 'ryder_cup') applyRyderTemplate();
+        else state.stages.push({ name: 'Dag 1', date: document.getElementById('startDate').value, format: document.getElementById('format').value });
+      }
+      wrap.innerHTML = state.stages.map((s, i) => `<div class="row"><input class="form-input" placeholder="Stage-navn" value="${s.name||''}" oninput="state.stages[${i}].name=this.value"><input type="datetime-local" class="form-input" value="${s.date||''}" oninput="state.stages[${i}].date=this.value"><select class="form-select" onchange="state.stages[${i}].format=this.value"><option ${s.format==='foursome'?'selected':''} value="foursome">Foursome</option><option ${s.format==='fourball'?'selected':''} value="fourball">Four-ball</option><option ${s.format==='matchplay'?'selected':''} value="matchplay">Singler/Matchplay</option><option ${s.format==='strokeplay'?'selected':''} value="strokeplay">Slagspill</option><option ${s.format==='stableford'?'selected':''} value="stableford">Stableford</option></select><button class="btn btn--outline btn--sm" onclick="state.stages.splice(${i},1);renderStages()">Fjern</button></div>`).join('') + `<div class="form-group"><label class="form-label">Aktiv stage ved publisering</label><select id="activeStageIndex" class="form-select">${state.stages.map((s, i) => `<option value="${i}">${s.name || 'Stage '+(i+1)}</option>`).join('')}</select></div>`;
+      const activeStageSel = document.getElementById('activeStageIndex');
+      if (activeStageSel) activeStageSel.value = String(state.activeStageIndex || 0);
+    }
+
+    function renderHandicap() {
+      const cfg = TournamentFormats.getFormatDefinition(getFormat()).handicap || { method: 'percentage', handicapPercentage: 100 };
+      const method = document.getElementById('handicapMethod').value || cfg.method;
+      document.getElementById('handicapPctGroup').style.display = method === 'percentage' ? 'block' : 'none';
+      const weightsWrap = document.getElementById('weightsWrap');
+      if (method !== 'weighted') { weightsWrap.innerHTML = ''; return; }
+      const defaults = Array.isArray(cfg.weights) ? cfg.weights : [35,15];
+      const existing = state.weights || defaults;
+      state.weights = existing;
+      weightsWrap.innerHTML = existing.map((w, i) => `<div class="form-group" style="max-width:220px;"><label class="form-label">${i===0?'Laveste':'Nest laveste'} handicap % ${i>1?`(${i+1})`:''}</label><input type="number" class="form-input" value="${w}" oninput="state.weights[${i}]=Number(this.value)"></div>`).join('');
+    }
+
+    function renderByFormat() {
+      const mode = getMode();
+      document.getElementById('format').disabled = mode === 'ryder_cup';
+      if (mode === 'ryder_cup') document.getElementById('format').value = 'matchplay';
+      const def = TournamentFormats.getFormatDefinition(getFormat());
+      document.getElementById('participantHint').textContent = mode === 'ryder_cup'
+        ? 'Ryder Cup: legg spillere i Side A og Side B.'
+        : (def.leaderboardMode === 'individual' ? 'Individuell spillerliste. Handicap er valgfritt.' : `Dette formatet krever ${def.teamSize} spillere per lag/par.`);
+      applyHandicapDefaults();
+      renderParticipants();
+      renderStages();
+      renderStepInfo();
+    }
+
+    function applyHandicapDefaults() {
+      const cfg = TournamentFormats.getFormatDefinition(getFormat()).handicap || { method:'percentage', handicapPercentage:100 };
+      document.getElementById('useHandicap').value = '1';
+      document.getElementById('handicapMethod').value = cfg.method || 'percentage';
+      document.getElementById('handicapPercentage').value = cfg.handicapPercentage ?? 100;
+      state.weights = cfg.weights || [];
+      renderHandicap();
+    }
+
+    function addParticipantRow() {
+      const mode = getMode();
+      const def = TournamentFormats.getFormatDefinition(getFormat());
+      if (mode === 'ryder_cup') {
+        state.sideA.push({name:'', handicap:''});
+      } else {
+        state.participants.push(def.leaderboardMode === 'individual' ? { name:'', handicap:'' } : { teamName:'', pin:'', players:Array.from({length:def.teamSize},()=>({name:'', handicap:''})) });
+      }
+      renderParticipants();
+    }
+
+    function autoGenerateTeams() {
+      const def = TournamentFormats.getFormatDefinition(getFormat());
+      if (def.leaderboardMode === 'individual' || getMode()==='ryder_cup') return;
+      const names = state.participants.flatMap((row) => (Array.isArray(row.players) ? row.players.map((p) => p.name).filter(Boolean) : [row.name].filter(Boolean)));
+      if (!names.length) return;
+      const shuffled = [...names].sort(() => Math.random() - 0.5);
+      const groups = [];
+      while (shuffled.length) groups.push(shuffled.splice(0, def.teamSize));
+      state.participants = groups.filter((g) => g.length === def.teamSize).map((g, i) => ({ teamName: `Lag ${i+1}`, pin: String(1000+i), players: g.map((n) => ({ name:n, handicap:'' })) }));
+      renderParticipants();
+    }
+
+    function addStageRow() { state.stages.push({ name: `Dag ${state.stages.length+1}`, date: document.getElementById('startDate').value, format: document.getElementById('format').value }); renderStages(); }
+    function applyRyderTemplate() {
+      state.stages = [
+        { name: 'Dag 1 Foursome', date: document.getElementById('startDate').value, format: 'foursome' },
+        { name: 'Dag 2 Four-ball', date: document.getElementById('startDate').value, format: 'fourball' },
+        { name: 'Dag 3 Singler', date: document.getElementById('startDate').value, format: 'matchplay' }
+      ];
+      renderStages();
+    }
+
+    function validateCurrentStep() {
+      setError(`step${step+1}Error`, '');
+      if (step === 0) {
+        if (!document.getElementById('name').value.trim()) return setError('step1Error', 'Turneringsnavn må fylles ut'), false;
+        if (!document.getElementById('startDate').value) return setError('step1Error', 'Startdato må fylles ut'), false;
+      }
+      if (step === 1) {
+        const mode = getMode();
+        const def = TournamentFormats.getFormatDefinition(getFormat());
+        if (mode === 'ryder_cup') {
+          const a = state.sideA.filter((p) => (p.name||'').trim()).length;
+          const b = state.sideB.filter((p) => (p.name||'').trim()).length;
+          if (!a || !b) return setError('step2Error', 'Ryder Cup må ha to sider med spillere'), false;
+        } else if (def.leaderboardMode === 'individual') {
+          if (!state.participants.some((p) => (p.name||'').trim())) return setError('step2Error', 'Legg til minst én spiller'), false;
+        } else {
+          const bad = state.participants.some((r) => r.players.filter((p)=> (p.name||'').trim()).length !== def.teamSize);
+          if (bad) return setError('step2Error', `Hvert lag/par må ha nøyaktig ${def.teamSize} spillere`), false;
+        }
+      }
+      if (step === 2) {
+        if (document.getElementById('useHandicap').value === '1') {
+          const method = document.getElementById('handicapMethod').value;
+          if (method === 'percentage') {
+            const pct = Number(document.getElementById('handicapPercentage').value);
+            if (!Number.isFinite(pct) || pct < 0 || pct > 100) return setError('step3Error', 'Handicap-prosent må være et tall mellom 0 og 100'), false;
+          }
+        }
+      }
+      if (step === 3) {
+        if ((getMode()==='multi_stage' || getMode()==='ryder_cup')) {
+          if (!state.stages.length) return setError('step4Error', 'Du må ha minst én stage'), false;
+          const bad = state.stages.some((s) => !String(s.name||'').trim() || !s.date);
+          if (bad) return setError('step4Error', 'Alle stages må ha navn og dato'), false;
+        }
+      }
+      return true;
+    }
+
+    function buildPayload(action='draft') {
+      return {
+        basics: {
+          name: document.getElementById('name').value,
+          year: document.getElementById('year').value,
+          description: document.getElementById('description').value,
+          startDate: document.getElementById('startDate').value,
+          endDate: document.getElementById('endDate').value,
+          mode: getMode(),
+          format: document.getElementById('format').value
+        },
+        participants: getMode()==='ryder_cup'
+          ? { sideAName: 'Lag A', sideBName: 'Lag B', sideA: state.sideA.filter((p)=>(p.name||'').trim()), sideB: state.sideB.filter((p)=>(p.name||'').trim()) }
+          : { rows: state.participants },
+        rules: {
+          useHandicap: document.getElementById('useHandicap').value === '1',
+          handicapMethod: document.getElementById('handicapMethod').value,
+          handicapPercentage: document.getElementById('handicapPercentage').value,
+          weightedPercentages: state.weights || []
+        },
+        structure: {
+          course: document.getElementById('course').value,
+          holesCount: Number(document.getElementById('holesCount').value),
+          slopeRating: Number(document.getElementById('slopeRating').value),
+          stages: (getMode()==='multi_stage' || getMode()==='ryder_cup') ? state.stages : [],
+          activeStageIndex: Number(document.getElementById('activeStageIndex')?.value || state.activeStageIndex || 0)
+        },
+        publishAction: action
+      };
+    }
+
+    function fillSummary() {
+      const s = document.getElementById('summary');
+      const p = buildPayload(document.getElementById('publishAction').value);
+      const participantText = getMode()==='ryder_cup'
+        ? `Lag A: ${p.participants.sideA.length} spillere, Lag B: ${p.participants.sideB.length} spillere`
+        : `${p.participants.rows.length} deltakerrader`;
+      const hcp = p.rules.useHandicap
+        ? (p.rules.handicapMethod === 'weighted' ? `Vektet (${(p.rules.weightedPercentages||[]).join('/')})` : `${p.rules.handicapPercentage}%`)
+        : 'Av';
+      s.innerHTML = `
+        <div class="summary-item"><strong>Turneringsnavn</strong><div>${p.basics.name}</div></div>
+        <div class="summary-item"><strong>Modus / spillform</strong><div>${p.basics.mode} / ${getFormat()}</div></div>
+        <div class="summary-item"><strong>Deltakere / lag / par</strong><div>${participantText}</div></div>
+        <div class="summary-item"><strong>Handicap-regler</strong><div>${hcp}</div></div>
+        <div class="summary-item"><strong>Stages</strong><div>${(p.structure.stages||[]).map((st, i) => `${i+1}. ${st.name}`).join('<br>') || 'Automatisk Dag 1'}</div></div>
+        <div class="summary-item"><strong>Bane</strong><div>${p.structure.course || 'Ikke satt'}</div></div>`;
+    }
+
+    async function saveDraft() {
+      try {
+        const payload = buildPayload('draft');
+        await api('/api/admin/tournament-wizard', { method: 'POST', body: JSON.stringify(payload) });
+        alert('Utkast opprettet.');
+      } catch (e) { alert(e.message); }
+    }
+
+    async function submitWizard() {
+      if (!validateCurrentStep()) return;
+      setError('step5Error', '');
+      try {
+        const action = document.getElementById('publishAction').value;
+        const payload = buildPayload(action);
+        const result = await api('/api/admin/tournament-wizard', { method: 'POST', body: JSON.stringify(payload) });
+        window.location.href = `/admin.html#tournament-created-${result.id}`;
+      } catch (e) { setError('step5Error', e.message); }
+    }
+
+    function renderStepInfo() {
+      document.getElementById('stepLabel').textContent = `Steg ${step+1} av ${totalSteps}`;
+      document.getElementById('progressBar').style.width = `${((step+1)/totalSteps)*100}%`;
+      document.querySelectorAll('.wizard-step').forEach((el, i) => el.classList.toggle('active', i === step));
+      document.getElementById('prevBtn').style.visibility = step === 0 ? 'hidden' : 'visible';
+      document.getElementById('nextBtn').style.display = step === totalSteps-1 ? 'none' : 'inline-flex';
+      if (step === 4) fillSummary();
+    }
+
+    function changeStep(delta) {
+      if (delta > 0 && !validateCurrentStep()) return;
+      step = Math.max(0, Math.min(totalSteps-1, step + delta));
+      renderStepInfo();
+    }
+
+    document.getElementById('mode').addEventListener('change', renderByFormat);
+    document.getElementById('format').addEventListener('change', renderByFormat);
+    document.getElementById('handicapMethod').addEventListener('change', renderHandicap);
+    
+    async function loadExistingTournamentIfRequested() {
+      const params = new URLSearchParams(window.location.search);
+      const tournamentId = params.get('tournamentId');
+      if (!tournamentId) return;
+      try {
+        const all = await api('/api/admin/tournaments');
+        const t = (all.tournaments || []).find((item) => String(item.id) === String(tournamentId));
+        if (!t) return;
+        document.getElementById('name').value = t.name || '';
+        document.getElementById('year').value = t.year || '';
+        document.getElementById('description').value = t.description || '';
+        document.getElementById('startDate').value = (t.start_date || t.date || '').slice(0,16);
+        document.getElementById('endDate').value = (t.end_date || t.start_date || t.date || '').slice(0,16);
+        document.getElementById('mode').value = t.tournament_mode || 'single_format';
+        document.getElementById('format').value = t.format || 'strokeplay';
+        document.getElementById('course').value = t.course || '';
+        document.getElementById('slopeRating').value = t.slope_rating || 113;
+
+        const [playersRes, teamsRes, sidesRes, stagesRes] = await Promise.all([
+          api(`/api/admin/tournament/${tournamentId}/players`).catch(() => ({ players: [] })),
+          api(`/api/admin/tournament/${tournamentId}/teams`).catch(() => ({ teams: [] })),
+          api(`/api/admin/tournament/${tournamentId}/sides`).catch(() => ({ sides: [] })),
+          api(`/api/admin/tournament/${tournamentId}/stages`).catch(() => ({ stages: [], activeStageId: null }))
+        ]);
+
+        if ((t.tournament_mode || '') === 'ryder_cup') {
+          const sidesById = Object.fromEntries((sidesRes.sides || []).map((s) => [s.id, s]));
+          const rows = playersRes.players || [];
+          state.sideA = rows.filter((p) => sidesById[p.team_id]?.side_order === 1).map((p) => ({ name: p.name, handicap: p.handicap ?? '' }));
+          state.sideB = rows.filter((p) => sidesById[p.team_id]?.side_order !== 1).map((p) => ({ name: p.name, handicap: p.handicap ?? '' }));
+        } else if ((teamsRes.teams || []).length) {
+          state.participants = (teamsRes.teams || []).map((team) => ({
+            teamName: team.team_name,
+            pin: team.pin_code,
+            players: [team.player1, team.player2, team.player3, team.player4].filter((name) => String(name || '').trim()).map((name, idx) => ({ name, handicap: [team.player1_handicap, team.player2_handicap, team.player3_handicap, team.player4_handicap][idx] || '' }))
+          }));
+        } else {
+          state.participants = (playersRes.players || []).map((p) => ({ name: p.name, handicap: p.handicap ?? '' }));
+        }
+
+        state.stages = (stagesRes.stages || []).map((st) => ({ name: st.name, date: (st.date || '').slice(0,16), format: st.format }));
+        const activeIdx = (stagesRes.stages || []).findIndex((st) => st.id === stagesRes.activeStageId);
+        state.activeStageIndex = activeIdx >= 0 ? activeIdx : 0;
+      } catch (_) {}
+    }
+
+    boot();
+  </script>
+</body>
+</html>
