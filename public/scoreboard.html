@@ -583,7 +583,7 @@ async function loadScoreboard() {
     document.getElementById('holesInfo').textContent =
       `${teamsSpilling} lag i spill · ${totalHoles} hull`;
 
-    if (d.tournament.status === 'active') {
+    if (d.tournament.status === 'live') {
       document.getElementById('liveBadge').style.display = 'inline-flex';
       document.getElementById('awardsLiveBadge').style.display = 'block';
     }
