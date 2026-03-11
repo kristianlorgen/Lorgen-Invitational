@@ -28,15 +28,35 @@
       handicap: { method: 'percentage', handicapPercentage: 100 },
       sorter: (a, b) => (a.to_par || 0) - (b.to_par || 0)
     },
-    texas_scramble: {
-      key: 'texas_scramble', label: '2-manns Scramble', teamBased: true, participantMode: 'team', teamSize: 2,
+    scramble2: {
+    key: 'scramble2', label: '2-manns Scramble', leaderboardMode: 'strokes_asc', participantMode: 'team', teamSize: 2,
+    adminSections: [ADMIN_SECTIONS.TOURNAMENT_INFO, ADMIN_SECTIONS.TEAMS, ADMIN_SECTIONS.COURSE_AND_HOLES, ADMIN_SECTIONS.GAMEDAY, ADMIN_SECTIONS.SPONSORS, ADMIN_SECTIONS.CONTROL_PANEL],
+    handicap: { method: 'percentage', handicapPercentage: 25 }
+  },
+  scramble3: {
+    key: 'scramble3', label: '3-manns Scramble', leaderboardMode: 'strokes_asc', participantMode: 'team', teamSize: 3,
+    adminSections: [ADMIN_SECTIONS.TOURNAMENT_INFO, ADMIN_SECTIONS.TEAMS, ADMIN_SECTIONS.COURSE_AND_HOLES, ADMIN_SECTIONS.GAMEDAY, ADMIN_SECTIONS.SPONSORS, ADMIN_SECTIONS.CONTROL_PANEL],
+    handicap: { method: 'percentage', handicapPercentage: 20 }
+  },
+  scramble4: {
+    key: 'scramble4', label: '4-manns Scramble', leaderboardMode: 'strokes_asc', participantMode: 'team', teamSize: 4,
+    adminSections: [ADMIN_SECTIONS.TOURNAMENT_INFO, ADMIN_SECTIONS.TEAMS, ADMIN_SECTIONS.COURSE_AND_HOLES, ADMIN_SECTIONS.GAMEDAY, ADMIN_SECTIONS.SPONSORS, ADMIN_SECTIONS.CONTROL_PANEL],
+    handicap: { method: 'percentage', handicapPercentage: 10 }
+  },
+  bestball2: {
+    key: 'bestball2', label: '2-ball bestball', leaderboardMode: 'strokes_asc', participantMode: 'team', teamSize: 2,
+    adminSections: [ADMIN_SECTIONS.TOURNAMENT_INFO, ADMIN_SECTIONS.TEAMS, ADMIN_SECTIONS.COURSE_AND_HOLES, ADMIN_SECTIONS.GAMEDAY, ADMIN_SECTIONS.SPONSORS, ADMIN_SECTIONS.CONTROL_PANEL],
+    handicap: { method: 'percentage', handicapPercentage: 85 }
+  },
+  texas_scramble: {
+      key: 'scramble2', label: '2-manns Scramble', teamBased: true, participantMode: 'team', teamSize: 2,
       scoreEntryLabel: 'Lagets slag', scoreDisplay: 'Lagscore', leaderboardColumns: ['Plass', 'Lag', 'Total', 'Vs par', 'Hull'],
       adminSections: [ADMIN_SECTIONS.TOURNAMENT_INFO, ADMIN_SECTIONS.TEAMS, ADMIN_SECTIONS.COURSE_AND_HOLES, ADMIN_SECTIONS.GAMEDAY, ADMIN_SECTIONS.SPONSORS, ADMIN_SECTIONS.CONTROL_PANEL],
       handicap: { method: 'weighted', weights: [35, 15], label: '35/15' },
       sorter: (a,b)=>(a.to_par||0)-(b.to_par||0)
     },
     texas_scramble_4: {
-      key: 'texas_scramble_4', label: 'Texas Scramble', teamBased: true, participantMode: 'team', teamSize: 4,
+      key: 'scramble4', label: 'Texas Scramble', teamBased: true, participantMode: 'team', teamSize: 4,
       scoreEntryLabel: 'Lagets slag', scoreDisplay: 'Lagscore', leaderboardColumns: ['Plass', 'Lag', 'Total', 'Vs par', 'Hull'],
       adminSections: [ADMIN_SECTIONS.TOURNAMENT_INFO, ADMIN_SECTIONS.TEAMS, ADMIN_SECTIONS.COURSE_AND_HOLES, ADMIN_SECTIONS.GAMEDAY, ADMIN_SECTIONS.SPONSORS, ADMIN_SECTIONS.CONTROL_PANEL],
       handicap: { method: 'weighted', weights: [25, 20, 15, 10], label: '25/20/15/10' },
@@ -49,7 +69,13 @@
     ryder_cup: { key: 'ryder_cup', label: 'Ryder Cup', teamBased: true, participantMode: 'cup', teamSize: 2, scoreEntryLabel: 'Matchpoeng', scoreDisplay: 'Cup-score', leaderboardColumns: ['Lag', 'Poeng'], handicap: { method: 'percentage', handicapPercentage: 100 }, sorter: (a,b)=>(b.points||0)-(a.points||0) }
   };
 
-  const LEGACY_MAP = { '2-mann scramble': 'texas_scramble', '2-man scramble': 'texas_scramble', 'texas scramble': 'texas_scramble_4', 'scramble': 'texas_scramble', 'slagspill': 'strokeplay', 'four-ball': 'fourball', 'bestball': 'fourball' };
+  const LEGACY_MAP = { '2-mann scramble': 'scramble2', '2-man scramble': 'scramble2', 'texas scramble': 'scramble4', 'scramble': 'scramble2', 'slagspill': 'strokeplay', 'four-ball': 'fourball',
+  'scramble2': 'scramble2',
+  'scramble3': 'scramble3',
+  'scramble4': 'scramble4',
+  'bestball2': 'bestball2',
+  'texas_scramble': 'scramble2',
+  'texas_scramble_4': 'scramble4', 'bestball': 'fourball' };
 
   function normalizeFormat(format) {
     const raw = String(format || '').trim().toLowerCase();

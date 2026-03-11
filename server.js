@@ -307,23 +307,30 @@ function validateWizardParticipants(format, participants, mode = 'single_format'
     return { valid: true };
   }
   const def = getFormatDefinition(format);
-  const rows = Array.isArray(participants?.rows) ? participants.rows : [];
+  const rows = Array.isArray(participants?.rows)
+    ? participants.rows
+    : (Array.isArray(participants?.teams) ? participants.teams : (Array.isArray(participants?.participants) ? participants.participants : []));
   if (!rows.length) return { valid: false, error: 'Du må registrere minst én deltaker/ett lag' };
 
-  if (def.leaderboardMode === 'individual') {
-    const hasPlayer = rows.some((row) => String(row?.name || '').trim());
-    return hasPlayer ? { valid: true } : { valid: false, error: 'Legg til minst én spiller' };
+  const pins = [];
+  if (def.teamSize === 1 || def.participantMode === 'individual') {
+    const invalidPlayer = rows.find((row) => !String(row?.name || '').trim() || !/^\d{4}$/.test(String(row?.pin || '')) || !Number.isFinite(Number(row?.handicap)));
+    if (invalidPlayer) return { valid: false, error: 'Alle spillere må ha navn, handicap og 4-sifret PIN' };
+    rows.forEach((row) => pins.push(String(row.pin || '')));
+  } else {
+    const invalidRow = rows.find((row) => {
+      const players = Array.isArray(row?.players) ? row.players : [];
+      if (!String(row?.teamName || row?.name || '').trim()) return true;
+      if (!/^\d{4}$/.test(String(row?.pin || ''))) return true;
+      if (players.length !== def.teamSize) return true;
+      return players.some((p) => !String(p?.name || '').trim() || !Number.isFinite(Number(p?.handicap)));
+    });
+    if (invalidRow) {
+      return { valid: false, error: `Formatet krever nøyaktig ${def.teamSize} spillere per lag/par` };
+    }
+    rows.forEach((row) => pins.push(String(row.pin || '')));
   }
-
-  const invalidRow = rows.find((row) => {
-    const players = Array.isArray(row?.players)
-      ? row.players.map((p) => String(p?.name || '').trim()).filter(Boolean)
-      : [];
-    return players.length !== def.teamSize;
-  });
-  if (invalidRow) {
-    return { valid: false, error: `Formatet krever nøyaktig ${def.teamSize} spillere per lag/par` };
-  }
+  if (new Set(pins).size !== pins.length) return { valid: false, error: 'Denne PIN-koden er allerede i bruk' };
   return { valid: true };
 }
 
@@ -1469,6 +1476,10 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
   const participantValidation = validateWizardParticipants(format, participants, mode);
   if (!participantValidation.valid) return res.status(400).json({ error: participantValidation.error });
 
+  const participantRows = Array.isArray(participants.rows)
+    ? participants.rows
+    : (Array.isArray(participants.teams) ? participants.teams : (Array.isArray(participants.participants) ? participants.participants : []));
+
   const defaultHandicap = resolveHandicapConfig(format, null, { format, format_settings: null, handicap_percentage: null });
   const useHandicap = rules.useHandicap !== false;
   const handicapMethod = String(rules.handicapMethod || defaultHandicap.method || 'percentage');
@@ -1558,22 +1569,25 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
       (participants.sideB || []).forEach((player) => insertPlayer.run(tournamentId, String(player.name || '').trim(), player.handicap ?? null, sideB));
     } else if (getFormatDefinition(format).leaderboardMode === 'individual') {
       const insertPlayer = db.prepare('INSERT INTO players (tournament_id, name, handicap, active, updated_at) VALUES (?,?,?,1,CURRENT_TIMESTAMP)');
-      (participants.rows || []).forEach((row) => {
+      const insertTeam = db.prepare('INSERT INTO teams (tournament_id, team_name, player1, player2, player3, player4, pin_code, player1_handicap, player2_handicap, player3_handicap, player4_handicap) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
+      participantRows.forEach((row, idx) => {
         const pName = String(row.name || '').trim();
         if (!pName) return;
+        const pin = String(row.pin || '').replace(/\D/g, '').slice(0, 4);
         insertPlayer.run(tournamentId, pName, row.handicap ?? null);
+        insertTeam.run(tournamentId, pName, pName, '', '', '', pin || String(1000 + idx), Number(row.handicap || 0), 0, 0, 0);
       });
     } else {
       const insertTeam = db.prepare(
         'INSERT INTO teams (tournament_id, team_name, player1, player2, player3, player4, pin_code, player1_handicap, player2_handicap, player3_handicap, player4_handicap) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
       );
-      (participants.rows || []).forEach((row, idx) => {
+      participantRows.forEach((row, idx) => {
         const players = Array.isArray(row.players) ? row.players : [];
         const p = [0, 1, 2, 3].map((i) => players[i] || {});
         const pin = String(row.pin || '').trim() || String(1000 + idx);
         insertTeam.run(
           tournamentId,
-          String(row.teamName || `Lag ${idx + 1}`),
+          String(row.teamName || row.name || `Lag ${idx + 1}`),
           String(p[0].name || '').trim(),
           String(p[1].name || '').trim(),
           String(p[2].name || '').trim(),

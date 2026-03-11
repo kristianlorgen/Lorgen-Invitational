@@ -108,20 +108,23 @@
     <!-- Sidemeny -->
     <div class="admin-sidebar">
       <div class="sidebar-section">
-        <div class="sidebar-label">Oversikt</div>
-        <div class="sidebar-link active" onclick="showPanel('dashboard')"><i class="fas fa-gauge"></i> Oversikt</div>
+        <div class="sidebar-label">Hovednavigasjon</div>
+        <div class="sidebar-link active" onclick="showPanel('dashboard')"><i class="fas fa-gauge"></i> Dashboard</div>
+        <div class="sidebar-link" onclick="showPanel('tournament')"><i class="fas fa-calendar-star"></i> Tournament</div>
+        <a class="sidebar-link" href="/admin/setup-wizard" style="text-decoration:none"><i class="fas fa-wand-magic-sparkles"></i> Wizard</a>
+        <a class="sidebar-link" href="/enter-score" style="text-decoration:none"><i class="fas fa-clipboard-list"></i> Scorecard</a>
+        <a class="sidebar-link" href="/scoreboard" style="text-decoration:none"><i class="fas fa-ranking-star"></i> Leaderboard</a>
+        <div class="sidebar-link" onclick="showPanel('sponsors')"><i class="fas fa-handshake"></i> Sponsors</div>
+        <a class="sidebar-link" href="/admin/control-panel" style="text-decoration:none"><i class="fas fa-sliders"></i> Settings</a>
       </div>
       <div class="sidebar-section">
         <div class="sidebar-label">Turnering</div>
-        <div class="sidebar-link" onclick="showPanel('tournament')"><i class="fas fa-calendar-star"></i> Turneringer</div>
         <div class="sidebar-link" onclick="showPanel('teams')"><i class="fas fa-users"></i> Lag</div>
         <div class="sidebar-link" onclick="showPanel('players')"><i class="fas fa-user-group"></i> Spillere</div>
-          <div class="sidebar-link" onclick="showPanel('stages')"><i class="fas fa-layer-group"></i> Stages</div>
+        <div class="sidebar-link" onclick="showPanel('stages')"><i class="fas fa-layer-group"></i> Stages</div>
         <div class="sidebar-link" onclick="showPanel('holes')"><i class="fas fa-golf-ball-tee"></i> Bane og Hull</div>
         <div class="sidebar-link" onclick="showPanel('courses')"><i class="fas fa-map-location-dot"></i> Baner</div>
         <div class="sidebar-link" onclick="showPanel('gameday')"><i class="fas fa-calendar-day"></i> Spilleregler & Informasjon</div>
-        <div class="sidebar-link" onclick="showPanel('sponsors')"><i class="fas fa-handshake"></i> Sponsorer</div>
-        <a class="sidebar-link" href="/admin/control-panel" style="text-decoration:none"><i class="fas fa-sliders"></i> Tournament Control Panel</a>
       </div>
       <div class="sidebar-section">
         <div class="sidebar-label">Aktiv Dag</div>
