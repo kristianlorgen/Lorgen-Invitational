@@ -131,6 +131,8 @@ async function doAdminLogin(){ try { await api('/api/auth/admin-login', { method
 function selectedFormatConfig(){ return formatSettings[state.selectedFormat] ?? formatSettings.strokeplay; }
 function playersPerUnit(){ return selectedFormatConfig().playersPerUnit; }
 function hcpTeam(team){ const total=(team.players||[]).reduce((s,p)=>s+Number(p.handicap||0),0); const adjusted=Math.round(total*(Number(document.getElementById('hcpPercent').value||0)/100)); return { total, adjusted }; }
+function createPin(){ return String(Math.floor(Math.random()*9000)+1000); }
+function createUniquePin(usedPins = new Set()){ let pin=createPin(); while(usedPins.has(pin)) pin=createPin(); usedPins.add(pin); return pin; }
 
 function renderFormatOptions(){
   const sel = document.getElementById('format');
@@ -146,15 +148,15 @@ function renderParticipants(){
   document.getElementById('participantsHint').textContent = cfg.mode==='team' ? `Hvert lag må ha nøyaktig ${cfg.playersPerUnit} spillere` : 'Legg inn spillere med PIN og handicap';
   if (cfg.mode === 'individual') {
     area.innerHTML = `<div class="actions"><button class="btn btn--outline" onclick="addPlayer()">Legg til spiller</button></div>` +
-      state.participants.map((p,i)=>`<div class="player-row"><input class="form-input" placeholder="Spillernavn" value="${p.name||''}" oninput="state.participants[${i}].name=this.value"><input class="pin-input form-input" type="text" inputmode="numeric" maxlength="4" placeholder="PIN" value="${p.pin||''}" oninput="state.participants[${i}].pin=pinSanitize(this.value);this.value=state.participants[${i}].pin"><input class="form-input" type="number" placeholder="Handicap" value="${p.handicap??''}" oninput="state.participants[${i}].handicap=this.value"><button class="btn btn--outline" onclick="state.participants.splice(${i},1);renderParticipants()">Fjern</button></div>`).join('');
+      state.participants.map((p,i)=>`<div class="player-row"><input class="form-input" placeholder="Spillernavn" value="${p.name||''}" oninput="state.participants[${i}].name=this.value"><input class="pin-input form-input" type="text" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="1234" value="${p.pin||''}" oninput="state.participants[${i}].pin=pinSanitize(this.value);this.value=state.participants[${i}].pin"><input class="form-input" type="number" placeholder="Handicap" value="${p.handicap??''}" oninput="state.participants[${i}].handicap=this.value"><button class="btn btn--outline" onclick="state.participants.splice(${i},1);renderParticipants()">Fjern</button></div>`).join('');
     return;
   }
-  area.innerHTML = `<div class="actions"><button class="btn btn--outline" onclick="addTeam()">Legg til lag</button><button class="btn btn--outline" onclick="addPoolPlayer()">Legg til spiller i pool</button><button class="btn btn--outline" onclick="generateTeams('random')">Generer lag automatisk (random)</button><button class="btn btn--outline" onclick="generateTeams('balanced')">Generer lag automatisk (balansert)</button></div><div id="poolWrap"></div>`;
+  area.innerHTML = `<h4>PLAYER POOL</h4><div class="actions"><button class="btn btn--outline" onclick="addPoolPlayer()">Add player</button><button class="btn btn--outline" onclick="generateTeams('random')">Generate teams random</button><button class="btn btn--outline" onclick="generateTeams('balanced')">Generate teams balanced</button></div><div id="poolWrap"></div>`;
   renderPool();
-  area.innerHTML += state.teams.map((t,ti)=>`<div class="team-card"><h4>Lag ${ti+1}</h4><div class="grid"><div class="form-group"><label>Lagnavn</label><input class="form-input" value="${t.name||''}" oninput="state.teams[${ti}].name=this.value"></div><div class="form-group"><label>PIN</label><input class="pin-input form-input" type="text" inputmode="numeric" maxlength="4" value="${t.pin||''}" oninput="state.teams[${ti}].pin=pinSanitize(this.value);this.value=state.teams[${ti}].pin"></div></div><div><strong>Spillere</strong>${t.players.map((pl,pi)=>`<div class="team-player-row"><input class="form-input" placeholder="Spiller ${pi+1}" value="${pl.name||''}" oninput="state.teams[${ti}].players[${pi}].name=this.value"><input class="form-input" type="number" placeholder="Handicap" value="${pl.handicap??''}" oninput="state.teams[${ti}].players[${pi}].handicap=this.value"></div>`).join('')}</div><div class="actions"><button class="btn btn--outline" onclick="state.teams.splice(${ti},1);renderParticipants()">Fjern lag</button></div></div>`).join('');
+  area.innerHTML += state.teams.map((t,ti)=>`<div class="team-card"><h4>Team ${ti+1}</h4><div style="margin-bottom:8px"><strong>PIN ${t.pin}</strong></div><div>${t.players.map((pl,pi)=>`<div class="team-player-row"><input class="form-input" placeholder="Player ${pi+1}" value="${pl.name||''}" oninput="state.teams[${ti}].players[${pi}].name=this.value"><input class="form-input" type="number" placeholder="Handicap" value="${pl.handicap??''}" oninput="state.teams[${ti}].players[${pi}].handicap=this.value"></div>`).join('')}</div></div>`).join('');
 }
 function addPoolPlayer(){ state.teamPool.push({id:crypto.randomUUID(),name:'',handicap:''}); renderPool(); }
-function renderPool(){ const wrap=document.getElementById('poolWrap'); if(!wrap) return; wrap.innerHTML = `<h4>Spillerpool</h4>${state.teamPool.map((p,i)=>`<div class="team-player-row"><input class="form-input" placeholder="Spillernavn" value="${p.name||''}" oninput="state.teamPool[${i}].name=this.value"><input class="form-input" type="number" placeholder="Handicap" value="${p.handicap??''}" oninput="state.teamPool[${i}].handicap=this.value"></div>`).join('')}`; }
+function renderPool(){ const wrap=document.getElementById('poolWrap'); if(!wrap) return; wrap.innerHTML = `${state.teamPool.map((p,i)=>`<div class="team-player-row"><input class="form-input" placeholder="Name" value="${p.name||''}" oninput="state.teamPool[${i}].name=this.value"><input class="form-input" type="number" placeholder="Handicap" value="${p.handicap??''}" oninput="state.teamPool[${i}].handicap=this.value"></div>`).join('')}`; }
 function shuffle(arr){ for(let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]];} return arr; }
 function generateTeams(strategy){
   const size = playersPerUnit();
@@ -167,7 +169,8 @@ function generateTeams(strategy){
     ordered = [...players].sort((a,b)=>Number(a.handicap||0)-Number(b.handicap||0));
     const tmp=[]; while(ordered.length){ tmp.push(ordered.shift()); if(ordered.length) tmp.push(ordered.pop()); } ordered=tmp;
   }
-  const teams=[]; for(let i=0;i<ordered.length;i+=size){ const group=ordered.slice(i,i+size); teams.push({id:crypto.randomUUID(),name:`Lag ${teams.length+1}`,pin:'',players:group.map(g=>({id:g.id,name:g.name,handicap:g.handicap}))}); }
+  const usedPins = new Set();
+  const teams=[]; for(let i=0;i<ordered.length;i+=size){ const group=ordered.slice(i,i+size); teams.push({id:crypto.randomUUID(),name:`Team ${teams.length+1}`,pin:createUniquePin(usedPins),players:group.map(g=>({id:g.id,name:g.name,handicap:g.handicap}))}); }
   state.teams = teams; renderParticipants();
 }
 

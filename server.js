@@ -314,14 +314,19 @@ function validateWizardParticipants(format, participants, mode = 'single_format'
 
   const pins = [];
   if (def.teamSize === 1 || def.participantMode === 'individual') {
-    const invalidPlayer = rows.find((row) => !String(row?.name || '').trim() || !/^\d{4}$/.test(String(row?.pin || '')) || !Number.isFinite(Number(row?.handicap)));
+    const invalidPlayer = rows.find((row) => {
+      const pin = String(row?.pin || '').trim();
+      if (!/^\d{4}$/.test(pin)) throw new Error('PIN must be exactly 4 digits');
+      return !String(row?.name || '').trim() || !Number.isFinite(Number(row?.handicap));
+    });
     if (invalidPlayer) return { valid: false, error: 'Alle spillere må ha navn, handicap og 4-sifret PIN' };
     rows.forEach((row) => pins.push(String(row.pin || '')));
   } else {
     const invalidRow = rows.find((row) => {
       const players = Array.isArray(row?.players) ? row.players : [];
       if (!String(row?.teamName || row?.name || '').trim()) return true;
-      if (!/^\d{4}$/.test(String(row?.pin || ''))) return true;
+      const pin = String(row?.pin || '').trim();
+      if (!/^\d{4}$/.test(pin)) throw new Error('PIN must be exactly 4 digits');
       if (players.length !== def.teamSize) return true;
       return players.some((p) => !String(p?.name || '').trim() || !Number.isFinite(Number(p?.handicap)));
     });
@@ -1473,7 +1478,12 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
   if (!startDate) return res.status(400).json({ error: 'Startdato er påkrevd' });
   if (!Number.isFinite(year)) return res.status(400).json({ error: 'Ugyldig år' });
 
-  const participantValidation = validateWizardParticipants(format, participants, mode);
+  let participantValidation;
+  try {
+    participantValidation = validateWizardParticipants(format, participants, mode);
+  } catch (error) {
+    return res.status(400).json({ error: error.message || 'Ugyldig PIN' });
+  }
   if (!participantValidation.valid) return res.status(400).json({ error: participantValidation.error });
 
   const participantRows = Array.isArray(participants.rows)
@@ -1507,7 +1517,7 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
   const tx = db.transaction(() => {
     const insertTournament = db.prepare(
       `INSERT INTO tournaments (year, name, date, start_date, end_date, format, course, description, gameday_info, status, slope_rating, tournament_mode, handicap_percentage, format_settings, results_published, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)`
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)`
     );
     const tournamentRes = insertTournament.run(
       year,
@@ -1574,18 +1584,19 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
         const pName = String(row.name || '').trim();
         if (!pName) return;
         const pin = String(row.pin || '').replace(/\D/g, '').slice(0, 4);
-        insertPlayer.run(tournamentId, pName, row.handicap ?? null);
         insertTeam.run(tournamentId, pName, pName, '', '', '', pin || String(1000 + idx), Number(row.handicap || 0), 0, 0, 0);
+        insertPlayer.run(tournamentId, pName, row.handicap ?? null);
       });
     } else {
       const insertTeam = db.prepare(
         'INSERT INTO teams (tournament_id, team_name, player1, player2, player3, player4, pin_code, player1_handicap, player2_handicap, player3_handicap, player4_handicap) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
       );
+      const insertPlayer = db.prepare('INSERT INTO players (tournament_id, name, handicap, team_id, active, updated_at) VALUES (?,?,?,?,1,CURRENT_TIMESTAMP)');
       participantRows.forEach((row, idx) => {
         const players = Array.isArray(row.players) ? row.players : [];
         const p = [0, 1, 2, 3].map((i) => players[i] || {});
         const pin = String(row.pin || '').trim() || String(1000 + idx);
-        insertTeam.run(
+        const teamRes = insertTeam.run(
           tournamentId,
           String(row.teamName || row.name || `Lag ${idx + 1}`),
           String(p[0].name || '').trim(),
@@ -1598,6 +1609,12 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
           Number(p[2].handicap || 0),
           Number(p[3].handicap || 0)
         );
+        const teamId = teamRes.lastInsertRowid;
+        players.forEach((player) => {
+          const playerName = String(player?.name || '').trim();
+          if (!playerName) return;
+          insertPlayer.run(tournamentId, playerName, Number(player.handicap || 0), teamId);
+        });
       });
     }
 
