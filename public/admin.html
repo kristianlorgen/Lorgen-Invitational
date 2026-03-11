@@ -34,6 +34,21 @@
     .dash-card-label { font-size:.72rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--gold-dark);margin-bottom:12px; }
     .dash-card-main { font-family:var(--font-heading);font-size:1.3rem;color:var(--dark);margin-bottom:4px;line-height:1.3; }
     .dash-card-sub { font-size:.82rem;color:var(--text-muted); }
+
+    .sponsor-accordion { display:flex;flex-direction:column;gap:12px; }
+    .sponsor-accordion-item { border:1px solid var(--gold-border);border-radius:16px;background:var(--white);overflow:hidden; }
+    .sponsor-accordion-trigger { width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;background:rgba(201,168,76,.08);border:none;color:var(--dark);font-weight:700;font-size:1rem;cursor:pointer; }
+    .sponsor-accordion-trigger i { color:var(--gold-dark);transition:transform .2s ease; }
+    .sponsor-accordion-item.is-open .sponsor-accordion-trigger i { transform:rotate(180deg); }
+    .sponsor-accordion-body { display:none;padding:16px; }
+    .sponsor-accordion-item.is-open .sponsor-accordion-body { display:block; }
+    .sponsor-mobile-grid { display:grid;grid-template-columns:1fr;gap:14px; }
+    .sponsor-mobile-grid .form-input, .sponsor-mobile-grid .form-select { min-height:48px;font-size:1rem;padding:12px 14px; }
+    .sponsor-file-input { min-height:48px;width:100%;font-size:.95rem;padding:10px;border:1.5px dashed var(--gold-border);border-radius:var(--radius);background:var(--off-white); }
+    .sponsor-preview-box { min-height:88px;border:1px dashed var(--gold-border);border-radius:12px;background:var(--off-white);display:flex;align-items:center;justify-content:center;padding:10px;text-align:center; }
+    .sponsor-preview-box img { max-width:100%;max-height:90px;object-fit:contain; }
+    .sponsor-save-row { display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:8px; }
+    .sponsor-save-status { font-size:.8rem;color:var(--text-muted); }
   </style>
 </head>
 <body>
@@ -647,16 +662,16 @@
 
         <div class="card" style="margin-bottom:20px">
           <div class="card-header"><strong>Forside — 5 sponsorplasser</strong></div>
-          <div class="card-body" id="homeSponsorRows"></div>
+          <div class="card-body"><div id="homeSponsorRows" class="sponsor-accordion"></div></div>
         </div>
 
         <div class="card">
           <div class="card-header"><strong>Scorekort — sponsor per hull</strong></div>
-          <div class="card-body" id="holeSponsorRows"></div>
+          <div class="card-body"><div id="holeSponsorRows" class="sponsor-accordion"></div></div>
         </div>
 
         <div style="margin-top:16px">
-          <button class="btn btn--gold btn--sm" onclick="saveSponsorsAdmin()"><i class="fas fa-floppy-disk"></i> Lagre sponsorer</button>
+          <button class="btn btn--gold btn--sm" onclick="saveSponsorsAdmin()"><i class="fas fa-floppy-disk"></i> Lagre alle sponsorer</button>
         </div>
       </div>
 
@@ -2094,22 +2109,100 @@ function openLegacyFocusPicker(id, imgSrc, currentFocus) {
 
 
 let sponsorsCache = { home: [], hole: [] };
+let openSponsorRowId = null;
 
-function sponsorRowHtml(item, type, indexKey) {
+function escapeSponsorValue(value) {
+  return String(value || '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function sponsorFallbackPreview(item, fallbackTitle) {
+  if (item.logo_path) {
+    return `<img src="${escapeSponsorValue(item.logo_path)}" alt="${escapeSponsorValue(item.sponsor_name || fallbackTitle)}">`;
+  }
+  if (item.sponsor_name) {
+    return `<div style="font-weight:700;color:var(--dark)">${escapeSponsorValue(item.sponsor_name)}</div>`;
+  }
+  return '<div style="color:var(--text-muted);font-weight:600">Ingen sponsor valgt</div>';
+}
+
+function SponsorAccordionItem(item, type, indexKey) {
   const rowId = `${type}-${indexKey}`;
+  const title = type === 'home' ? `Spot ${indexKey}` : `Hull ${indexKey}`;
+  const isOpen = openSponsorRowId ? openSponsorRowId === rowId : indexKey === 1;
   return `
-    <div data-row="${rowId}" style="display:grid;grid-template-columns:120px 1fr 1fr 170px 170px;gap:10px;align-items:center;margin-bottom:10px;padding:10px;border:1px solid var(--gold-border);border-radius:10px;background:var(--off-white)">
-      <div style="font-weight:700;color:var(--dark)">${type === 'home' ? `Spot ${indexKey}` : `Hull ${indexKey}`}</div>
-      <input class="form-input" data-field="sponsor_name" value="${item.sponsor_name || ''}" placeholder="Sponsornavn">
-      <input class="form-input" data-field="description" value="${item.description || ''}" placeholder="Kort beskrivelse">
-      <div>
-        <input class="form-input" data-field="logo_path" value="${item.logo_path || ''}" placeholder="Logo URL eller last opp">
-        <input type="file" data-field="logo_file" accept="image/*" style="margin-top:6px;font-size:.75rem" onchange="uploadSponsorLogo(this, '${rowId}')">
+    <section class="sponsor-accordion-item ${isOpen ? 'is-open' : ''}" data-row="${rowId}">
+      <button type="button" class="sponsor-accordion-trigger" onclick="toggleSponsorAccordion('${rowId}')">
+        <span>${title}</span>
+        <i class="fas fa-chevron-down"></i>
+      </button>
+      <div class="sponsor-accordion-body">
+        <div class="sponsor-mobile-grid">
+          <div class="form-group" style="margin:0">
+            <label class="form-label">Sponsor navn</label>
+            <input class="form-input" data-field="sponsor_name" value="${escapeSponsorValue(item.sponsor_name)}" placeholder="Sponsornavn" oninput="updateSponsorPreview('${rowId}')">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label class="form-label">Sponsor link/nettside</label>
+            <input class="form-input" data-field="sponsor_link" value="${escapeSponsorValue(item.sponsor_link)}" placeholder="https://...">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label class="form-label">Sponsor logo URL</label>
+            <input class="form-input" data-field="logo_path" value="${escapeSponsorValue(item.logo_path)}" placeholder="/uploads/... eller https://..." oninput="updateSponsorPreview('${rowId}')">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label class="form-label">Filopplasting for logo</label>
+            <input type="file" class="sponsor-file-input" data-field="logo_file" accept="image/*" onchange="uploadSponsorLogo(this, '${rowId}')">
+          </div>
+          <label style="display:flex;align-items:center;gap:10px;font-size:.95rem;color:var(--dark);font-weight:600">
+            <input type="checkbox" data-field="is_enabled" ${item.is_enabled ? 'checked' : ''} style="accent-color:var(--gold);width:20px;height:20px"> Aktiv / vis sponsor
+          </label>
+          <div class="form-group" style="margin:0">
+            <label class="form-label">Forhåndsvisning</label>
+            <div class="sponsor-preview-box" data-preview>${sponsorFallbackPreview(item, title)}</div>
+          </div>
+        </div>
+        <div class="sponsor-save-row">
+          <button class="btn btn--gold btn--sm" onclick="saveSingleSponsor('${rowId}')"><i class="fas fa-floppy-disk"></i> Lagre ${title}</button>
+          <span class="sponsor-save-status" data-save-status></span>
+        </div>
       </div>
-      <label style="display:flex;align-items:center;gap:8px;font-size:.84rem;color:var(--text-muted)">
-        <input type="checkbox" data-field="is_enabled" ${item.is_enabled ? 'checked' : ''} style="accent-color:var(--gold)"> Vis sponsor
-      </label>
-    </div>`;
+    </section>`;
+}
+
+function toggleSponsorAccordion(rowId) {
+  openSponsorRowId = rowId;
+  document.querySelectorAll('#panel-sponsors .sponsor-accordion-item').forEach(item => {
+    item.classList.toggle('is-open', item.getAttribute('data-row') === rowId);
+  });
+}
+
+function updateSponsorPreview(rowId) {
+  const row = document.querySelector(`[data-row="${rowId}"]`);
+  if (!row) return;
+  const title = rowId.startsWith('home-') ? `Spot ${rowId.split('-')[1]}` : `Hull ${rowId.split('-')[1]}`;
+  const data = extractSponsorFromRow(row);
+  const preview = row.querySelector('[data-preview]');
+  if (preview) preview.innerHTML = sponsorFallbackPreview(data, title);
+}
+
+function extractSponsorFromRow(row) {
+  const [placement, num] = row.getAttribute('data-row').split('-');
+  const isHome = placement === 'home';
+  return {
+    placement,
+    spot_number: isHome ? Number(num) : null,
+    hole_number: isHome ? null : Number(num),
+    sponsor_name: row.querySelector('[data-field="sponsor_name"]').value,
+    description: '',
+    sponsor_link: row.querySelector('[data-field="sponsor_link"]').value,
+    logo_path: row.querySelector('[data-field="logo_path"]').value,
+    is_enabled: row.querySelector('[data-field="is_enabled"]').checked
+  };
 }
 
 async function loadSponsorsAdmin() {
@@ -2120,15 +2213,16 @@ async function loadSponsorsAdmin() {
     return;
   }
   const d = await api('/api/admin/tournament/' + tid + '/sponsors');
-  sponsorsCache = d;
+  sponsorsCache = d || { home: [], hole: [] };
   const homeMap = {};
-  (d.home || []).forEach(r => { homeMap[r.spot_number] = r; });
+  (sponsorsCache.home || []).forEach(r => { homeMap[r.spot_number] = r; });
   const holeMap = {};
-  (d.hole || []).forEach(r => { holeMap[r.hole_number] = r; });
+  (sponsorsCache.hole || []).forEach(r => { holeMap[r.hole_number] = r; });
 
-  document.getElementById('homeSponsorRows').innerHTML = [1,2,3,4,5].map(n => sponsorRowHtml(homeMap[n] || { spot_number:n, is_enabled:0 }, 'home', n)).join('');
+  document.getElementById('homeSponsorRows').innerHTML = [1,2,3,4,5].map(n => SponsorAccordionItem(homeMap[n] || { spot_number:n, is_enabled:0 }, 'home', n)).join('');
   document.getElementById('holeSponsorRows').innerHTML = Array.from({ length: 18 }, (_, i) => i + 1)
-    .map(n => sponsorRowHtml(holeMap[n] || { hole_number:n, is_enabled:0 }, 'hole', n)).join('');
+    .map(n => SponsorAccordionItem(holeMap[n] || { hole_number:n, is_enabled:0 }, 'hole', n)).join('');
+  toggleSponsorAccordion(openSponsorRowId || 'home-1');
 }
 
 async function uploadSponsorLogo(input, rowId) {
@@ -2142,27 +2236,30 @@ async function uploadSponsorLogo(input, rowId) {
   const data = await res.json();
   if (!res.ok) { showToast(data.error || 'Kunne ikke laste opp logo', 'error'); return; }
   const row = document.querySelector(`[data-row="${rowId}"]`);
-  if (row) row.querySelector('[data-field="logo_path"]').value = data.logo_path || '';
+  if (row) {
+    row.querySelector('[data-field="logo_path"]').value = data.logo_path || '';
+    updateSponsorPreview(rowId);
+  }
   showToast('Logo lastet opp');
+}
+
+async function saveSingleSponsor(rowId) {
+  const tid = document.getElementById('sponsorsTournamentSelect').value;
+  if (!tid) { showToast('Velg turnering først', 'error'); return; }
+  const row = document.querySelector(`[data-row="${rowId}"]`);
+  if (!row) return;
+  const payload = [extractSponsorFromRow(row)];
+  await api('/api/admin/tournament/' + tid + '/sponsors', { method: 'POST', body: JSON.stringify({ sponsors: payload }) });
+  const status = row.querySelector('[data-save-status]');
+  if (status) status.textContent = 'Lagret ✓';
+  showToast('Sponsor lagret');
 }
 
 async function saveSponsorsAdmin() {
   const tid = document.getElementById('sponsorsTournamentSelect').value;
   if (!tid) { showToast('Velg turnering først', 'error'); return; }
   const rows = Array.from(document.querySelectorAll('#panel-sponsors [data-row]'));
-  const sponsors = rows.map(row => {
-    const [placement, num] = row.getAttribute('data-row').split('-');
-    const isHome = placement === 'home';
-    return {
-      placement,
-      spot_number: isHome ? Number(num) : null,
-      hole_number: isHome ? null : Number(num),
-      sponsor_name: row.querySelector('[data-field="sponsor_name"]').value,
-      description: row.querySelector('[data-field="description"]').value,
-      logo_path: row.querySelector('[data-field="logo_path"]').value,
-      is_enabled: row.querySelector('[data-field="is_enabled"]').checked
-    };
-  });
+  const sponsors = rows.map(extractSponsorFromRow);
   await api('/api/admin/tournament/' + tid + '/sponsors', {
     method: 'POST',
     body: JSON.stringify({ sponsors })

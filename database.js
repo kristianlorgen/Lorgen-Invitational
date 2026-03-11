@@ -275,6 +275,7 @@ db.exec(`
     hole_number INTEGER,
     sponsor_name TEXT DEFAULT '',
     description TEXT DEFAULT '',
+    sponsor_link TEXT DEFAULT '',
     logo_path TEXT DEFAULT '',
     is_enabled INTEGER NOT NULL DEFAULT 0,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -323,6 +324,7 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS photo_votes (
   voted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(tournament_id, photo_ref, voter_ip)
 )`); } catch(_) {}
+try { db.exec(`ALTER TABLE sponsors ADD COLUMN sponsor_link TEXT DEFAULT ''`); } catch(_) {}
 try { db.exec(`CREATE TABLE IF NOT EXISTS site_settings (
   key TEXT PRIMARY KEY,
   value TEXT,

@@ -363,9 +363,12 @@ function formatTournamentDate(dateValue, includeWeekday = false) {
   });
 }
 
+let currentTournamentId = null;
+
 async function loadTournament() {
   try {
     const tournament = await ActiveTournament.getActiveTournament();
+    currentTournamentId = tournament?.id || null;
     if (tournament) {
       document.getElementById('heroTournamentName').textContent = tournament.name;
       document.getElementById('heroDate').textContent = formatTournamentDate(tournament.date);
@@ -460,22 +463,41 @@ async function loadGallery() {
 
 async function loadSponsors() {
   try {
-    const r = await fetch('/api/sponsors?placement=home');
+    const query = currentTournamentId ? `&tournament_id=${currentTournamentId}` : '';
+    const r = await fetch('/api/sponsors?placement=home' + query);
     const d = await r.json();
-    if (!d.sponsors || d.sponsors.length === 0) return;
+    const sponsors = Array.isArray(d.sponsors) ? d.sponsors : [];
+    const topFive = sponsors
+      .filter(s => s && s.spot_number >= 1 && s.spot_number <= 5 && s.is_enabled)
+      .sort((a,b)=>a.spot_number-b.spot_number);
+    if (!topFive.length) return;
     const section = document.getElementById('sponsorSection');
     const grid = document.getElementById('sponsorGrid');
-    const topFive = d.sponsors.filter(s => s.spot_number >= 1 && s.spot_number <= 5).sort((a,b)=>a.spot_number-b.spot_number);
-    if (!topFive.length) return;
     section.classList.remove('d-none');
-    grid.innerHTML = topFive.map(s => `
-      <article class="sponsor-card">
-        ${s.logo_path ? `<img src="${s.logo_path}" alt="${s.sponsor_name || 'Sponsor'}" class="sponsor-logo">` : '<div class="sponsor-logo sponsor-logo--placeholder"><i class="fas fa-image"></i></div>'}
-        <span class="sponsor-name">${s.sponsor_name || `Sponsorplass ${s.spot_number}`}</span>
-        ${s.description ? `<span class="sponsor-description">${s.description}</span>` : ''}
-      </article>
-    `).join('');
+    grid.innerHTML = SponsorsGrid(topFive);
   } catch(_) {}
+}
+
+function sponsorCardContent(sponsor) {
+  if (sponsor.logo_path) {
+    return `<img src="${sponsor.logo_path}" alt="${sponsor.sponsor_name || 'Sponsor'}" class="sponsor-logo">`;
+  }
+  if (sponsor.sponsor_name) {
+    return `<div class="sponsor-logo sponsor-logo--fallback">${sponsor.sponsor_name}</div>`;
+  }
+  return '<div class="sponsor-logo sponsor-logo--placeholder">Ingen sponsor valgt</div>';
+}
+
+function SponsorsGrid(list) {
+  return list.map(s => {
+    const content = sponsorCardContent(s);
+    const card = `
+      <article class="sponsor-card">
+        ${content}
+        <span class="sponsor-name">${s.sponsor_name || `Sponsorplass ${s.spot_number}`}</span>
+      </article>`;
+    return s.sponsor_link ? `<a class="sponsor-card-link" href="${s.sponsor_link}" target="_blank" rel="noopener noreferrer">${card}</a>` : card;
+  }).join('');
 }
 
 async function loadCoinBack() {
@@ -487,11 +509,10 @@ async function loadCoinBack() {
   } catch(_) {}
 }
 
-loadTournament();
+loadTournament().finally(loadSponsors);
 loadChampion();
 loadGallery();
 loadCoinBack();
-loadSponsors();
 </script>
   <script src="/js/pwa.js" defer></script>
 </body>
