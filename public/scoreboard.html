@@ -362,7 +362,7 @@ function renderLeaderboard() {
       <td style="text-align:center">${posBadge(i)}</td>
       <td class="team-name-cell">
         <div class="team">${t.team_name}</div>
-        <div class="players">${t.player1} &amp; ${t.player2}${hasHandicaps && t.handicap ? ` <span style="color:var(--gold-dark);font-size:.72rem">(Hcp ${t.handicap})</span>` : ''}</div>
+        <div class="players">${t.player1} &amp; ${t.player2}${hasHandicaps && t.handicap ? ` <span style="color:var(--gold-dark);font-size:.72rem">(Hcp ${t.handicap}${t.handicap_rule ? ' · ' + t.handicap_rule : ''})</span>` : ''}</div>
       </td>
       <td style="text-align:center;font-weight:600">${t.holes_completed > 0 ? t.total_score : '–'}</td>
       <td style="text-align:center">${formatToPar(hasHandicaps ? t.net_to_par : t.to_par, t.holes_completed)}</td>

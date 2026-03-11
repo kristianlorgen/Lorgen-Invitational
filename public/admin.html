@@ -222,7 +222,8 @@
               <div class="form-group"><label class="form-label">Spillform</label><select class="form-select" id="tFormat">
                 <option value="stableford">Stableford</option>
                 <option value="strokeplay" selected>Slagspill</option>
-                <option value="texas_scramble">Texas Scramble</option>
+                <option value="texas_scramble">2-manns Scramble</option>
+                <option value="texas_scramble_4">Texas Scramble (4-manns)</option>
                 <option value="greensome">Greensome</option>
                 <option value="foursome">Foursome</option>
                 <option value="fourball">Bestball / Four-ball</option>
@@ -263,7 +264,8 @@
               <div class="form-group"><label class="form-label">Spillform</label><select class="form-select" id="editTFormat">
                 <option value="stableford">Stableford</option>
                 <option value="strokeplay">Slagspill</option>
-                <option value="texas_scramble">Texas Scramble</option>
+                <option value="texas_scramble">2-manns Scramble</option>
+                <option value="texas_scramble_4">Texas Scramble (4-manns)</option>
                 <option value="greensome">Greensome</option>
                 <option value="foursome">Foursome</option>
                 <option value="fourball">Bestball / Four-ball</option>
@@ -290,7 +292,8 @@
             <div class="form-group" style="margin:0"><label class="form-label">Velg turnering</label><select class="form-select" id="stagesTournamentSelect" onchange="loadStagesPanel()"><option value="">— Velg turnering —</option></select></div>
             <div class="form-group" style="margin:0"><label class="form-label">Stages</label><input id="stageName" class="form-input" placeholder="Dag 1 – Foursome"></div>
             <div class="form-group" style="margin:0"><label class="form-label">Dato</label><input id="stageDate" class="form-input" type="datetime-local"></div>
-            <div class="form-group" style="margin:0"><label class="form-label">Spillform</label><select class="form-select" id="stageFormat"><option value="strokeplay">Slagspill</option><option value="stableford">Stableford</option><option value="foursome">Foursome</option><option value="fourball">Four-ball</option><option value="matchplay">Matchplay</option></select></div>
+            <div class="form-group" style="margin:0"><label class="form-label">Spillform</label><select class="form-select" id="stageFormat"><option value="strokeplay">Slagspill</option><option value="stableford">Stableford</option><option value="texas_scramble">2-manns Scramble</option><option value="texas_scramble_4">Texas Scramble (4-manns)</option><option value="foursome">Foursome</option><option value="fourball">Four-ball</option><option value="greensome">Greensome</option><option value="matchplay">Matchplay</option></select></div>
+            <div class="form-group" style="margin:0"><label class="form-label">Handicap-prosent</label><input id="stageHandicapPercentage" class="form-input" type="number" min="0" max="100" placeholder="Default"></div>
             <div class="form-group" style="margin:0"><label class="form-label">Rekkefølge</label><input id="stageOrder" class="form-input" type="number" value="1"></div>
           </div>
           <div class="card-body" style="padding-top:0"><button onclick="addStage()" class="btn btn--gold btn--sm">Legg til stage</button></div>
@@ -325,6 +328,8 @@
               <div class="form-group"><label class="form-label">Lagnavn</label><input class="form-input" id="newTeamName" placeholder="Team Eagles"></div>
               <div class="form-group"><label class="form-label">Spiller 1</label><input class="form-input" id="newPlayer1" placeholder="Fornavn"></div>
               <div class="form-group"><label class="form-label">Spiller 2</label><input class="form-input" id="newPlayer2" placeholder="Fornavn"></div>
+              <div class="form-group"><label class="form-label">Spiller 3</label><input class="form-input" id="newPlayer3" placeholder="Valgfri"></div>
+              <div class="form-group"><label class="form-label">Spiller 4</label><input class="form-input" id="newPlayer4" placeholder="Valgfri"></div>
               <div class="form-group">
                 <label class="form-label">PIN (4 siffer)</label>
                 <input class="form-input" id="newPin" type="text" maxlength="4" pattern="[0-9]{4}" placeholder="1234" inputmode="numeric">
@@ -332,6 +337,8 @@
               </div>
               <div class="form-group"><label class="form-label">Hcp Spiller 1</label><input class="form-input" id="newHcp1" type="number" step="0.1" min="0" max="54" placeholder="0.0"></div>
               <div class="form-group"><label class="form-label">Hcp Spiller 2</label><input class="form-input" id="newHcp2" type="number" step="0.1" min="0" max="54" placeholder="0.0"></div>
+              <div class="form-group"><label class="form-label">Hcp Spiller 3</label><input class="form-input" id="newHcp3" type="number" step="0.1" min="0" max="54" placeholder="0.0"></div>
+              <div class="form-group"><label class="form-label">Hcp Spiller 4</label><input class="form-input" id="newHcp4" type="number" step="0.1" min="0" max="54" placeholder="0.0"></div>
             </div>
             <div style="margin-top:16px;display:flex;gap:10px">
               <button onclick="addTeam()" class="btn btn--gold btn--sm"><i class="fas fa-plus"></i> Legg til lag</button>
@@ -358,9 +365,13 @@
               <div class="form-group"><label class="form-label">Lagnavn</label><input class="form-input" id="editTeamName"></div>
               <div class="form-group"><label class="form-label">Spiller 1</label><input class="form-input" id="editTeamP1"></div>
               <div class="form-group"><label class="form-label">Spiller 2</label><input class="form-input" id="editTeamP2"></div>
+              <div class="form-group"><label class="form-label">Spiller 3</label><input class="form-input" id="editTeamP3"></div>
+              <div class="form-group"><label class="form-label">Spiller 4</label><input class="form-input" id="editTeamP4"></div>
               <div class="form-group"><label class="form-label">PIN (4 siffer)</label><input class="form-input" id="editTeamPin" type="text" maxlength="4" inputmode="numeric"></div>
               <div class="form-group"><label class="form-label">Hcp Spiller 1</label><input class="form-input" id="editTeamHcp1" type="number" step="0.1" min="0" max="54" placeholder="0.0"></div>
               <div class="form-group"><label class="form-label">Hcp Spiller 2</label><input class="form-input" id="editTeamHcp2" type="number" step="0.1" min="0" max="54" placeholder="0.0"></div>
+              <div class="form-group"><label class="form-label">Hcp Spiller 3</label><input class="form-input" id="editTeamHcp3" type="number" step="0.1" min="0" max="54" placeholder="0.0"></div>
+              <div class="form-group"><label class="form-label">Hcp Spiller 4</label><input class="form-input" id="editTeamHcp4" type="number" step="0.1" min="0" max="54" placeholder="0.0"></div>
             </div>
             <div style="margin-top:16px;display:flex;gap:10px">
               <button onclick="saveTeamEdit()" class="btn btn--gold btn--sm"><i class="fas fa-floppy-disk"></i> Lagre</button>
@@ -941,6 +952,41 @@ function formatLabel(format) {
   return TournamentFormats.getFormatDefinition(format).label;
 }
 
+
+function getTournamentByIdLocal(tid) {
+  return allTournaments.find((t) => String(t.id) === String(tid));
+}
+
+function resolveAdminSectionsForTournament(format, tournamentMode) {
+  if (tournamentMode === 'ryder_cup') return TournamentFormats.resolveAdminSectionsForTournament('ryder_cup', { usesStages: true });
+  return TournamentFormats.resolveAdminSectionsForTournament(format, { usesStages: tournamentMode === 'multi_stage' });
+}
+
+function applyFormatDrivenAdminLayout(tid) {
+  const t = getTournamentByIdLocal(tid);
+  if (!t) return;
+  const sections = new Set(resolveAdminSectionsForTournament(t.format, t.tournament_mode));
+  const map = { tournament: 'tournament', teams: 'teams', players: 'players', holes: 'holes', gameday: 'gameday', sponsors: 'sponsors', stages: 'stages' };
+  Object.entries(map).forEach(([section, panel]) => {
+    const show = sections.has(section);
+    const link = Array.from(document.querySelectorAll('.sidebar-link[onclick^="showPanel"]')).find((n) => n.getAttribute('onclick').includes(`'${panel}'`));
+    const panelEl = document.getElementById('panel-' + panel);
+    if (link) link.style.display = show ? '' : 'none';
+    if (panelEl) panelEl.style.display = show ? '' : 'none';
+  });
+}
+
+
+
+function renderTeamRuleHint(tid) {
+  const t = getTournamentByIdLocal(tid);
+  if (!t) return;
+  const def = TournamentFormats.getFormatDefinition(t.format);
+  const hint = document.getElementById('teamCount');
+  const handicapRule = def?.handicap?.method === 'weighted' ? (def.handicap.label || 'weighted') : `${def?.handicap?.handicapPercentage || 100}%`;
+  if (hint) hint.textContent = `${hint.textContent || ''} · FORMAT: ${def.label} · HANDICAP: ${handicapRule}`;
+}
+
 function formatTournamentDate(dateValue, includeWeekday = false) {
   const dt = new Date(dateValue);
   if (Number.isNaN(dt.getTime())) return '—';
@@ -970,6 +1016,7 @@ function populateTournamentSelects() {
     if (cur) sel.value = cur;
     else if (defaultT && !cur) sel.value = String(defaultT.id);
   });
+  if (defaultT) applyFormatDrivenAdminLayout(defaultT.id);
 }
 
 function renderTournamentsTable() {
@@ -1099,7 +1146,7 @@ async function loadStagesPanel() {
       document.getElementById('pairingsSetup').innerHTML = 'Opprett en stage først.';
       document.getElementById('pairingMatchesSetup').innerHTML = 'Opprett en stage først.';
     } else {
-      list.innerHTML = stagesData.stages.map(st => `<div style="padding:10px;border:1px solid var(--gold-border);border-radius:12px;margin-bottom:8px;display:flex;justify-content:space-between;gap:8px;align-items:center"><div><strong>${st.name}</strong><div style="font-size:.75rem;color:var(--text-muted)">Dato: ${st.date || '—'} · Spillform: ${TournamentFormats.getFormatDefinition(st.format).label} · Rekkefølge: ${st.stage_order}</div></div><div style="display:flex;gap:6px">${st.id===stagesData.activeStageId?'<span class="badge badge--active">Aktiv stage</span>':`<button class="btn btn--outline btn--sm" onclick="setActiveStage(${tid}, ${st.id})">Sett som aktiv stage</button>`}<button class="btn btn--danger btn--sm" onclick="deleteStage(${st.id})"><i class="fas fa-trash"></i></button></div></div>`).join('');
+      list.innerHTML = stagesData.stages.map(st => `<div style="padding:10px;border:1px solid var(--gold-border);border-radius:12px;margin-bottom:8px;display:flex;justify-content:space-between;gap:8px;align-items:center"><div><strong>${st.name}</strong><div style="font-size:.75rem;color:var(--text-muted)">Dato: ${st.date || '—'} · Spillform: ${TournamentFormats.getFormatDefinition(st.format).label} · Handicap: ${(st.handicap_percentage ?? TournamentFormats.getFormatDefinition(st.format).handicap?.label ?? TournamentFormats.getFormatDefinition(st.format).handicap?.handicapPercentage + '%')} · Rekkefølge: ${st.stage_order}</div></div><div style="display:flex;gap:6px">${st.id===stagesData.activeStageId?'<span class="badge badge--active">Aktiv stage</span>':`<button class="btn btn--outline btn--sm" onclick="setActiveStage(${tid}, ${st.id})">Sett som aktiv stage</button>`}<button class="btn btn--danger btn--sm" onclick="deleteStage(${st.id})"><i class="fas fa-trash"></i></button></div></div>`).join('');
 
       const activeStageId = stagesData.activeStageId || stagesData.stages[0].id;
       const [pairingsData, pairingMatchesData] = await Promise.all([
@@ -1154,7 +1201,7 @@ async function loadStagesPanel() {
 async function addStage() {
   const tid = document.getElementById('stagesTournamentSelect').value;
   if (!tid) return;
-  await api('/api/admin/tournament/' + tid + '/stages', { method: 'POST', body: JSON.stringify({ name: document.getElementById('stageName').value || 'Ny stage', date: document.getElementById('stageDate').value || null, format: document.getElementById('stageFormat').value || 'strokeplay', order: parseInt(document.getElementById('stageOrder').value, 10) || 1, status: 'published' }) });
+  await api('/api/admin/tournament/' + tid + '/stages', { method: 'POST', body: JSON.stringify({ name: document.getElementById('stageName').value || 'Ny stage', date: document.getElementById('stageDate').value || null, format: document.getElementById('stageFormat').value || 'strokeplay', order: parseInt(document.getElementById('stageOrder').value, 10) || 1, handicapPercentage: document.getElementById('stageHandicapPercentage').value || null, status: 'published' }) });
   showToast('Stage opprettet');
   loadStagesPanel();
 }
@@ -1329,21 +1376,24 @@ async function loadTeams() {
   const tid = document.getElementById('teamsTournamentSelect').value;
   if (!tid) return;
   const d = await api('/api/admin/tournament/'+tid+'/teams');
+  applyFormatDrivenAdminLayout(tid);
   document.getElementById('teamCount').textContent = `(${d.teams.length} lag)`;
+  renderTeamRuleHint(tid);
   document.getElementById('teamsTable').innerHTML = !d.teams.length
     ? '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen lag ennå. Legg til ett ovenfor.</td></tr>'
     : d.teams.map((t,i) => {
-        const hcp1 = t.player1_handicap || 0, hcp2 = t.player2_handicap || 0;
-        const hcpStr = (hcp1||hcp2) ? ` <span style="font-size:.75rem;color:var(--text-muted)">(Hcp: ${hcp1}/${hcp2})</span>` : '';
+        const players = [t.player1, t.player2, t.player3, t.player4].filter(Boolean);
+        const handicaps = [t.player1_handicap || 0, t.player2_handicap || 0, t.player3_handicap || 0, t.player4_handicap || 0];
+        const hcpStr = handicaps.some(Boolean) ? ` <span style="font-size:.75rem;color:var(--text-muted)">(Hcp: ${handicaps.filter((_,i)=>players[i]).join('/')})</span>` : '';
         return `
         <tr>
           <td>${i+1}</td>
           <td><strong>${t.team_name}</strong></td>
-          <td>${t.player1}${hcpStr ? '<br>' + hcpStr.replace('Hcp: ','Hcp '+hcp1+'/') : ''}</td>
+          <td>${players.join('<br>')}${hcpStr}</td>
           <td>${t.player2}</td>
           <td><code style="background:var(--gold-pale);padding:2px 8px;border-radius:4px;font-weight:700;color:var(--gold-dark)">${t.pin_code}</code></td>
           <td style="display:flex;gap:6px">
-            <button onclick='editTeam(${t.id},${JSON.stringify(t.team_name)},${JSON.stringify(t.player1)},${JSON.stringify(t.player2)},${JSON.stringify(t.pin_code)},${hcp1},${hcp2})' class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)" title="Rediger"><i class="fas fa-pen"></i></button>
+            <button onclick='editTeam(${t.id},${JSON.stringify(t.team_name)},${JSON.stringify(t.player1)},${JSON.stringify(t.player2)},${JSON.stringify(t.player3 || '')},${JSON.stringify(t.player4 || '')},${JSON.stringify(t.pin_code)},${handicaps[0]},${handicaps[1]},${handicaps[2]},${handicaps[3]})' class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)" title="Rediger"><i class="fas fa-pen"></i></button>
             <button onclick='deleteTeam(${t.id},${JSON.stringify(t.team_name)})' class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
           </td>
         </tr>`;
@@ -1356,27 +1406,35 @@ async function addTeam() {
   const team_name=document.getElementById('newTeamName').value,
         player1=document.getElementById('newPlayer1').value,
         player2=document.getElementById('newPlayer2').value,
+        player3=document.getElementById('newPlayer3').value,
+        player4=document.getElementById('newPlayer4').value,
         pin_code=document.getElementById('newPin').value,
         player1_handicap=document.getElementById('newHcp1').value||0,
-        player2_handicap=document.getElementById('newHcp2').value||0;
+        player2_handicap=document.getElementById('newHcp2').value||0,
+        player3_handicap=document.getElementById('newHcp3').value||0,
+        player4_handicap=document.getElementById('newHcp4').value||0;
   if (!team_name||!player1||!player2||!pin_code) { showToast('Alle felt er påkrevd','error'); return; }
   if (!/^\d{4}$/.test(pin_code)) { showToast('PIN må være nøyaktig 4 siffer','error'); return; }
   try {
-    await api('/api/admin/team',{method:'POST',body:JSON.stringify({tournament_id:tid,team_name,player1,player2,pin_code,player1_handicap,player2_handicap})});
+    await api('/api/admin/team',{method:'POST',body:JSON.stringify({tournament_id:tid,team_name,player1,player2,player3,player4,pin_code,player1_handicap,player2_handicap,player3_handicap,player4_handicap})});
     showToast('Lag lagt til!');
-    ['newTeamName','newPlayer1','newPlayer2','newPin','newHcp1','newHcp2'].forEach(id=>document.getElementById(id).value='');
+    ['newTeamName','newPlayer1','newPlayer2','newPlayer3','newPlayer4','newPin','newHcp1','newHcp2','newHcp3','newHcp4'].forEach(id=>document.getElementById(id).value='');
     await loadTeams(); await loadDashboard(); loadAwardTeams();
   } catch(e) { showToast(e.message,'error'); }
 }
 
-function editTeam(id, team_name, player1, player2, pin_code, hcp1=0, hcp2=0) {
+function editTeam(id, team_name, player1, player2, player3, player4, pin_code, hcp1=0, hcp2=0, hcp3=0, hcp4=0) {
   document.getElementById('editTeamId').value = id;
   document.getElementById('editTeamName').value = team_name;
   document.getElementById('editTeamP1').value = player1;
   document.getElementById('editTeamP2').value = player2;
+  document.getElementById('editTeamP3').value = player3 || '';
+  document.getElementById('editTeamP4').value = player4 || '';
   document.getElementById('editTeamPin').value = pin_code;
   document.getElementById('editTeamHcp1').value = hcp1 || '';
   document.getElementById('editTeamHcp2').value = hcp2 || '';
+  document.getElementById('editTeamHcp3').value = hcp3 || '';
+  document.getElementById('editTeamHcp4').value = hcp4 || '';
   document.getElementById('editTeamCard').classList.remove('d-none');
   document.getElementById('editTeamCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
@@ -1386,13 +1444,17 @@ async function saveTeamEdit() {
   const team_name = document.getElementById('editTeamName').value;
   const player1 = document.getElementById('editTeamP1').value;
   const player2 = document.getElementById('editTeamP2').value;
+  const player3 = document.getElementById('editTeamP3').value;
+  const player4 = document.getElementById('editTeamP4').value;
   const pin_code = document.getElementById('editTeamPin').value;
   const player1_handicap = document.getElementById('editTeamHcp1').value || 0;
   const player2_handicap = document.getElementById('editTeamHcp2').value || 0;
+  const player3_handicap = document.getElementById('editTeamHcp3').value || 0;
+  const player4_handicap = document.getElementById('editTeamHcp4').value || 0;
   if (!team_name || !player1 || !player2 || !pin_code) { showToast('Alle felt er påkrevd', 'error'); return; }
   if (!/^\d{4}$/.test(pin_code)) { showToast('PIN må være nøyaktig 4 siffer', 'error'); return; }
   try {
-    await api('/api/admin/team/' + id, { method: 'PUT', body: JSON.stringify({ team_name, player1, player2, pin_code, player1_handicap, player2_handicap }) });
+    await api('/api/admin/team/' + id, { method: 'PUT', body: JSON.stringify({ team_name, player1, player2, player3, player4, pin_code, player1_handicap, player2_handicap, player3_handicap, player4_handicap }) });
     showToast('Lag oppdatert!');
     document.getElementById('editTeamCard').classList.add('d-none');
     await loadTeams();
@@ -1921,6 +1983,7 @@ async function loadAwardTeams() {
   if (!tid) return;
   try {
     const d = await api('/api/admin/tournament/'+tid+'/teams');
+  applyFormatDrivenAdminLayout(tid);
     awardTeamsCache = d.teams;
     document.getElementById('awardTeam').innerHTML =
       '<option value="">— Velg lag —</option>' +
