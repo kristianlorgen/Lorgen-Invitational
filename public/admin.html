@@ -100,6 +100,7 @@
         <div class="sidebar-label">Turnering</div>
         <div class="sidebar-link" onclick="showPanel('tournament')"><i class="fas fa-calendar-star"></i> Turneringer</div>
         <div class="sidebar-link" onclick="showPanel('teams')"><i class="fas fa-users"></i> Lag</div>
+          <div class="sidebar-link" onclick="showPanel('stages')"><i class="fas fa-layer-group"></i> Stages</div>
         <div class="sidebar-link" onclick="showPanel('holes')"><i class="fas fa-golf-ball-tee"></i> Bane og Hull</div>
         <div class="sidebar-link" onclick="showPanel('courses')"><i class="fas fa-map-location-dot"></i> Baner</div>
         <div class="sidebar-link" onclick="showPanel('gameday')"><i class="fas fa-calendar-day"></i> Spilleregler & Informasjon</div>
@@ -200,6 +201,7 @@
               <div class="form-group"><label class="form-label">Startdato og klokkeslett</label><input class="form-input" id="tDate" type="datetime-local"></div>
               <div class="form-group"><label class="form-label">Sluttdato og klokkeslett</label><input class="form-input" id="tEndDate" type="datetime-local"></div>
               <div class="form-group"><label class="form-label">Bane</label><input class="form-input" id="tCourse" type="text" placeholder="f.eks. Bogstad Golfklubb"></div>
+              <div class="form-group"><label class="form-label">Turneringsmodus</label><select class="form-select" id="tMode"><option value="single_format">Enkeltformat</option><option value="multi_stage">Flerdagers</option><option value="ryder_cup">Ryder Cup</option></select></div>
               <div class="form-group"><label class="form-label">Spillform</label><select class="form-select" id="tFormat">
                 <option value="stableford">Stableford</option>
                 <option value="strokeplay" selected>Slagspill</option>
@@ -240,6 +242,7 @@
               <div class="form-group"><label class="form-label">Startdato og klokkeslett</label><input class="form-input" id="editTDate" type="datetime-local"></div>
               <div class="form-group"><label class="form-label">Sluttdato og klokkeslett</label><input class="form-input" id="editTEndDate" type="datetime-local"></div>
               <div class="form-group"><label class="form-label">Bane</label><input class="form-input" id="editTCourse"></div>
+              <div class="form-group"><label class="form-label">Turneringsmodus</label><select class="form-select" id="editTMode"><option value="single_format">Enkeltformat</option><option value="multi_stage">Flerdagers</option><option value="ryder_cup">Ryder Cup</option></select></div>
               <div class="form-group"><label class="form-label">Spillform</label><select class="form-select" id="editTFormat">
                 <option value="stableford">Stableford</option>
                 <option value="strokeplay">Slagspill</option>
@@ -259,6 +262,25 @@
             </div>
           </div>
         </div>
+      </div>
+
+      <div class="admin-panel" id="panel-stages">
+        <div class="admin-panel-title">Stages</div>
+        <div class="admin-panel-sub">Turneringsdager</div>
+
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-body" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px">
+            <div class="form-group" style="margin:0"><label class="form-label">Velg turnering</label><select class="form-select" id="stagesTournamentSelect" onchange="loadStagesPanel()"><option value="">— Velg turnering —</option></select></div>
+            <div class="form-group" style="margin:0"><label class="form-label">Stages</label><input id="stageName" class="form-input" placeholder="Dag 1 – Foursome"></div>
+            <div class="form-group" style="margin:0"><label class="form-label">Dato</label><input id="stageDate" class="form-input" type="datetime-local"></div>
+            <div class="form-group" style="margin:0"><label class="form-label">Spillform</label><select class="form-select" id="stageFormat"><option value="strokeplay">Slagspill</option><option value="stableford">Stableford</option><option value="foursome">Foursome</option><option value="fourball">Four-ball</option><option value="matchplay">Matchplay</option></select></div>
+            <div class="form-group" style="margin:0"><label class="form-label">Rekkefølge</label><input id="stageOrder" class="form-input" type="number" value="1"></div>
+          </div>
+          <div class="card-body" style="padding-top:0"><button onclick="addStage()" class="btn btn--gold btn--sm">Legg til stage</button></div>
+        </div>
+
+        <div class="card" style="margin-bottom:16px"><div class="card-header"><strong>Turneringsdager</strong></div><div class="card-body" id="stagesList">Velg turnering for å se stages.</div></div>
+        <div class="card"><div class="card-header"><strong>Ryder Cup-oppsett</strong></div><div class="card-body" id="cupSetup">Velg en turnering med modus Ryder Cup.</div></div>
       </div>
 
       <!-- ── LAG ───────────────────────────────────────────────────────────── -->
@@ -853,7 +875,7 @@ function showPanel(id) {
   // Auto-trigger data loading for panels with a tournament select
   const loaders = { holes: loadHoles, teams: loadTeams, scores: loadScores,
                     photos: loadPhotos, awards: loadAwards, gameday: loadGameday,
-                    courses: loadCourses, sponsors: loadSponsorsAdmin };
+                    courses: loadCourses, sponsors: loadSponsorsAdmin, stages: loadStagesPanel };
   if (loaders[id]) loaders[id]();
 }
 
@@ -900,7 +922,7 @@ function formatTournamentDate(dateValue, includeWeekday = false) {
 
 function populateTournamentSelects() {
   const ids = ['teamsTournamentSelect','holesTournamentSelect','scoresTournamentSelect',
-               'awardsTournamentSelect','gamedayTournamentSelect','photosTournamentSelect','sponsorsTournamentSelect'];
+               'awardsTournamentSelect','gamedayTournamentSelect','photosTournamentSelect','sponsorsTournamentSelect','stagesTournamentSelect'];
   // Find the default (active > upcoming) tournament
   const defaultT = allTournaments.find(t => t.is_active) ||
                    allTournaments.find(t => t.status === 'upcoming');
@@ -946,15 +968,16 @@ async function setActiveTournament(id) {
 
 async function createTournament() {
   const name=document.getElementById('tNameInput').value || 'Lorgen Invitational', date=document.getElementById('tDate').value, endDate=document.getElementById('tEndDate').value || date, course=document.getElementById('tCourse').value,
-        description=document.getElementById('tDesc').value, format=document.getElementById('tFormat').value || 'strokeplay', status=document.getElementById('tStatus').value,
+        description=document.getElementById('tDesc').value, tournamentMode=document.getElementById('tMode').value || 'single_format', format=document.getElementById('tFormat').value || 'strokeplay', status=document.getElementById('tStatus').value,
         slope_rating=document.getElementById('tSlope').value||113;
   const year = parseInt(document.getElementById('tYear').value,10) || (date ? new Date(date).getFullYear() : null);
   if (!year||!date) { showToast('Dato og klokkeslett er påkrevd','error'); return; }
   try {
-    await api('/api/admin/tournament',{method:'POST',body:JSON.stringify({year,name,startDate:date,endDate,course,description,format,status,slope_rating})});
+    await api('/api/admin/tournament',{method:'POST',body:JSON.stringify({year,name,startDate:date,endDate,course,description,format,status,slope_rating,tournamentMode})});
     showToast('Turnering opprettet!');
     ['tDate','tEndDate','tCourse','tDesc','tYear'].forEach(id=>document.getElementById(id).value='');
     document.getElementById('tNameInput').value='Lorgen Invitational';
+    document.getElementById('tMode').value='single_format';
     document.getElementById('tFormat').value='strokeplay';
     document.getElementById('tStatus').value='draft';
     document.getElementById('tSlope').value='113';
@@ -983,6 +1006,7 @@ function editTournament(id) {
   document.getElementById('editTEndDate').value = (t.end_date || t.start_date || t.date || '').slice(0,16);
   document.getElementById('editTCourse').value = t.course || '';
   document.getElementById('editTSlope').value = t.slope_rating || 113;
+  document.getElementById('editTMode').value = t.tournament_mode || 'single_format';
   document.getElementById('editTFormat').value = TournamentFormats.normalizeFormat(t.format);
   document.getElementById('editTDesc').value = t.description || '';
   document.getElementById('editTournamentCard').classList.remove('d-none');
@@ -998,11 +1022,12 @@ async function saveTournamentEdit() {
   const course = document.getElementById('editTCourse').value;
   const slope_rating = document.getElementById('editTSlope').value || 113;
   const description = document.getElementById('editTDesc').value;
+  const tournamentMode = document.getElementById('editTMode').value || 'single_format';
   const format = document.getElementById('editTFormat').value || 'strokeplay';
   const status = document.getElementById('editTStatus').value;
   if (!year || !date) { showToast('Dato og klokkeslett er påkrevd', 'error'); return; }
   try {
-    await api('/api/admin/tournament/' + id, { method: 'PUT', body: JSON.stringify({ year, name, startDate: date, endDate, course, slope_rating, description, format, status }) });
+    await api('/api/admin/tournament/' + id, { method: 'PUT', body: JSON.stringify({ year, name, startDate: date, endDate, course, slope_rating, description, format, status, tournamentMode }) });
     showToast('Turnering oppdatert!');
     document.getElementById('editTournamentCard').classList.add('d-none');
     await loadTournaments(); await loadDashboard();
@@ -1020,6 +1045,65 @@ async function deleteTournament(id, name) {
     showToast('Turnering slettet');
     await loadTournaments(); await loadDashboard();
   } catch(e) { showToast(e.message,'error'); }
+}
+
+
+async function loadStagesPanel() {
+  const tid = document.getElementById('stagesTournamentSelect')?.value;
+  if (!tid) return;
+  try {
+    const [stagesData, tSides] = await Promise.all([
+      api('/api/admin/tournament/' + tid + '/stages'),
+      api('/api/admin/tournament/' + tid + '/sides')
+    ]);
+    const list = document.getElementById('stagesList');
+    if (!stagesData.stages.length) {
+      list.innerHTML = '<div style="color:var(--text-muted)">Ingen stage ennå.</div>';
+    } else {
+      list.innerHTML = stagesData.stages.map(st => `<div style="padding:10px;border:1px solid var(--gold-border);border-radius:12px;margin-bottom:8px;display:flex;justify-content:space-between;gap:8px;align-items:center"><div><strong>${st.name}</strong><div style="font-size:.75rem;color:var(--text-muted)">Dato: ${st.date || '—'} · Spillform: ${TournamentFormats.getFormatDefinition(st.format).label} · Rekkefølge: ${st.stage_order}</div></div><div style="display:flex;gap:6px">${st.id===stagesData.activeStageId?'<span class="badge badge--active">Aktiv stage</span>':`<button class="btn btn--outline btn--sm" onclick="setActiveStage(${tid}, ${st.id})">Sett som aktiv stage</button>`}<button class="btn btn--danger btn--sm" onclick="deleteStage(${st.id})"><i class="fas fa-trash"></i></button></div></div>`).join('');
+    }
+    const cupBox = document.getElementById('cupSetup');
+    const t = allTournaments.find(x => String(x.id) === String(tid));
+    if (!t || t.tournament_mode !== 'ryder_cup') {
+      cupBox.innerHTML = 'Velg en turnering med modus Ryder Cup.';
+      return;
+    }
+    cupBox.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><input id="cupSideName" class="form-input" style="max-width:220px" placeholder="Lag-navn"><button class="btn btn--gold btn--sm" onclick="addCupSide(${tid})">Legg til side/lag</button></div>` +
+      (tSides.sides || []).map(s => `<div style="padding:8px;border:1px solid var(--gold-border);border-radius:10px;margin-bottom:6px;display:flex;justify-content:space-between"><span>${s.name}</span><button class="btn btn--danger btn--sm" onclick="deleteCupSide(${s.id})"><i class="fas fa-trash"></i></button></div>`).join('');
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function addStage() {
+  const tid = document.getElementById('stagesTournamentSelect').value;
+  if (!tid) return;
+  await api('/api/admin/tournament/' + tid + '/stages', { method: 'POST', body: JSON.stringify({ name: document.getElementById('stageName').value || 'Ny stage', date: document.getElementById('stageDate').value || null, format: document.getElementById('stageFormat').value || 'strokeplay', order: parseInt(document.getElementById('stageOrder').value, 10) || 1, status: 'published' }) });
+  showToast('Stage opprettet');
+  loadStagesPanel();
+}
+
+async function setActiveStage(tid, stageId) {
+  await api('/api/admin/tournament/' + tid + '/active-stage/' + stageId, { method: 'PUT' });
+  showToast('Aktiv stage oppdatert');
+  loadStagesPanel();
+}
+
+async function deleteStage(stageId) {
+  await api('/api/admin/stage/' + stageId, { method: 'DELETE' });
+  showToast('Stage slettet');
+  loadStagesPanel();
+}
+
+async function addCupSide(tid) {
+  const name = document.getElementById('cupSideName').value;
+  if (!name) return;
+  await api('/api/admin/tournament/' + tid + '/sides', { method: 'POST', body: JSON.stringify({ name }) });
+  document.getElementById('cupSideName').value = '';
+  loadStagesPanel();
+}
+
+async function deleteCupSide(id) {
+  await api('/api/admin/side/' + id, { method: 'DELETE' });
+  loadStagesPanel();
 }
 
 // ── Oversikt (dashboard) ──────────────────────────────────────────────────────
