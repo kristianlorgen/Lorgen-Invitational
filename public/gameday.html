@@ -139,6 +139,7 @@
       <span class="section-tag">Slik Spilles Det</span>
       <h2 class="section-title">2-Mann Scramble <span>Format</span></h2>
       <p class="section-subtitle">Et lagformat designet for maksimal moro og konkurranse</p>
+      <div class="badge" id="gamedayFormatBadge" style="margin:10px auto 0;display:inline-flex">Spillform: —</div>
     </div>
 
     <div style="max-width:840px;margin:0 auto">
@@ -291,6 +292,7 @@
 </footer>
 
 <script src="/js/active-tournament.js"></script>
+<script src="/js/tournament-formats.js"></script>
 <script>
 document.getElementById('footerYear').textContent = new Date().getFullYear();
 window.addEventListener('scroll', () => {
@@ -347,6 +349,7 @@ async function loadGameday() {
   try {
     const t = await ActiveTournament.getActiveTournament();
     if (t) {
+      document.getElementById('gamedayFormatBadge').textContent = `Spillform: ${TournamentFormats.getFormatDefinition(t.format).label}`;
       const datoFull = formatTournamentDate(t.date, true);
       const datoKort = formatTournamentDate(t.date);
 

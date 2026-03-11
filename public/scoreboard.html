@@ -83,6 +83,7 @@
     </div>
     <h1 class="page-hero-title">Resultattavle</h1>
     <p class="page-hero-sub" id="sbTournamentName">Laster...</p>
+    <div id="sbFormatBadge" class="badge" style="display:inline-flex;margin-top:8px">Spillform: —</div>
     <div style="margin-top:12px;font-size:.78rem;color:var(--text-muted)" id="lastUpdated">Oppdateres automatisk i sanntid</div>
   </div>
 </div>
@@ -107,6 +108,7 @@
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;flex-wrap:wrap;gap:12px">
       <div>
         <h2 style="font-family:var(--font-heading);font-size:1.5rem;color:var(--dark)">Ledertavle</h2>
+        <div id="leaderboardFormatHint" style="font-size:.75rem;color:var(--gold-dark);margin-top:4px"></div>
         <p style="font-size:.82rem;color:var(--text-muted);margin-top:2px" id="holesInfo">—</p>
       </div>
       <button onclick="loadScoreboard()" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)">
@@ -162,6 +164,7 @@
     <div class="section-header" style="margin-bottom:28px">
       <span class="section-tag">Hull for Hull</span>
       <h2 class="section-title">Fullstendig <span>Resultatkort</span></h2>
+      <p id="scorecardFormatHint" style="font-size:.8rem;color:var(--text-muted)"></p>
     </div>
     <div class="scorecard-wrap">
       <table class="scorecard" id="scorecardTable">
@@ -227,6 +230,7 @@
 </footer>
 
 <script src="/js/active-tournament.js"></script>
+<script src="/js/tournament-formats.js"></script>
 <script>
 document.getElementById('footerYear').textContent = new Date().getFullYear();
 window.addEventListener('scroll', () => {
@@ -247,6 +251,7 @@ document.addEventListener('click', e => {
 let holes = [];
 let scoreboard = [];
 let currentTournament = null;
+let currentFormatDef = TournamentFormats.getFormatDefinition('strokeplay');
 
 function formatToPar(n, holesCompleted) {
   if (holesCompleted === 0) return '<span class="score-par score-even">–</span>';
@@ -289,22 +294,50 @@ function renderLeaderboard() {
     tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text-muted)">Ingen poeng ennå — sjekk tilbake snart!</td></tr>';
     return;
   }
+  scoreboard = TournamentFormats.buildLeaderboard(currentFormatDef.key, scoreboard);
   const hasHandicaps = scoreboard.some(t => (t.player1_handicap || 0) + (t.player2_handicap || 0) > 0);
   // Update header dynamically when handicaps are active
   const thead = document.querySelector('#leaderboardTable thead tr');
   if (thead) {
-    thead.innerHTML = `
-      <th style="width:56px;text-align:center">Pos</th>
-      <th>Lag</th>
-      <th style="text-align:center">Totalt</th>
-      <th style="text-align:center">+/−</th>
-      ${hasHandicaps ? '<th style="text-align:center">Netto</th>' : ''}
-      <th style="text-align:center">Slag</th>
-      <th style="text-align:center">Hull</th>`;
+    if (currentFormatDef.key === 'stableford') {
+      thead.innerHTML = `
+        <th style="width:56px;text-align:center">Pos</th>
+        <th>Lag</th>
+        <th style="text-align:center">Poeng</th>
+        <th style="text-align:center">Total slag</th>
+        <th style="text-align:center">Hull</th>`;
+    } else if (currentFormatDef.key === 'matchplay') {
+      thead.innerHTML = `
+        <th style="width:56px;text-align:center">Match</th>
+        <th>Lag</th>
+        <th style="text-align:center">Status</th>
+        <th style="text-align:center">Hull</th>`;
+    } else {
+      thead.innerHTML = `
+        <th style="width:56px;text-align:center">Pos</th>
+        <th>Lag</th>
+        <th style="text-align:center">Totalt</th>
+        <th style="text-align:center">+/−</th>
+        ${hasHandicaps ? '<th style="text-align:center">Netto</th>' : ''}
+        <th style="text-align:center">Slag</th>
+        <th style="text-align:center">Hull</th>`;
+    }
   }
   const cols = hasHandicaps ? 7 : 6;
-  tbody.innerHTML = scoreboard.map((t, i) => `
-    <tr class="${i === 0 && t.holes_completed > 0 ? 'leaderboard-row-1' : ''}">
+  tbody.innerHTML = scoreboard.map((t, i) => {
+    if (currentFormatDef.key === 'stableford') {
+      return `<tr class="${i === 0 && t.holes_completed > 0 ? 'leaderboard-row-1' : ''}">
+        <td style="text-align:center">${posBadge(i)}</td>
+        <td class="team-name-cell"><div class="team">${t.team_name}</div><div class="players">${t.player1} &amp; ${t.player2}</div></td>
+        <td style="text-align:center;font-weight:700;color:var(--gold-dark)">${t.stableford_points || 0}</td>
+        <td style="text-align:center">${t.holes_completed > 0 ? t.total_score : '–'}</td>
+        <td style="text-align:center;color:var(--text-muted);font-size:.85rem">${t.holes_completed}/18</td></tr>`;
+    }
+    if (currentFormatDef.key === 'matchplay') {
+      const status = t.to_par === 0 ? 'All square' : (t.to_par < 0 ? `${Math.abs(t.to_par)} up` : `${t.to_par} down`);
+      return `<tr><td style="text-align:center">${i+1}</td><td class="team-name-cell"><div class="team">${t.team_name}</div><div class="players">${t.player1} &amp; ${t.player2}</div></td><td style="text-align:center">${status}</td><td style="text-align:center">${t.holes_completed}/18</td></tr>`;
+    }
+    return `<tr class="${i === 0 && t.holes_completed > 0 ? 'leaderboard-row-1' : ''}">
       <td style="text-align:center">${posBadge(i)}</td>
       <td class="team-name-cell">
         <div class="team">${t.team_name}</div>
@@ -315,7 +348,8 @@ function renderLeaderboard() {
       ${hasHandicaps ? `<td style="text-align:center;font-weight:600;color:var(--gold-dark)">${t.holes_completed > 0 ? t.net_score : '–'}</td>` : ''}
       <td style="text-align:center;color:var(--text-muted);font-size:.85rem">${t.total_score || '–'}</td>
       <td style="text-align:center;color:var(--text-muted);font-size:.85rem">${t.holes_completed}/18</td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 }
 
 function renderScorecard() {
@@ -452,8 +486,12 @@ async function loadScoreboard() {
     document.getElementById('awardsSection').classList.remove('d-none');
 
     currentTournament = d.tournament;
+    currentFormatDef = TournamentFormats.getFormatDefinition(currentTournament?.format);
     holes = d.holes || [];
     scoreboard = d.scoreboard || [];
+    document.getElementById('sbFormatBadge').textContent = `Spillform: ${currentFormatDef.label}`;
+    document.getElementById('leaderboardFormatHint').textContent = `Visning: ${currentFormatDef.label}`;
+    document.getElementById('scorecardFormatHint').textContent = `Scorekort tilpasses automatisk for ${currentFormatDef.label.toLowerCase()}.`;
 
     document.getElementById('sbTournamentName').textContent =
       d.tournament.name + (d.tournament.course ? ' · ' + d.tournament.course : '');

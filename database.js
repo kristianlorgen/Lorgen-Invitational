@@ -1,5 +1,6 @@
 const Database = require('better-sqlite3');
 const fs = require('fs');
+const { normalizeTournamentFormat } = require('./lib/tournament-formats');
 
 if (!fs.existsSync('./data')) {
   fs.mkdirSync('./data', { recursive: true });
@@ -17,7 +18,8 @@ db.exec(`
     date TEXT NOT NULL,
     start_date TEXT,
     end_date TEXT,
-    format TEXT DEFAULT '2-mann scramble',
+    format TEXT DEFAULT 'strokeplay',
+    format_settings TEXT,
     course TEXT DEFAULT '',
     description TEXT DEFAULT '',
     gameday_info TEXT DEFAULT '',
@@ -184,7 +186,8 @@ try { db.exec(`ALTER TABLE teams ADD COLUMN locked INTEGER DEFAULT 0`); } catch(
 try { db.exec(`ALTER TABLE tournaments ADD COLUMN slope_rating INTEGER DEFAULT 113`); } catch(_) {}
 try { db.exec(`ALTER TABLE tournaments ADD COLUMN start_date TEXT`); } catch(_) {}
 try { db.exec(`ALTER TABLE tournaments ADD COLUMN end_date TEXT`); } catch(_) {}
-try { db.exec(`ALTER TABLE tournaments ADD COLUMN format TEXT DEFAULT '2-mann scramble'`); } catch(_) {}
+try { db.exec(`ALTER TABLE tournaments ADD COLUMN format TEXT DEFAULT 'strokeplay'`); } catch(_) {}
+try { db.exec(`ALTER TABLE tournaments ADD COLUMN format_settings TEXT`); } catch(_) {}
 try { db.exec(`ALTER TABLE tournaments ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP`); } catch(_) {}
 try { db.exec(`ALTER TABLE teams ADD COLUMN player1_handicap REAL DEFAULT 0`); } catch(_) {}
 try { db.exec(`ALTER TABLE teams ADD COLUMN player2_handicap REAL DEFAULT 0`); } catch(_) {}
@@ -208,6 +211,18 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS site_settings (
   value TEXT,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`); } catch(_) {}
+
+
+try {
+  const tournaments = db.prepare('SELECT id, format FROM tournaments').all();
+  const updateFormat = db.prepare('UPDATE tournaments SET format=? WHERE id=?');
+  tournaments.forEach((t) => {
+    const normalized = normalizeTournamentFormat(t.format);
+    if ((t.format || '').trim().toLowerCase() !== normalized) {
+      updateFormat.run(normalized, t.id);
+    }
+  });
+} catch (_) {}
 
 const existingActiveTournamentSetting = db.prepare("SELECT value FROM site_settings WHERE key='activeTournamentId' LIMIT 1").get();
 if (!existingActiveTournamentSetting) {

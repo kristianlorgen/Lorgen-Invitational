@@ -15,6 +15,29 @@
     return tournament ? tournament.id : null;
   }
 
+
+  async function getActiveTournamentFormat() {
+    const tournament = await getActiveTournament();
+    if (!tournament) return null;
+    if (global.TournamentFormats) {
+      return global.TournamentFormats.normalizeFormat(tournament.format);
+    }
+    return tournament.format || null;
+  }
+
+  async function useTournamentFormat() {
+    const format = await getActiveTournamentFormat();
+    if (!global.TournamentFormats) return null;
+    return global.TournamentFormats.getFormatDefinition(format);
+  }
+
+  function resolveTournamentPresentation(tournament) {
+    const format = global.TournamentFormats
+      ? global.TournamentFormats.getFormatDefinition(tournament?.format)
+      : { key: tournament?.format || 'strokeplay', label: tournament?.format || 'Slagspill' };
+    return { tournament, format };
+  }
+
   function renderEmptyTournamentState(container, options = {}) {
     if (!container) return;
     const icon = options.icon || '🏌️';
@@ -32,6 +55,9 @@
     getActiveTournament,
     getActiveTournamentId,
     useActiveTournament: getActiveTournament,
+    getActiveTournamentFormat,
+    useTournamentFormat,
+    resolveTournamentPresentation,
     renderEmptyTournamentState
   };
 })(window);
