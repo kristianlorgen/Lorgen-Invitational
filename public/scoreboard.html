@@ -87,11 +87,11 @@
   </div>
 </div>
 
-<!-- ── Ingen aktiv turnering ─────────────────────────────────────────────── -->
+<!-- ── Ingen aktiv turnering valgt ennå ─────────────────────────────────────────────── -->
 <div id="noTournamentState" class="d-none" style="padding:70px 24px;background:var(--off-white)">
   <div class="empty-state">
     <div class="empty-state__icon">📊</div>
-    <h2 class="empty-state__title">Ingen aktiv turnering</h2>
+    <h2 class="empty-state__title">Ingen aktiv turnering valgt ennå</h2>
     <p class="empty-state__description">Resultattavlen tennes opp når turneringen er i gang. Kom tilbake på spilledagen!</p>
     <div class="empty-state__actions">
       <a href="/legacy" class="btn btn--gold"><i class="fas fa-trophy"></i> Se tidligere mestere</a>
@@ -442,7 +442,7 @@ async function loadScoreboard() {
       document.getElementById('sbMain').classList.add('d-none');
       document.getElementById('scorecardSection').classList.add('d-none');
       document.getElementById('awardsSection').classList.add('d-none');
-      document.getElementById('sbTournamentName').textContent = 'Ingen aktiv turnering';
+      document.getElementById('sbTournamentName').textContent = 'Ingen aktiv turnering valgt ennå';
       return;
     }
     document.getElementById('noTournamentState').classList.add('d-none');
