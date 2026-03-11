@@ -376,6 +376,16 @@ function normalizePhotoPath(photoPath = '') {
   return normalized.startsWith('/') ? normalized : `/${normalized}`;
 }
 
+function normalizeSponsorLink(link = '') {
+  if (!link || typeof link !== 'string') return '';
+  const trimmed = link.trim();
+  if (!trimmed) return '';
+  if (/^(https?:)?\/\//i.test(trimmed) || trimmed.startsWith('mailto:') || trimmed.startsWith('tel:') || trimmed.startsWith('/')) {
+    return trimmed;
+  }
+  return `https://${trimmed}`;
+}
+
 function ensureDir(dirPath) {
   if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
 }
@@ -501,7 +511,7 @@ function resolveTeamForActiveTournament(req, pinInput) {
 
 function getSponsorsForTournament(tournamentId, placement) {
   return db.prepare(
-    `SELECT id, tournament_id, placement, slot_key, spot_number, hole_number, sponsor_name, description,
+    `SELECT id, tournament_id, placement, slot_key, spot_number, hole_number, sponsor_name, description, sponsor_link,
             logo_path, is_enabled
      FROM sponsors
      WHERE tournament_id=? AND placement=?
@@ -509,6 +519,7 @@ function getSponsorsForTournament(tournamentId, placement) {
   ).all(tournamentId, placement).map(row => ({
     ...row,
     logo_path: normalizePhotoPath(row.logo_path),
+    sponsor_link: normalizeSponsorLink(row.sponsor_link),
     is_enabled: row.is_enabled ? 1 : 0
   }));
 }
@@ -773,10 +784,11 @@ app.get('/api/sponsors', (req, res) => {
       return res.status(400).json({ error: 'Ugyldig sponsor-plassering' });
     }
 
-    const tournamentId = getActiveTournamentId();
+    const requestedTournamentId = parseInt(req.query.tournament_id, 10);
+    const tournamentId = Number.isFinite(requestedTournamentId) ? requestedTournamentId : getActiveTournamentId();
     if (!tournamentId) return res.json({ sponsors: [] });
 
-    const sponsors = getSponsorsForTournament(tournamentId, placement).filter(s => s.is_enabled);
+    const sponsors = (getSponsorsForTournament(tournamentId, placement) || []).filter(s => s && s.is_enabled);
     if (placement === 'hole') {
       const holeNumber = parseInt(req.query.hole_number, 10);
       if (Number.isFinite(holeNumber)) {
@@ -1608,14 +1620,15 @@ app.post('/api/admin/tournament/:id/sponsors', requireAdmin, (req, res) => {
     const tournamentId = parseInt(req.params.id, 10);
     const sponsors = Array.isArray(req.body.sponsors) ? req.body.sponsors : [];
     const stmt = db.prepare(
-      `INSERT INTO sponsors (tournament_id, placement, slot_key, spot_number, hole_number, sponsor_name, description, logo_path, is_enabled, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+      `INSERT INTO sponsors (tournament_id, placement, slot_key, spot_number, hole_number, sponsor_name, description, sponsor_link, logo_path, is_enabled, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
        ON CONFLICT(tournament_id, placement, slot_key)
        DO UPDATE SET
          spot_number=excluded.spot_number,
          hole_number=excluded.hole_number,
          sponsor_name=excluded.sponsor_name,
          description=excluded.description,
+         sponsor_link=excluded.sponsor_link,
          logo_path=excluded.logo_path,
          is_enabled=excluded.is_enabled,
          updated_at=CURRENT_TIMESTAMP`
@@ -1636,7 +1649,8 @@ app.post('/api/admin/tournament/:id/sponsors', requireAdmin, (req, res) => {
           holeNumber,
           String(item.sponsor_name || '').trim(),
           String(item.description || '').trim(),
-          String(item.logo_path || '').trim(),
+          normalizeSponsorLink(String(item.sponsor_link || '').trim()),
+          normalizePhotoPath(String(item.logo_path || '').trim()),
           item.is_enabled ? 1 : 0
         );
       });

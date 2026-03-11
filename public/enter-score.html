@@ -883,13 +883,13 @@ async function loadScorecard() {
     }
     return;
   }
-  teamData = d.team; holesData = d.holes; tournamentData = d.tournament || null;
+  teamData = d.team || {}; holesData = Array.isArray(d.holes) ? d.holes : []; tournamentData = d.tournament || null;
   activeFormatDef = TournamentFormats.getFormatDefinition(tournamentData?.format);
   document.getElementById('scoreFormatBadge').textContent = `Spillform: ${activeFormatDef.label}`;
-  d.scores.forEach(s => { scoresData[s.hole_number] = s; });
-  if (d.claims) d.claims.forEach(c => { claimsData[c.hole_number + '_' + c.award_type] = c; });
+  (Array.isArray(d.scores) ? d.scores : []).forEach(s => { scoresData[s.hole_number] = s; });
+  (Array.isArray(d.claims) ? d.claims : []).forEach(c => { claimsData[c.hole_number + '_' + c.award_type] = c; });
   holeSponsorsMap = {};
-  if (d.hole_sponsors) d.hole_sponsors.forEach(s => { holeSponsorsMap[s.hole_number] = s; });
+  (Array.isArray(d.hole_sponsors) ? d.hole_sponsors : []).forEach(s => { holeSponsorsMap[s.hole_number] = s; });
   renderAll();
   loadPosition();
   await loadChatMessages();
@@ -1129,6 +1129,20 @@ async function loadPosition() {
   } catch(_) {}
 }
 
+
+function HoleSponsorsList(holeSponsor) {
+  if (!holeSponsor) return '';
+  const sponsorBody = holeSponsor.logo_path
+    ? `<img src="${holeSponsor.logo_path}" alt="${holeSponsor.sponsor_name || 'Sponsor'}" style="width:92px;height:92px;object-fit:contain;border-radius:8px;background:var(--white);padding:4px">`
+    : `<div style="width:92px;height:92px;border-radius:8px;background:var(--white);display:flex;align-items:center;justify-content:center;padding:6px;text-align:center;font-size:.82rem;font-weight:700;color:var(--dark)">${holeSponsor.sponsor_name || 'Ingen sponsor valgt'}</div>`;
+  const textBlock = `<div>
+      <div style="font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);font-weight:700">Hullsponsor</div>
+      <div style="font-weight:700;color:var(--dark)">${holeSponsor.sponsor_name || 'Ingen sponsor valgt'}</div>
+    </div>`;
+  const content = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:10px;border:1px solid var(--gold-border);border-radius:var(--radius-sm);background:var(--gold-pale)">${sponsorBody}${textBlock}</div>`;
+  return holeSponsor.sponsor_link ? `<a href="${holeSponsor.sponsor_link}" target="_blank" rel="noopener noreferrer" style="text-decoration:none;display:block">${content}</a>` : content;
+}
+
 function renderDots() {
   const wrap = document.getElementById('holeDotsRow');
   wrap.innerHTML = holesData.map((h, i) => {
@@ -1159,15 +1173,7 @@ function renderCurrentHole() {
   const ctpClaim = claimsData[h.hole_number + '_closest_to_pin'];
   const holeSponsor = holeSponsorsMap[h.hole_number];
 
-  const sponsorBanner = holeSponsor ? `
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:10px;border:1px solid var(--gold-border);border-radius:var(--radius-sm);background:var(--gold-pale)">
-      ${holeSponsor.logo_path ? `<img src="${holeSponsor.logo_path}" alt="${holeSponsor.sponsor_name || 'Sponsor'}" style="width:92px;height:92px;object-fit:contain;border-radius:8px;background:var(--white);padding:4px">` : ''}
-      <div>
-        <div style="font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);font-weight:700">Hullsponsor</div>
-        <div style="font-weight:700;color:var(--dark)">${holeSponsor.sponsor_name || 'Sponsor'}</div>
-        ${holeSponsor.description ? `<div style="font-size:.78rem;color:var(--text-muted)">${holeSponsor.description}</div>` : ''}
-      </div>
-    </div>` : '';
+  const sponsorBanner = HoleSponsorsList(holeSponsor);
 
   const competitionBanners = [
     hasLd  ? '<div class="competition-banner">🏌️ Utvalgt hull — <strong>Longest Drive</strong> konkurranse! Meld inn ditt beste slag nedenfor.</div>' : '',
