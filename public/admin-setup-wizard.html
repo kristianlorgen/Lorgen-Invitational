@@ -47,6 +47,8 @@
     <div id="loginError" class="error"></div>
   </div>
 
+  <div id="wizardLoading" class="card" style="max-width:520px;margin:40px auto;display:none;color:var(--text)">Laster turneringsdata…</div>
+
   <div id="wizard" style="display:none">
     <div class="header">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
@@ -64,9 +66,12 @@
       <div class="grid">
         <div class="form-group"><label class="form-label">Turneringsnavn</label><input id="name" class="form-input"></div>
         <div class="form-group"><label class="form-label">Format</label><select id="format" class="form-select"></select></div>
-        <div class="form-group"><label class="form-label">Dato</label><input id="date" type="datetime-local" class="form-input"></div>
+        <div class="form-group"><label class="form-label">Startdato og klokkeslett</label><input id="date" type="datetime-local" class="form-input"></div>
+        <div class="form-group"><label class="form-label">Sluttdato og klokkeslett</label><input id="endDate" type="datetime-local" class="form-input"></div>
         <div class="form-group"><label class="form-label">Bane / sted (valgfri)</label><input id="course" class="form-input"></div>
-        <div class="form-group"><label class="form-label">Handicapprosent</label><input id="hcpPercent" type="number" min="0" max="100" class="form-input"></div>
+        <div class="form-group"><label class="form-label">Handicapprosent</label><input id="hcpPercent" type="number" min="0" max="100" step="1" class="form-input"></div>
+        <div class="form-group"><label class="form-label">Status</label><select id="status" class="form-select"><option value="draft">Utkast</option><option value="published">Publisert</option><option value="live">Live</option><option value="paused">Pauset</option><option value="completed">Fullført</option><option value="archived">Arkivert</option></select></div>
+        <div class="form-group" style="grid-column:1/-1"><label class="form-label">Beskrivelse</label><textarea id="description" class="form-input form-textarea" style="min-height:70px"></textarea></div>
       </div>
       <div id="step1Error" class="error"></div>
     </div></section>
@@ -118,6 +123,8 @@ let step = 0;
 const totalSteps = 4;
 let saving = false;
 const state = {
+  mode: 'create',
+  tournamentId: null,
   selectedFormat: 'strokeplay',
   participants: [],
   teams: [],
@@ -192,6 +199,98 @@ function ensureTeamShape(team, idx, size) {
       handicap: team?.players?.[pi]?.handicap ?? ''
     }))
   };
+}
+
+const toDatetimeLocal = (value) => String(value || '').slice(0, 16);
+
+function resolveFormatKey(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  const map = {
+    strokeplay: 'strokeplay',
+    stableford: 'stableford',
+    scramble2: 'scramble2',
+    scramble3: 'scramble3',
+    scramble4: 'scramble4',
+    bestball2: 'bestball2',
+    texas_scramble: 'scramble2',
+    texas_scramble_4: 'scramble4',
+    fourball: 'bestball2',
+    scramble: 'scramble2'
+  };
+  return map[normalized] || 'strokeplay';
+}
+
+function wizardStateFromExisting(data) {
+  const tournament = data?.tournament || {};
+  const formatKey = resolveFormatKey(tournament.format);
+  const cfg = formatSettings[formatKey] || formatSettings.strokeplay;
+  const storedHcp = Number(tournament.handicap_percentage);
+  const defaultHcp = Number(cfg.defaultHcpPercent || 100);
+  const teams = Array.isArray(data?.teams) ? data.teams : [];
+  const mappedTeams = teams.map((team, idx) => {
+    const sourcePlayers = Array.isArray(team.players) && team.players.length
+      ? team.players.map((player) => ({ id: player.id, name: player.player_name, handicap: player.handicap }))
+      : [
+          { name: team.player1, handicap: team.player1_handicap },
+          { name: team.player2, handicap: team.player2_handicap },
+          { name: team.player3, handicap: team.player3_handicap },
+          { name: team.player4, handicap: team.player4_handicap }
+        ].filter((player) => String(player.name || '').trim());
+    return ensureTeamShape({ id: team.id, name: team.team_name, pin: team.pin_code, players: sourcePlayers }, idx, cfg.teamSize);
+  });
+  const mappedParticipants = teams.map((team) => ({
+    id: team.id,
+    name: team.player1 || team.team_name || '',
+    pin: pinSanitize(team.pin_code || ''),
+    handicap: team.player1_handicap ?? ''
+  }));
+
+  return {
+    tournamentId: tournament.id,
+    mode: 'edit',
+    step1: {
+      name: tournament.name || 'Lorgen Invitational',
+      format: formatKey,
+      startDate: toDatetimeLocal(tournament.start_date || tournament.date),
+      endDate: toDatetimeLocal(tournament.end_date || tournament.start_date || tournament.date),
+      course: tournament.course || '',
+      handicapPercent: Number.isFinite(storedHcp) ? storedHcp : defaultHcp,
+      status: tournament.status || 'draft',
+      description: tournament.description || ''
+    },
+    step2: {
+      setupMode: cfg.useTeams ? 'manual' : 'players',
+      teams: mappedTeams,
+      participants: mappedParticipants
+    }
+  };
+}
+
+function applyWizardState(next) {
+  state.mode = next.mode || 'create';
+  state.tournamentId = next.tournamentId || null;
+  state.selectedFormat = next.step1?.format || state.selectedFormat;
+  state.teamSetupMode = next.step2?.setupMode || selectedFormatConfig().defaultMode;
+  state.teams = next.step2?.teams || [];
+  state.teamPool = next.step2?.teamPool || [];
+  state.participants = next.step2?.participants || [];
+
+  document.getElementById('name').value = next.step1?.name || 'Lorgen Invitational';
+  document.getElementById('format').value = state.selectedFormat;
+  document.getElementById('date').value = next.step1?.startDate || '';
+  document.getElementById('endDate').value = next.step1?.endDate || next.step1?.startDate || '';
+  document.getElementById('course').value = next.step1?.course || '';
+  document.getElementById('hcpPercent').value = next.step1?.handicapPercent ?? selectedFormatConfig().defaultHcpPercent;
+  document.getElementById('status').value = next.step1?.status || 'draft';
+  document.getElementById('description').value = next.step1?.description || '';
+
+  const publishAction = document.getElementById('publishAction');
+  publishAction.innerHTML = state.mode === 'edit'
+    ? '<option value="update">Oppdater turnering</option><option value="draft">Lagre som utkast</option>'
+    : '<option value="create_and_set_active">Lagre og sett som aktiv</option><option value="create_and_open_scoring">Lagre og åpne scorecard</option><option value="create_and_publish_leaderboard">Lagre og publiser leaderboard</option><option value="draft">Lagre som utkast</option>';
+
+  renderParticipants();
+  renderStep();
 }
 
 function renderFormatOptions() {
@@ -461,12 +560,14 @@ function buildPayload(action = 'draft') {
       name: document.getElementById('name').value.trim(),
       year: new Date(document.getElementById('date').value || Date.now()).getFullYear(),
       startDate: document.getElementById('date').value,
-      endDate: document.getElementById('date').value,
+      endDate: document.getElementById('endDate').value || document.getElementById('date').value,
       format: cfg.apiFormat,
-      description: '',
-      mode: 'single_format'
+      description: document.getElementById('description').value.trim(),
+      status: document.getElementById('status').value || 'draft',
+      mode: 'single_format',
+      tournamentId: state.tournamentId
     },
-    structure: { course: document.getElementById('course').value.trim(), holesCount: 18, slopeRating: 113, stages: [] },
+    structure: { course: document.getElementById('course').value.trim(), holesCount: 18, slopeRating: 113, stages: [{ name: 'Dag 1', date: document.getElementById('date').value, format: cfg.apiFormat }] },
     rules: { useHandicap: true, handicapMethod: 'percentage', handicapPercentage: Number(document.getElementById('hcpPercent').value || cfg.defaultHcpPercent) },
     participants: {
       mode: cfg.useTeams ? 'team' : 'individual',
@@ -476,8 +577,8 @@ function buildPayload(action = 'draft') {
       teams: state.teams,
       teamPool: state.teamPool,
       rows: cfg.useTeams
-        ? state.teams.map((team, idx) => ({ teamName: String(team.name || '').trim() || `Lag ${idx + 1}`, pin: team.pin, players: team.players }))
-        : state.participants
+        ? state.teams.map((team, idx) => ({ id: team.id, teamName: String(team.name || '').trim() || `Lag ${idx + 1}`, pin: team.pin, players: (team.players || []).map((player) => ({ id: player.id, name: player.name, handicap: player.handicap })) }))
+        : state.participants.map((player) => ({ id: player.id, name: player.name, pin: player.pin, handicap: player.handicap }))
     },
     publishAction: action
   };
@@ -572,7 +673,8 @@ function applyFormatDefaults(formatKey) {
   const cfg = formatSettings[formatKey] ?? formatSettings.strokeplay;
   state.selectedFormat = formatKey;
   state.teamSetupMode = cfg.defaultMode;
-  document.getElementById('hcpPercent').value = cfg.defaultHcpPercent;
+  const hcpInput = document.getElementById('hcpPercent');
+  if (!state.tournamentId || hcpInput.value === '') hcpInput.value = cfg.defaultHcpPercent;
   state.teams = state.teams.map((team, idx) => ensureTeamShape(team, idx, cfg.teamSize));
   renderParticipants();
   renderStep();
@@ -586,15 +688,50 @@ function hook() {
 async function boot() {
   const ok = await checkAdmin();
   document.getElementById('loginCard').style.display = ok ? 'none' : 'block';
-  document.getElementById('wizard').style.display = ok ? 'block' : 'none';
+  document.getElementById('wizard').style.display = 'none';
+  document.getElementById('wizardLoading').style.display = 'none';
   if (!ok) return;
-  document.getElementById('name').value = 'Lorgen Invitational';
+
+  renderFormatOptions();
+  hook();
+
+  const params = new URLSearchParams(window.location.search);
+  const tournamentId = Number(params.get('tournamentId'));
+  if (Number.isFinite(tournamentId) && tournamentId > 0) {
+    document.getElementById('wizardLoading').style.display = 'block';
+    try {
+      const existing = await api(`/api/admin/tournament-wizard/${tournamentId}`);
+      const mapped = wizardStateFromExisting(existing);
+      applyWizardState(mapped);
+      document.getElementById('wizard').style.display = 'block';
+    } catch (e) {
+      document.getElementById('wizard').style.display = 'block';
+      alert(e.message || 'Kunne ikke laste eksisterende turnering.');
+      applyFormatDefaults(state.selectedFormat);
+    } finally {
+      document.getElementById('wizardLoading').style.display = 'none';
+    }
+    return;
+  }
+
   const now = new Date();
   now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-  document.getElementById('date').value = now.toISOString().slice(0, 16);
-  renderFormatOptions();
-  applyFormatDefaults(state.selectedFormat);
-  hook();
+  applyWizardState({
+    mode: 'create',
+    tournamentId: null,
+    step1: {
+      name: 'Lorgen Invitational',
+      format: state.selectedFormat,
+      startDate: now.toISOString().slice(0, 16),
+      endDate: now.toISOString().slice(0, 16),
+      course: '',
+      handicapPercent: selectedFormatConfig().defaultHcpPercent,
+      status: 'draft',
+      description: ''
+    },
+    step2: { setupMode: selectedFormatConfig().defaultMode, teams: [], teamPool: [], participants: [] }
+  });
+  document.getElementById('wizard').style.display = 'block';
 }
 
 boot();
