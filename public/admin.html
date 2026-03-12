@@ -275,6 +275,7 @@
               </select></div>
               <div class="form-group"><label class="form-label">Status</label><select class="form-select" id="editTStatus"><option value="draft">Utkast</option><option value="published">Publisert</option><option value="live">Live</option><option value="paused">Pauset</option><option value="completed">Fullført</option><option value="archived">Arkivert</option></select></div>
               <div class="form-group"><label class="form-label">Slope Rating</label><input class="form-input" id="editTSlope" type="number" min="55" max="155" value="113"></div>
+              <div class="form-group"><label class="form-label">Handicapprosent</label><input class="form-input" id="editTHandicapPercent" type="number" min="0" max="100" step="1"></div>
               <div class="form-group" style="grid-column:1/-1"><label class="form-label">Beskrivelse</label><textarea class="form-input form-textarea" id="editTDesc" style="min-height:60px"></textarea></div>
             </div>
             <div style="margin-top:16px;display:flex;gap:10px">
@@ -1095,6 +1096,10 @@ function editTournament(id) {
   document.getElementById('editTMode').value = t.tournament_mode || 'single_format';
   document.getElementById('editTFormat').value = TournamentFormats.normalizeFormat(t.format);
   document.getElementById('editTDesc').value = t.description || '';
+  const editFormatDef = TournamentFormats.getFormatDefinition(TournamentFormats.normalizeFormat(t.format));
+  const editDefaultHcp = Number(editFormatDef?.handicap?.handicapPercentage || 100);
+  const editStoredHcp = Number(t.handicap_percentage);
+  document.getElementById('editTHandicapPercent').value = Number.isFinite(editStoredHcp) ? editStoredHcp : editDefaultHcp;
   document.getElementById('editTournamentCard').classList.remove('d-none');
   document.getElementById('editTournamentCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
@@ -1111,9 +1116,10 @@ async function saveTournamentEdit() {
   const tournamentMode = document.getElementById('editTMode').value || 'single_format';
   const format = document.getElementById('editTFormat').value || 'strokeplay';
   const status = document.getElementById('editTStatus').value;
+  const handicapPercentage = document.getElementById('editTHandicapPercent').value;
   if (!year || !date) { showToast('Dato og klokkeslett er påkrevd', 'error'); return; }
   try {
-    await api('/api/admin/tournament/' + id, { method: 'PUT', body: JSON.stringify({ year, name, startDate: date, endDate, course, slope_rating, description, format, status, tournamentMode }) });
+    await api('/api/admin/tournament/' + id, { method: 'PUT', body: JSON.stringify({ year, name, startDate: date, endDate, course, slope_rating, description, format, status, tournamentMode, handicapPercentage }) });
     showToast('Turnering oppdatert!');
     document.getElementById('editTournamentCard').classList.add('d-none');
     await loadTournaments(); await loadDashboard();
