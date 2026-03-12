@@ -56,7 +56,7 @@
       sorter: (a,b)=>(a.to_par||0)-(b.to_par||0)
     },
     texas_scramble_4: {
-      key: 'scramble4', label: 'Texas Scramble', teamBased: true, participantMode: 'team', teamSize: 4,
+      key: 'scramble4', label: 'Texas Scramble (4-manns)', teamBased: true, participantMode: 'team', teamSize: 4,
       scoreEntryLabel: 'Lagets slag', scoreDisplay: 'Lagscore', leaderboardColumns: ['Plass', 'Lag', 'Total', 'Vs par', 'Hull'],
       adminSections: [ADMIN_SECTIONS.TOURNAMENT_INFO, ADMIN_SECTIONS.TEAMS, ADMIN_SECTIONS.COURSE_AND_HOLES, ADMIN_SECTIONS.GAMEDAY, ADMIN_SECTIONS.SPONSORS, ADMIN_SECTIONS.CONTROL_PANEL],
       handicap: { method: 'weighted', weights: [25, 20, 15, 10], label: '25/20/15/10' },
@@ -86,6 +86,17 @@
   function getFormatDefinition(format) {
     const key = normalizeFormat(format);
     return DEFINITIONS[key] || DEFINITIONS.strokeplay;
+  }
+
+
+  function getTournamentFormatMeta(format) {
+    const def = getFormatDefinition(format);
+    return {
+      formatKey: def.key,
+      displayName: def.label,
+      teamSize: Number(def.teamSize || 1),
+      isTeamFormat: Number(def.teamSize || 1) > 1
+    };
   }
 
   function resolveAdminSectionsForTournament(format, options = {}) {
@@ -154,5 +165,5 @@
     return [...data].sort(def.sorter);
   }
 
-  global.TournamentFormats = { normalizeFormat, getFormatDefinition, resolveAdminSectionsForTournament, resolveAdminSectionsForTournamentFormats, resolveHandicapConfig, calculatePlayingHandicap, calculateTeamHandicap, calculateHoleResult, calculateRoundResult, buildLeaderboard };
+  global.TournamentFormats = { normalizeFormat, getFormatDefinition, getTournamentFormatMeta, resolveAdminSectionsForTournament, resolveAdminSectionsForTournamentFormats, resolveHandicapConfig, calculatePlayingHandicap, calculateTeamHandicap, calculateHoleResult, calculateRoundResult, buildLeaderboard };
 })(window);

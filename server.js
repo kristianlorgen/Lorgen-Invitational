@@ -6,7 +6,7 @@ const multer  = require('multer');
 const path    = require('path');
 const fs      = require('fs');
 const db      = require('./database');
-const { normalizeTournamentFormat, getFormatDefinition, calculateTeamHandicap, resolveHandicapConfig, validateTeamSizeForFormat } = require('./lib/tournament-formats');
+const { normalizeTournamentFormat, getFormatDefinition, getTournamentFormatMeta, calculateTeamHandicap, resolveHandicapConfig } = require('./lib/tournament-formats');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -394,6 +394,35 @@ function getTeamByTournamentAndPin(tournamentId, pinInput) {
 
   const teams = db.prepare('SELECT * FROM teams WHERE tournament_id=?').all(tournamentId);
   return teams.find((team) => normalizePin(team.pin_code) === normalizedPin) || null;
+}
+
+
+function teamSizeErrorMessage(format, required) {
+  const normalized = normalizeTournamentFormat(format);
+  if (!required || required <= 1) return 'Denne spillformen tillater ikke lag i dette oppsettet';
+  if (normalized === 'texas_scramble' || normalized === 'scramble2') return '2-manns scramble krever nøyaktig 2 spillere per lag';
+  if (normalized === 'texas_scramble_4' || normalized === 'scramble4') return 'Texas Scramble (4-manns) krever nøyaktig 4 spillere per lag';
+  return `Dette formatet krever nøyaktig ${required} spillere per lag`;
+}
+
+function normalizeTeamPayload(body = {}, requiredTeamSize = 2) {
+  const playersFromLegacy = [0, 1, 2, 3].map((idx) => ({
+    name: String(body[`player${idx + 1}`] || '').trim(),
+    handicap: Number(body[`player${idx + 1}_handicap`] || 0)
+  }));
+  const playersFromArray = Array.isArray(body.players)
+    ? body.players.map((player) => ({
+        name: String(player?.name || player?.player_name || '').trim(),
+        handicap: Number(player?.handicap || 0)
+      }))
+    : [];
+  const players = (playersFromArray.length ? playersFromArray : playersFromLegacy).filter((player) => player.name);
+  return {
+    tournament_id: Number(body.tournament_id),
+    team_name: String(body.team_name || '').trim(),
+    pin_code: normalizePin(body.pin_code),
+    players: players.slice(0, Math.max(requiredTeamSize, 4))
+  };
 }
 
 function validateWizardParticipants(format, participants, mode = 'single_format') {
@@ -2578,45 +2607,125 @@ app.get('/api/admin/tournament/:id/teams', requireAdmin, (req, res) => {
 });
 
 app.post('/api/admin/team', requireAdmin, (req, res) => {
-  const { tournament_id, team_name, player1, player2, player3, player4, pin_code, player1_handicap, player2_handicap, player3_handicap, player4_handicap } = req.body;
-  const normalizedPin = normalizePin(pin_code);
-  if (!tournament_id || !player1 || !player2 || !pin_code)
-    return res.status(400).json({ error: 'Alle felt er påkrevd' });
-  if (!pinValid(normalizedPin)) return res.status(400).json({ error: 'PIN må være nøyaktig 4 siffer' });
   try {
-    const tournament = getTournamentById(tournament_id);
+    const tournamentId = Number(req.body.tournament_id);
+    if (!tournamentId) return res.status(400).json({ error: 'Du må velge en turnering' });
+    const tournament = getTournamentById(tournamentId);
     if (!tournament) return res.status(404).json({ error: 'Turnering ikke funnet' });
-    const getTeamName = createTeamNameGenerator(tournament_id);
-    const players = [player1, player2, player3, player4].filter((p) => String(p || '').trim());
-    const sizeValidation = validateTeamSizeForFormat(tournament.format, players.length);
-    if (!sizeValidation.valid) return res.status(400).json({ error: `Dette formatet krever nøyaktig ${sizeValidation.required} spillere per lag` });
-    const existing = getTeamByTournamentAndPin(tournament_id, normalizedPin);
+
+    const meta = getTournamentFormatMeta(tournament.format);
+    const payload = normalizeTeamPayload(req.body, meta.teamSize);
+    if (!meta.isTeamFormat) return res.status(400).json({ error: 'Denne spillformen tillater ikke lag i dette oppsettet' });
+    if (!payload.team_name) return res.status(400).json({ error: 'Lagnavn er påkrevd' });
+    if (!pinValid(payload.pin_code)) return res.status(400).json({ error: 'PIN må være nøyaktig 4 siffer' });
+    if (payload.players.length !== meta.teamSize) return res.status(400).json({ error: teamSizeErrorMessage(tournament.format, meta.teamSize) });
+    if (payload.players.some((player) => !player.name || !Number.isFinite(Number(player.handicap)))) {
+      return res.status(400).json({ error: 'Alle spillere må ha navn og handicap' });
+    }
+
+    const existing = getTeamByTournamentAndPin(tournamentId, payload.pin_code);
     if (existing) return res.status(400).json({ error: 'PIN allerede i bruk i denne turneringen' });
-    const result = db.prepare(
-      'INSERT INTO teams (tournament_id, team_name, player1, player2, player3, player4, pin_code, player1_handicap, player2_handicap, player3_handicap, player4_handicap) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
-    ).run(tournament_id, getTeamName(team_name), player1, player2, player3 || '', player4 || '', normalizedPin, parseFloat(player1_handicap)||0, parseFloat(player2_handicap)||0, parseFloat(player3_handicap)||0, parseFloat(player4_handicap)||0);
-    res.json({ success: true, id: result.lastInsertRowid });
+
+    const getTeamName = createTeamNameGenerator(tournamentId);
+    const slots = [0, 1, 2, 3].map((idx) => payload.players[idx] || { name: '', handicap: 0 });
+
+    const insertResult = db.transaction(() => {
+      const teamResult = db.prepare(
+        'INSERT INTO teams (tournament_id, team_name, player1, player2, player3, player4, pin_code, player1_handicap, player2_handicap, player3_handicap, player4_handicap) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
+      ).run(
+        tournamentId,
+        getTeamName(payload.team_name),
+        slots[0].name,
+        slots[1].name,
+        slots[2].name,
+        slots[3].name,
+        payload.pin_code,
+        Number(slots[0].handicap || 0),
+        Number(slots[1].handicap || 0),
+        Number(slots[2].handicap || 0),
+        Number(slots[3].handicap || 0)
+      );
+
+      const teamId = Number(teamResult.lastInsertRowid);
+      const findPlayer = db.prepare('SELECT * FROM players WHERE tournament_id=? AND lower(name)=lower(?) LIMIT 1');
+      const insertPlayer = db.prepare('INSERT INTO players (tournament_id, name, handicap, active, updated_at) VALUES (?,?,?,1,CURRENT_TIMESTAMP)');
+      const updatePlayer = db.prepare('UPDATE players SET handicap=?, active=1, updated_at=CURRENT_TIMESTAMP WHERE id=?');
+      const insertTeamPlayer = db.prepare('INSERT INTO team_players (team_id, player_id, player_name, handicap, sort_order, updated_at) VALUES (?,?,?,?,?,CURRENT_TIMESTAMP)');
+
+      payload.players.forEach((player, idx) => {
+        let playerRow = findPlayer.get(tournamentId, player.name);
+        if (!playerRow) {
+          const playerResult = insertPlayer.run(tournamentId, player.name, Number(player.handicap || 0));
+          playerRow = { id: Number(playerResult.lastInsertRowid), name: player.name, handicap: Number(player.handicap || 0) };
+        } else {
+          updatePlayer.run(Number(player.handicap || 0), playerRow.id);
+        }
+        insertTeamPlayer.run(teamId, playerRow.id, player.name, Number(player.handicap || 0), idx + 1);
+      });
+
+      return teamId;
+    })();
+
+    res.json({ success: true, id: insertResult });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.put('/api/admin/team/:id', requireAdmin, (req, res) => {
-  const { team_name, player1, player2, player3, player4, pin_code, player1_handicap, player2_handicap, player3_handicap, player4_handicap } = req.body;
-  const normalizedPin = normalizePin(pin_code);
-  if (!player1 || !player2 || !pin_code)
-    return res.status(400).json({ error: 'Alle felt er påkrevd' });
-  if (!pinValid(normalizedPin)) return res.status(400).json({ error: 'PIN må være nøyaktig 4 siffer' });
   try {
     const existingTeam = db.prepare('SELECT tournament_id FROM teams WHERE id=?').get(req.params.id);
     if (!existingTeam) return res.status(404).json({ error: 'Lag ikke funnet' });
     const tournament = getTournamentById(existingTeam.tournament_id);
-    const getTeamName = createTeamNameGenerator(existingTeam.tournament_id, req.params.id);
-    const players = [player1, player2, player3, player4].filter((p) => String(p || '').trim());
-    const sizeValidation = validateTeamSizeForFormat(tournament?.format, players.length);
-    if (!sizeValidation.valid) return res.status(400).json({ error: `Dette formatet krever nøyaktig ${sizeValidation.required} spillere per lag` });
-    const duplicatePin = db.prepare('SELECT id FROM teams WHERE tournament_id=? AND pin_code=? AND id<>? LIMIT 1').get(existingTeam.tournament_id, normalizedPin, req.params.id);
+    const meta = getTournamentFormatMeta(tournament?.format);
+    const payload = normalizeTeamPayload({ ...req.body, tournament_id: existingTeam.tournament_id }, meta.teamSize);
+
+    if (!meta.isTeamFormat) return res.status(400).json({ error: 'Denne spillformen tillater ikke lag i dette oppsettet' });
+    if (!payload.team_name) return res.status(400).json({ error: 'Lagnavn er påkrevd' });
+    if (!pinValid(payload.pin_code)) return res.status(400).json({ error: 'PIN må være nøyaktig 4 siffer' });
+    if (payload.players.length !== meta.teamSize) return res.status(400).json({ error: teamSizeErrorMessage(tournament?.format, meta.teamSize) });
+    if (payload.players.some((player) => !player.name || !Number.isFinite(Number(player.handicap)))) {
+      return res.status(400).json({ error: 'Alle spillere må ha navn og handicap' });
+    }
+
+    const duplicatePin = db.prepare('SELECT id FROM teams WHERE tournament_id=? AND pin_code=? AND id<>? LIMIT 1').get(existingTeam.tournament_id, payload.pin_code, req.params.id);
     if (duplicatePin) return res.status(400).json({ error: 'PIN allerede i bruk i denne turneringen' });
-    db.prepare('UPDATE teams SET team_name=?, player1=?, player2=?, player3=?, player4=?, pin_code=?, player1_handicap=?, player2_handicap=?, player3_handicap=?, player4_handicap=? WHERE id=?')
-      .run(getTeamName(team_name), player1, player2, player3 || '', player4 || '', normalizedPin, parseFloat(player1_handicap)||0, parseFloat(player2_handicap)||0, parseFloat(player3_handicap)||0, parseFloat(player4_handicap)||0, req.params.id);
+
+    const getTeamName = createTeamNameGenerator(existingTeam.tournament_id, req.params.id);
+    const slots = [0, 1, 2, 3].map((idx) => payload.players[idx] || { name: '', handicap: 0 });
+
+    db.transaction(() => {
+      db.prepare('UPDATE teams SET team_name=?, player1=?, player2=?, player3=?, player4=?, pin_code=?, player1_handicap=?, player2_handicap=?, player3_handicap=?, player4_handicap=? WHERE id=?')
+        .run(
+          getTeamName(payload.team_name),
+          slots[0].name,
+          slots[1].name,
+          slots[2].name,
+          slots[3].name,
+          payload.pin_code,
+          Number(slots[0].handicap || 0),
+          Number(slots[1].handicap || 0),
+          Number(slots[2].handicap || 0),
+          Number(slots[3].handicap || 0),
+          req.params.id
+        );
+
+      db.prepare('DELETE FROM team_players WHERE team_id=?').run(req.params.id);
+      const findPlayer = db.prepare('SELECT * FROM players WHERE tournament_id=? AND lower(name)=lower(?) LIMIT 1');
+      const insertPlayer = db.prepare('INSERT INTO players (tournament_id, name, handicap, active, updated_at) VALUES (?,?,?,1,CURRENT_TIMESTAMP)');
+      const updatePlayer = db.prepare('UPDATE players SET handicap=?, active=1, updated_at=CURRENT_TIMESTAMP WHERE id=?');
+      const insertTeamPlayer = db.prepare('INSERT INTO team_players (team_id, player_id, player_name, handicap, sort_order, updated_at) VALUES (?,?,?,?,?,CURRENT_TIMESTAMP)');
+
+      payload.players.forEach((player, idx) => {
+        let playerRow = findPlayer.get(existingTeam.tournament_id, player.name);
+        if (!playerRow) {
+          const playerResult = insertPlayer.run(existingTeam.tournament_id, player.name, Number(player.handicap || 0));
+          playerRow = { id: Number(playerResult.lastInsertRowid) };
+        } else {
+          updatePlayer.run(Number(player.handicap || 0), playerRow.id);
+        }
+        insertTeamPlayer.run(req.params.id, playerRow.id, player.name, Number(player.handicap || 0), idx + 1);
+      });
+    })();
+
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
