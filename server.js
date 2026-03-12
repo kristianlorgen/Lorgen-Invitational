@@ -230,11 +230,15 @@ function getActiveTournamentId() {
 
 function getActiveTournament() {
   const activeTournamentId = getActiveTournamentId();
-  if (!activeTournamentId) return null;
-  const tournament = getTournamentById(activeTournamentId);
-  if (!tournament) return null;
-  if (tournament.status === 'archived') return null;
-  return tournament;
+  if (activeTournamentId) {
+    const tournament = getTournamentById(activeTournamentId);
+    if (tournament && tournament.status !== 'archived') return tournament;
+  }
+  const dbActive = db.prepare("SELECT id FROM tournaments WHERE active=1 ORDER BY updated_at DESC, id DESC LIMIT 1").get();
+  if (!dbActive?.id) return null;
+  const fallback = getTournamentById(dbActive.id);
+  if (!fallback || fallback.status === 'archived') return null;
+  return fallback;
 }
 
 function createTeamNameGenerator(tournamentId, excludeTeamId = null) {
@@ -377,7 +381,7 @@ function normalizePin(pin) {
 
 function assertValidPin(pin) {
   if (!/^\d{4}$/.test(String(pin || ''))) {
-    throw new Error('PIN must be exactly 4 digits');
+    throw new Error('PIN må være nøyaktig 4 siffer');
   }
 }
 
@@ -413,7 +417,7 @@ function validateWizardParticipants(format, participants, mode = 'single_format'
   if (def.teamSize === 1 || def.participantMode === 'individual') {
     const invalidPlayer = rows.find((row) => {
       const pin = String(row?.pin || '').trim();
-      if (!/^\d{4}$/.test(pin)) throw new Error('PIN must be exactly 4 digits');
+      if (!/^\d{4}$/.test(pin)) throw new Error('PIN må være nøyaktig 4 siffer');
       return !String(row?.name || '').trim() || !Number.isFinite(Number(row?.handicap));
     });
     if (invalidPlayer) return { valid: false, error: 'Alle spillere må ha navn, handicap og 4-sifret PIN' };
@@ -437,7 +441,7 @@ function validateWizardParticipants(format, participants, mode = 'single_format'
     const invalidRow = rows.find((row) => {
       const players = Array.isArray(row?.players) ? row.players : [];
       const pin = String(row?.pin || '').trim();
-      if (!/^\d{4}$/.test(pin)) throw new Error('PIN must be exactly 4 digits');
+      if (!/^\d{4}$/.test(pin)) throw new Error('PIN må være nøyaktig 4 siffer');
       if (players.length !== def.teamSize) return true;
       return players.some((p) => !String(p?.name || '').trim() || !Number.isFinite(Number(p?.handicap)));
     });
@@ -1661,18 +1665,27 @@ app.get('/api/admin/tournament-wizard/:id', requireAdmin, (req, res) => {
     const tournament = db.prepare('SELECT * FROM tournaments WHERE id=?').get(tournamentId);
     if (!tournament) return res.status(404).json({ error: 'Turnering ikke funnet' });
     const teams = db.prepare('SELECT * FROM teams WHERE tournament_id=? ORDER BY id ASC').all(tournamentId);
+    const players = db.prepare('SELECT * FROM players WHERE tournament_id=? ORDER BY active DESC, name COLLATE NOCASE ASC, id ASC').all(tournamentId);
     const teamPlayers = db.prepare(
       `SELECT tp.*
        FROM team_players tp
        JOIN teams tm ON tm.id=tp.team_id
        WHERE tm.tournament_id=?
-       ORDER BY tp.id ASC`
+       ORDER BY tp.team_id ASC, tp.sort_order ASC, tp.id ASC`
     ).all(tournamentId);
+    const playerById = new Map(players.map((player) => [player.id, player]));
     const playersByTeam = new Map();
-    teamPlayers.forEach((player) => {
-      const bucket = playersByTeam.get(player.team_id) || [];
-      bucket.push(player);
-      playersByTeam.set(player.team_id, bucket);
+    teamPlayers.forEach((row) => {
+      const linkedPlayer = Number.isFinite(Number(row.player_id)) ? playerById.get(Number(row.player_id)) : null;
+      const normalized = {
+        ...row,
+        player_name: linkedPlayer?.name || row.player_name,
+        handicap: linkedPlayer?.handicap ?? row.handicap,
+        player_id: linkedPlayer?.id || row.player_id || null
+      };
+      const bucket = playersByTeam.get(row.team_id) || [];
+      bucket.push(normalized);
+      playersByTeam.set(row.team_id, bucket);
     });
     const stages = getStagesByTournament(tournamentId);
     const activeStage = getActiveStage(tournamentId, tournament);
@@ -1680,6 +1693,7 @@ app.get('/api/admin/tournament-wizard/:id', requireAdmin, (req, res) => {
       tournament,
       stages,
       activeStage,
+      players,
       teams: teams.map((team) => ({ ...team, players: playersByTeam.get(team.id) || [] }))
     });
   } catch (e) {
@@ -1754,12 +1768,12 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
   const tx = db.transaction(() => {
     const trace = createSaveDiagnosticLogger('TournamentWizardSave');
     const insertTournament = db.prepare(
-      `INSERT INTO tournaments (year, name, date, start_date, end_date, format, course, description, gameday_info, status, slope_rating, tournament_mode, handicap_percentage, format_settings, results_published, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)`
+      `INSERT INTO tournaments (year, name, date, start_date, end_date, format, course, description, gameday_info, status, slope_rating, tournament_mode, handicap_percentage, format_settings, results_published, active, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)`
     );
     const updateTournament = db.prepare(
       `UPDATE tournaments
-       SET year=?, name=?, date=?, start_date=?, end_date=?, format=?, course=?, description=?, gameday_info=?, status=?, slope_rating=?, tournament_mode=?, handicap_percentage=?, format_settings=?, results_published=?, updated_at=CURRENT_TIMESTAMP
+       SET year=?, name=?, date=?, start_date=?, end_date=?, format=?, course=?, description=?, gameday_info=?, status=?, slope_rating=?, tournament_mode=?, handicap_percentage=?, format_settings=?, results_published=?, active=?, updated_at=CURRENT_TIMESTAMP
        WHERE id=?`
     );
     const tournamentPayload = [
@@ -1777,7 +1791,8 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
       mode,
       useHandicap ? handicapPercentage : null,
       JSON.stringify(formatSettings),
-      publishAction === 'create_and_publish_leaderboard' ? 1 : 0
+      publishAction === 'create_and_publish_leaderboard' ? 1 : 0,
+      (publishAction === 'create_and_set_active' || isLive || publishAction === 'create_and_publish_leaderboard') ? 1 : 0
     ];
     let tournamentId = null;
     if (editTournamentId) {
@@ -1851,97 +1866,56 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
       const insertSide = db.prepare('INSERT INTO tournament_sides (tournament_id, name, short_name, color, side_order, updated_at) VALUES (?,?,?,?,?,CURRENT_TIMESTAMP)');
       const sideA = runInsertWithLogging(insertSide, [tournamentId, participants.sideAName || 'Lag A', 'A', '#1f6feb', 1], 'ryder_side_a', trace).lastInsertRowid;
       const sideB = runInsertWithLogging(insertSide, [tournamentId, participants.sideBName || 'Lag B', 'B', '#f59e0b', 2], 'ryder_side_b', trace).lastInsertRowid;
-      const insertPlayer = db.prepare('INSERT INTO players (tournament_id, name, handicap, team_id, active, updated_at) VALUES (?,?,?,?,1,CURRENT_TIMESTAMP)');
+      db.prepare('DELETE FROM players WHERE tournament_id=?').run(tournamentId);
+      const insertPlayer = db.prepare('INSERT INTO players (tournament_id, name, handicap, team_id, ryder_cup_side, active, updated_at) VALUES (?,?,?,?,?,1,CURRENT_TIMESTAMP)');
       (participants.sideA || []).forEach((player, index) => {
-        runInsertWithLogging(insertPlayer, [tournamentId, String(player.name || '').trim(), player.handicap ?? null, sideA], `ryder_side_a_player_${index + 1}`, trace);
+        runInsertWithLogging(insertPlayer, [tournamentId, String(player.name || '').trim(), player.handicap ?? null, sideA, 'A'], `ryder_side_a_player_${index + 1}`, trace);
       });
       (participants.sideB || []).forEach((player, index) => {
-        runInsertWithLogging(insertPlayer, [tournamentId, String(player.name || '').trim(), player.handicap ?? null, sideB], `ryder_side_b_player_${index + 1}`, trace);
+        runInsertWithLogging(insertPlayer, [tournamentId, String(player.name || '').trim(), player.handicap ?? null, sideB, 'B'], `ryder_side_b_player_${index + 1}`, trace);
       });
-    } else if (getFormatDefinition(format).leaderboardMode === 'individual') {
-      const insertPlayer = db.prepare('INSERT INTO players (tournament_id, name, handicap, active, updated_at) VALUES (?,?,?,1,CURRENT_TIMESTAMP)');
-      const insertTeam = db.prepare('INSERT INTO teams (tournament_id, team_name, player1, player2, player3, player4, pin_code, player1_handicap, player2_handicap, player3_handicap, player4_handicap) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
-      const updateTeam = db.prepare('UPDATE teams SET team_name=?, player1=?, player2=?, player3=?, player4=?, pin_code=?, player1_handicap=?, player2_handicap=?, player3_handicap=?, player4_handicap=? WHERE id=?');
-      const existingTeams = db.prepare('SELECT * FROM teams WHERE tournament_id=?').all(tournamentId);
-      const existingTeamMap = new Map(existingTeams.map((team) => [team.id, team]));
-      const retainedTeamIds = new Set();
-      db.prepare('DELETE FROM players WHERE tournament_id=?').run(tournamentId);
-      const usedPins = new Set();
-      participantRows.forEach((row, idx) => {
-        const pName = String(row.name || '').trim();
-        if (!pName) return;
-        let pin = normalizePin(row.pin);
-        if (!pinValid(pin)) {
-          pin = String(1000 + idx);
-        }
-        while (usedPins.has(pin)) pin = String(Number(pin) + 1).padStart(4, '0').slice(-4);
-        assertValidPin(pin);
-        usedPins.add(pin);
-        const requestedTeamId = Number(row.id);
-        const existingTeam = Number.isFinite(requestedTeamId) ? existingTeamMap.get(requestedTeamId) : null;
-        if (existingTeam) {
-          runInsertWithLogging(updateTeam, [
-            pName,
-            pName,
-            '',
-            '',
-            '',
-            pin,
-            Number(row.handicap || 0),
-            0,
-            0,
-            0,
-            existingTeam.id
-          ], `individual_team_update_${idx + 1}`, trace);
-          retainedTeamIds.add(existingTeam.id);
-          trace('individual team id resolved', { teamId: existingTeam.id, pin });
-        } else {
-          const teamRes = runInsertWithLogging(insertTeam, [
-            tournamentId,
-            pName,
-            pName,
-            '',
-            '',
-            '',
-            pin,
-            Number(row.handicap || 0),
-            0,
-            0,
-            0
-          ], `individual_team_${idx + 1}`, trace);
-          retainedTeamIds.add(Number(teamRes.lastInsertRowid));
-          trace('individual team id resolved', { teamId: teamRes.lastInsertRowid, pin });
-        }
-        runInsertWithLogging(insertPlayer, [tournamentId, pName, row.handicap ?? null], `individual_player_${idx + 1}`, trace);
-      });
-      existingTeams.forEach((team) => {
-        if (!retainedTeamIds.has(team.id)) {
-          db.prepare('DELETE FROM scores WHERE team_id=?').run(team.id);
-          db.prepare('DELETE FROM teams WHERE id=?').run(team.id);
-        }
-      });
+      db.prepare('DELETE FROM team_players WHERE team_id IN (SELECT id FROM teams WHERE tournament_id=?)').run(tournamentId);
+      db.prepare('DELETE FROM teams WHERE tournament_id=?').run(tournamentId);
     } else {
-      const insertTeam = db.prepare(
-        'INSERT INTO teams (tournament_id, team_name, player1, player2, player3, player4, pin_code, player1_handicap, player2_handicap, player3_handicap, player4_handicap) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
-      );
-      const updateTeam = db.prepare(
-        'UPDATE teams SET team_name=?, player1=?, player2=?, player3=?, player4=?, pin_code=?, player1_handicap=?, player2_handicap=?, player3_handicap=?, player4_handicap=? WHERE id=?'
-      );
-      const insertTeamPlayer = db.prepare('INSERT INTO team_players (team_id, player_name, handicap, updated_at) VALUES (?,?,?,CURRENT_TIMESTAMP)');
-      const updateTeamPlayer = db.prepare('UPDATE team_players SET player_name=?, handicap=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND team_id=?');
-      const deleteTeamPlayer = db.prepare('DELETE FROM team_players WHERE id=? AND team_id=?');
-      const getTeamName = createTeamNameGenerator(tournamentId);
+      const isIndividual = getFormatDefinition(format).leaderboardMode === 'individual';
+      const existingPlayers = db.prepare('SELECT * FROM players WHERE tournament_id=?').all(tournamentId);
+      const existingPlayersById = new Map(existingPlayers.map((row) => [row.id, row]));
+      const insertPlayer = db.prepare('INSERT INTO players (tournament_id, name, handicap, active, updated_at) VALUES (?,?,?,1,CURRENT_TIMESTAMP)');
+      const updatePlayer = db.prepare('UPDATE players SET name=?, handicap=?, active=1, team_id=NULL, ryder_cup_side=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=? AND tournament_id=?');
+      const deletePlayerById = db.prepare('DELETE FROM players WHERE id=? AND tournament_id=?');
+
+      const insertTeam = db.prepare('INSERT INTO teams (tournament_id, team_name, player1, player2, player3, player4, pin_code, player1_handicap, player2_handicap, player3_handicap, player4_handicap, active) VALUES (?,?,?,?,?,?,?,?,?,?,?,1)');
+      const updateTeam = db.prepare('UPDATE teams SET team_name=?, player1=?, player2=?, player3=?, player4=?, pin_code=?, player1_handicap=?, player2_handicap=?, player3_handicap=?, player4_handicap=?, active=1 WHERE id=?');
       const existingTeams = db.prepare('SELECT * FROM teams WHERE tournament_id=?').all(tournamentId);
       const existingTeamMap = new Map(existingTeams.map((team) => [team.id, team]));
       const retainedTeamIds = new Set();
+      const retainedPlayerIds = new Set();
       const usedPins = new Set();
-      participantRows.forEach((row, idx) => {
-        const players = Array.isArray(row.players) ? row.players : [];
+      const getTeamName = createTeamNameGenerator(tournamentId);
+
+      const rowsToPersist = isIndividual
+        ? participantRows.map((row, idx) => ({
+            id: row.id,
+            teamName: String(row.name || '').trim() || `Lag ${idx + 1}`,
+            pin: row.pin,
+            players: [{ id: row.id, name: row.name, handicap: row.handicap }]
+          }))
+        : participantRows;
+
+      const teamPlayersRows = [];
+
+      rowsToPersist.forEach((row, idx) => {
+        const rawPlayers = Array.isArray(row.players) ? row.players : [];
+        const players = rawPlayers.filter((player) => String(player?.name || '').trim());
         const p = [0, 1, 2, 3].map((i) => players[i] || {});
         let pin = normalizePin(row.pin);
+        if (!pinValid(pin)) {
+          pin = String(1000 + idx).slice(-4).padStart(4, '0');
+        }
         assertValidPin(pin);
         if (usedPins.has(pin)) throw new Error('Denne PIN-koden er allerede i bruk');
         usedPins.add(pin);
+
         const requestedTeamId = Number(row.id);
         const existingTeam = Number.isFinite(requestedTeamId) ? existingTeamMap.get(requestedTeamId) : null;
         const teamNameGenerator = existingTeam ? createTeamNameGenerator(tournamentId, existingTeam.id) : getTeamName;
@@ -1958,6 +1932,7 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
           Number(p[2].handicap || 0),
           Number(p[3].handicap || 0)
         ];
+
         let teamId = null;
         if (existingTeam) {
           runInsertWithLogging(updateTeam, [...teamPayload, existingTeam.id], `team_update_${idx + 1}`, trace);
@@ -1968,29 +1943,21 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
         }
         if (!Number.isFinite(teamId) || teamId <= 0) throw new Error('Kunne ikke opprette lag');
         retainedTeamIds.add(teamId);
-        trace(`team ${idx + 1} id resolved`, { teamId, teamName: resolvedTeamName });
 
-        const existingPlayers = db.prepare('SELECT * FROM team_players WHERE team_id=? ORDER BY id ASC').all(teamId);
-        const existingPlayerMap = new Map(existingPlayers.map((player) => [player.id, player]));
-        const retainedPlayerIds = new Set();
         players.forEach((player, playerIdx) => {
           const playerName = String(player?.name || '').trim();
           if (!playerName) return;
           const requestedPlayerId = Number(player.id);
-          if (Number.isFinite(requestedPlayerId) && existingPlayerMap.has(requestedPlayerId)) {
-            runInsertWithLogging(updateTeamPlayer, [playerName, Number(player.handicap || 0), requestedPlayerId, teamId], `team_${idx + 1}_player_update_${playerIdx + 1}`, trace);
-            retainedPlayerIds.add(requestedPlayerId);
+          let playerId = null;
+          if (Number.isFinite(requestedPlayerId) && existingPlayersById.has(requestedPlayerId)) {
+            runInsertWithLogging(updatePlayer, [playerName, Number(player.handicap || 0), requestedPlayerId, tournamentId], `player_update_${idx + 1}_${playerIdx + 1}`, trace);
+            playerId = requestedPlayerId;
           } else {
-            const playerPayload = [teamId, playerName, Number(player.handicap || 0)];
-            const playerRes = runInsertWithLogging(insertTeamPlayer, playerPayload, `team_${idx + 1}_player_${playerIdx + 1}`, trace);
-            retainedPlayerIds.add(Number(playerRes.lastInsertRowid));
+            const playerRes = runInsertWithLogging(insertPlayer, [tournamentId, playerName, Number(player.handicap || 0)], `player_${idx + 1}_${playerIdx + 1}`, trace);
+            playerId = Number(playerRes.lastInsertRowid);
           }
-        });
-
-        existingPlayers.forEach((existingPlayer) => {
-          if (!retainedPlayerIds.has(existingPlayer.id)) {
-            runInsertWithLogging(deleteTeamPlayer, [existingPlayer.id, teamId], `team_${idx + 1}_player_delete_${existingPlayer.id}`, trace);
-          }
+          retainedPlayerIds.add(playerId);
+          teamPlayersRows.push({ teamId, playerId, playerName, handicap: Number(player.handicap || 0), sortOrder: playerIdx + 1 });
         });
       });
 
@@ -2000,10 +1967,25 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
         db.prepare('DELETE FROM scores WHERE team_id=?').run(team.id);
         db.prepare('DELETE FROM teams WHERE id=?').run(team.id);
       });
+
+      db.prepare('DELETE FROM team_players WHERE team_id IN (SELECT id FROM teams WHERE tournament_id=?)').run(tournamentId);
+      const insertTeamPlayer = db.prepare('INSERT INTO team_players (team_id, player_id, player_name, handicap, sort_order, updated_at) VALUES (?,?,?,?,?,CURRENT_TIMESTAMP)');
+      teamPlayersRows.forEach((row, idx) => {
+        runInsertWithLogging(insertTeamPlayer, [row.teamId, row.playerId, row.playerName, row.handicap, row.sortOrder], `team_player_${idx + 1}`, trace);
+      });
+
+      existingPlayers.forEach((player) => {
+        if (!retainedPlayerIds.has(player.id)) {
+          db.prepare('DELETE FROM players WHERE id=? AND tournament_id=?').run(player.id, tournamentId);
+        }
+      });
+      trace('players sync completed', { retainedPlayerIds: Array.from(retainedPlayerIds) });
+      trace('teams sync completed', { retainedTeamIds: Array.from(retainedTeamIds) });
     }
 
     if (publishAction === 'create_and_set_active' || isLive || publishAction === 'create_and_publish_leaderboard') {
       setSetting('activeTournamentId', String(tournamentId));
+      db.prepare('UPDATE tournaments SET active=CASE WHEN id=? THEN 1 ELSE 0 END, updated_at=CURRENT_TIMESTAMP').run(tournamentId);
       trace('active tournament setting updated', { tournamentId });
     }
     if (publishAction === 'create_and_open_scoring') {
@@ -2452,6 +2434,7 @@ app.put('/api/admin/active-tournament/:id', requireAdmin, (req, res) => {
     if (!existing) return res.status(404).json({ error: 'Turnering ikke funnet' });
     if (normalizeTournamentStatus(existing.status) === 'archived') return res.status(400).json({ error: 'Arkiverte turneringer kan ikke settes som aktiv turnering' });
     setSetting('activeTournamentId', String(id));
+    db.prepare('UPDATE tournaments SET active=CASE WHEN id=? THEN 1 ELSE 0 END, updated_at=CURRENT_TIMESTAMP').run(id);
     res.json({ success: true, activeTournamentId: id });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -2459,6 +2442,7 @@ app.put('/api/admin/active-tournament/:id', requireAdmin, (req, res) => {
 app.delete('/api/admin/active-tournament', requireAdmin, (req, res) => {
   try {
     setSetting('activeTournamentId', null);
+    db.prepare('UPDATE tournaments SET active=0, updated_at=CURRENT_TIMESTAMP').run();
     res.json({ success: true, activeTournamentId: null });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -2496,8 +2480,42 @@ app.delete('/api/admin/tournament/:id', requireAdmin, (req, res) => {
 
 app.get('/api/admin/tournament/:id/teams', requireAdmin, (req, res) => {
   try {
-    const teams = db.prepare('SELECT * FROM teams WHERE tournament_id=?').all(req.params.id);
-    res.json({ teams });
+    const tournament = getTournamentById(req.params.id);
+    const teams = db.prepare('SELECT * FROM teams WHERE tournament_id=? ORDER BY team_name COLLATE NOCASE ASC, id ASC').all(req.params.id);
+    const links = db.prepare(
+      `SELECT tp.*, p.name AS linked_player_name, p.handicap AS linked_player_handicap
+       FROM team_players tp
+       LEFT JOIN players p ON p.id=tp.player_id
+       WHERE tp.team_id IN (SELECT id FROM teams WHERE tournament_id=?)
+       ORDER BY tp.team_id ASC, tp.sort_order ASC, tp.id ASC`
+    ).all(req.params.id);
+    const linksByTeam = new Map();
+    links.forEach((row) => {
+      const bucket = linksByTeam.get(row.team_id) || [];
+      bucket.push({
+        id: row.id,
+        player_id: row.player_id,
+        sort_order: row.sort_order,
+        player_name: row.linked_player_name || row.player_name,
+        handicap: row.linked_player_handicap ?? row.handicap
+      });
+      linksByTeam.set(row.team_id, bucket);
+    });
+    const handicapPercent = Number(tournament?.handicap_percentage || 0);
+    const enriched = teams.map((team) => {
+      const teamPlayers = linksByTeam.get(team.id) || [];
+      const fallbackPlayers = [
+        { player_name: team.player1, handicap: team.player1_handicap },
+        { player_name: team.player2, handicap: team.player2_handicap },
+        { player_name: team.player3, handicap: team.player3_handicap },
+        { player_name: team.player4, handicap: team.player4_handicap }
+      ].filter((player) => String(player.player_name || '').trim());
+      const players = teamPlayers.length ? teamPlayers : fallbackPlayers;
+      const totalHandicap = players.reduce((sum, player) => sum + Number(player.handicap || 0), 0);
+      const adjustedHandicap = handicapPercent > 0 ? Math.round(totalHandicap * (handicapPercent / 100)) : totalHandicap;
+      return { ...team, players, total_handicap: totalHandicap, adjusted_handicap: adjustedHandicap };
+    });
+    res.json({ teams: enriched, tournament });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 

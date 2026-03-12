@@ -238,12 +238,20 @@ function wizardStateFromExisting(data) {
         ].filter((player) => String(player.name || '').trim());
     return ensureTeamShape({ id: team.id, name: team.team_name, pin: team.pin_code, players: sourcePlayers }, idx, cfg.teamSize);
   });
-  const mappedParticipants = teams.map((team) => ({
-    id: team.id,
-    name: team.player1 || team.team_name || '',
-    pin: pinSanitize(team.pin_code || ''),
-    handicap: team.player1_handicap ?? ''
-  }));
+  const dbPlayers = Array.isArray(data?.players) ? data.players : [];
+  const mappedParticipants = dbPlayers.length
+    ? dbPlayers.map((player, idx) => ({
+        id: player.id,
+        name: player.name || '',
+        pin: String(1000 + idx).slice(-4),
+        handicap: player.handicap ?? ''
+      }))
+    : teams.map((team) => ({
+        id: team.id,
+        name: team.player1 || team.team_name || '',
+        pin: pinSanitize(team.pin_code || ''),
+        handicap: team.player1_handicap ?? ''
+      }));
 
   return {
     tournamentId: tournament.id,
@@ -657,8 +665,8 @@ async function submitWizard() {
   document.getElementById('step4Error').textContent = '';
   try {
     const response = await api('/api/admin/tournament-wizard', { method: 'POST', body: JSON.stringify(buildPayload(document.getElementById('publishAction').value)) });
-    alert('Turneringen ble lagret.');
-    window.location.href = `/admin.html#tournament-${response.id}`;
+    alert('Turneringsoppsettet ble lagret.');
+    window.location.href = '/admin.html#dashboard';
   } catch (e) {
     console.error('Wizard save failed', e);
     document.getElementById('step4Error').textContent = userErrorMessage(e);

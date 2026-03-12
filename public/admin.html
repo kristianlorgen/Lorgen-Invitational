@@ -117,8 +117,8 @@
       </div>
       <div class="sidebar-section">
         <div class="sidebar-label">Turnering</div>
-        <div class="sidebar-link" onclick="showPanel('teams')"><i class="fas fa-users"></i> Lag</div>
         <div class="sidebar-link" onclick="showPanel('players')"><i class="fas fa-user-group"></i> Spillere</div>
+        <div class="sidebar-link" onclick="showPanel('teams')"><i class="fas fa-users"></i> Lag</div>
         <div class="sidebar-link" onclick="showPanel('stages')"><i class="fas fa-layer-group"></i> Stages</div>
         <div class="sidebar-link" onclick="showPanel('holes')"><i class="fas fa-golf-ball-tee"></i> Bane og Hull</div>
         <div class="sidebar-link" onclick="showPanel('courses')"><i class="fas fa-map-location-dot"></i> Baner</div>
@@ -358,6 +358,11 @@
               <tbody id="teamsTable"><tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Velg en turnering ovenfor</td></tr></tbody>
             </table>
           </div>
+        </div>
+
+        <div class="card" style="margin-top:16px">
+          <div class="card-header"><strong>Lagdetaljer</strong></div>
+          <div class="card-body" id="teamsDebugCards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;color:var(--text-muted)">Velg en turnering.</div>
         </div>
         <!-- Inline team edit form (hidden) -->
         <div class="card d-none" id="editTeamCard" style="margin-top:16px;border:2px solid var(--gold-border)">
@@ -1386,27 +1391,47 @@ async function loadTeams() {
   if (!tid) return;
   const d = await api('/api/admin/tournament/'+tid+'/teams');
   applyFormatDrivenAdminLayout(tid);
-  document.getElementById('teamCount').textContent = `(${d.teams.length} lag)`;
+  const teams = d.teams || [];
+  const handicapPercent = Number(d?.tournament?.handicap_percentage || 0);
+  document.getElementById('teamCount').textContent = `(${teams.length} lag)`;
   renderTeamRuleHint(tid);
-  document.getElementById('teamsTable').innerHTML = !d.teams.length
+  document.getElementById('teamsTable').innerHTML = !teams.length
     ? '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen lag ennå. Legg til ett ovenfor.</td></tr>'
-    : d.teams.map((t,i) => {
-        const players = [t.player1, t.player2, t.player3, t.player4].filter(Boolean);
-        const handicaps = [t.player1_handicap || 0, t.player2_handicap || 0, t.player3_handicap || 0, t.player4_handicap || 0];
-        const hcpStr = handicaps.some(Boolean) ? ` <span style="font-size:.75rem;color:var(--text-muted)">(Hcp: ${handicaps.filter((_,i)=>players[i]).join('/')})</span>` : '';
+    : teams.map((t,i) => {
+        const players = Array.isArray(t.players) ? t.players : [];
         return `
         <tr>
           <td>${i+1}</td>
           <td><strong>${t.team_name}</strong></td>
-          <td>${players.join('<br>')}${hcpStr}</td>
-          <td>${t.player2}</td>
+          <td>${players[0]?.player_name || t.player1 || '—'}</td>
+          <td>${players[1]?.player_name || t.player2 || '—'}</td>
           <td><code style="background:var(--gold-pale);padding:2px 8px;border-radius:4px;font-weight:700;color:var(--gold-dark)">${t.pin_code}</code></td>
           <td style="display:flex;gap:6px">
-            <button onclick='editTeam(${t.id},${JSON.stringify(t.team_name)},${JSON.stringify(t.player1)},${JSON.stringify(t.player2)},${JSON.stringify(t.player3 || '')},${JSON.stringify(t.player4 || '')},${JSON.stringify(t.pin_code)},${handicaps[0]},${handicaps[1]},${handicaps[2]},${handicaps[3]})' class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)" title="Rediger"><i class="fas fa-pen"></i></button>
+            <button onclick='editTeam(${t.id},${JSON.stringify(t.team_name)},${JSON.stringify(t.player1)},${JSON.stringify(t.player2)},${JSON.stringify(t.player3 || '')},${JSON.stringify(t.player4 || '')},${JSON.stringify(t.pin_code)},${t.player1_handicap || 0},${t.player2_handicap || 0},${t.player3_handicap || 0},${t.player4_handicap || 0})' class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)" title="Rediger"><i class="fas fa-pen"></i></button>
             <button onclick='deleteTeam(${t.id},${JSON.stringify(t.team_name)})' class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
           </td>
         </tr>`;
       }).join('');
+
+  const cardsWrap = document.getElementById('teamsDebugCards');
+  if (!teams.length) {
+    cardsWrap.innerHTML = '<div style="color:var(--text-muted)">Ingen lag å vise.</div>';
+  } else {
+    cardsWrap.innerHTML = teams.map((team, idx) => {
+      const players = Array.isArray(team.players) ? team.players : [];
+      const playersList = players.length
+        ? players.map((player, pIdx) => `<div>Spiller ${pIdx + 1}: ${player.player_name} (${player.handicap ?? 0})</div>`).join('')
+        : '<div style="color:var(--text-muted)">Ingen spillere koblet til laget.</div>';
+      return `<div style="border:1px solid var(--gold-border);border-radius:12px;background:var(--white);padding:14px">
+        <div style="font-weight:700;font-family:var(--font-heading)">${team.team_name || `Lag ${idx + 1}`}</div>
+        <div style="margin:4px 0 10px 0;color:var(--gold-dark);font-weight:700">PIN ${team.pin_code}</div>
+        ${playersList}
+        <div style="margin-top:10px">Total HCP: <strong>${team.total_handicap ?? 0}</strong></div>
+        <div>Justert HCP (${handicapPercent}%): <strong>${team.adjusted_handicap ?? 0}</strong></div>
+        <div style="margin-top:8px;color:var(--text-muted)">Status: ${team.active ? 'Aktiv' : 'Inaktiv'}</div>
+      </div>`;
+    }).join('');
+  }
 }
 
 async function addTeam() {
