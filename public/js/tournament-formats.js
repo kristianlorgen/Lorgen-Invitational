@@ -62,10 +62,10 @@
       handicap: { method: 'weighted', weights: [25, 20, 15, 10], label: '25/20/15/10' },
       sorter: (a,b)=>(a.to_par||0)-(b.to_par||0)
     },
-    greensome: { key: 'greensome', label: 'Greensome', teamBased: true, participantMode: 'pair', teamSize: 2, scoreEntryLabel: 'Parets slag', scoreDisplay: 'Parscore', leaderboardColumns: ['Plass', 'Par', 'Total', 'Vs par', 'Hull'], handicap: { method: 'percentage', handicapPercentage: 60 }, sorter: (a,b)=>(a.to_par||0)-(b.to_par||0)},
-    foursome: { key: 'foursome', label: 'Foursome', teamBased: true, participantMode: 'pair', teamSize: 2, scoreEntryLabel: 'Parets slag', scoreDisplay: 'Parscore', leaderboardColumns: ['Plass', 'Par', 'Total', 'Vs par', 'Hull'], handicap: { method: 'percentage', handicapPercentage: 50 }, sorter: (a,b)=>(a.to_par||0)-(b.to_par||0)},
-    fourball: { key: 'fourball', label: 'Bestball / Four-ball', teamBased: true, participantMode: 'pair', teamSize: 2, scoreEntryLabel: 'Spillerscore (bestball)', scoreDisplay: 'Bestball', leaderboardColumns: ['Plass', 'Lag', 'Total', 'Vs par', 'Hull'], handicap: { method: 'percentage', handicapPercentage: 90 }, sorter: (a,b)=>(a.to_par||0)-(b.to_par||0)},
-    matchplay: { key: 'matchplay', label: 'Matchspill', teamBased: true, participantMode: 'match', teamSize: 2, scoreEntryLabel: 'Hullvinner', scoreDisplay: 'Matchstatus', leaderboardColumns: ['Match', 'Status', 'Hull', 'Leder'], handicap: { method: 'percentage', handicapPercentage: 100 }, sorter: (a,b)=>a.team_name.localeCompare(b.team_name,'nb') },
+    greensome: { key: 'greensome', label: 'Greensome', teamBased: true, participantMode: 'pair', teamSize: 2, scoreEntryLabel: 'Parets slag', scoreDisplay: 'Parscore', leaderboardColumns: ['Plass', 'Par', 'Total', 'Vs par', 'Hull'], adminSections: [ADMIN_SECTIONS.TOURNAMENT_INFO, ADMIN_SECTIONS.TEAMS, ADMIN_SECTIONS.COURSE_AND_HOLES, ADMIN_SECTIONS.GAMEDAY, ADMIN_SECTIONS.SPONSORS, ADMIN_SECTIONS.CONTROL_PANEL], handicap: { method: 'percentage', handicapPercentage: 60 }, sorter: (a,b)=>(a.to_par||0)-(b.to_par||0)},
+    foursome: { key: 'foursome', label: 'Foursome', teamBased: true, participantMode: 'pair', teamSize: 2, scoreEntryLabel: 'Parets slag', scoreDisplay: 'Parscore', leaderboardColumns: ['Plass', 'Par', 'Total', 'Vs par', 'Hull'], adminSections: [ADMIN_SECTIONS.TOURNAMENT_INFO, ADMIN_SECTIONS.TEAMS, ADMIN_SECTIONS.COURSE_AND_HOLES, ADMIN_SECTIONS.GAMEDAY, ADMIN_SECTIONS.SPONSORS, ADMIN_SECTIONS.CONTROL_PANEL], handicap: { method: 'percentage', handicapPercentage: 50 }, sorter: (a,b)=>(a.to_par||0)-(b.to_par||0)},
+    fourball: { key: 'fourball', label: 'Bestball / Four-ball', teamBased: true, participantMode: 'pair', teamSize: 2, scoreEntryLabel: 'Spillerscore (bestball)', scoreDisplay: 'Bestball', leaderboardColumns: ['Plass', 'Lag', 'Total', 'Vs par', 'Hull'], adminSections: [ADMIN_SECTIONS.TOURNAMENT_INFO, ADMIN_SECTIONS.TEAMS, ADMIN_SECTIONS.COURSE_AND_HOLES, ADMIN_SECTIONS.GAMEDAY, ADMIN_SECTIONS.SPONSORS, ADMIN_SECTIONS.CONTROL_PANEL], handicap: { method: 'percentage', handicapPercentage: 90 }, sorter: (a,b)=>(a.to_par||0)-(b.to_par||0)},
+    matchplay: { key: 'matchplay', label: 'Matchspill', teamBased: false, participantMode: 'individual', teamSize: 1, scoreEntryLabel: 'Hullvinner', scoreDisplay: 'Matchstatus', leaderboardColumns: ['Match', 'Status', 'Hull', 'Leder'], adminSections: [ADMIN_SECTIONS.TOURNAMENT_INFO, ADMIN_SECTIONS.PLAYERS, ADMIN_SECTIONS.COURSE_AND_HOLES, ADMIN_SECTIONS.GAMEDAY, ADMIN_SECTIONS.SPONSORS, ADMIN_SECTIONS.CONTROL_PANEL], handicap: { method: 'percentage', handicapPercentage: 100 }, sorter: (a,b)=>a.team_name.localeCompare(b.team_name,'nb') },
     ryder_cup: { key: 'ryder_cup', label: 'Ryder Cup', teamBased: true, participantMode: 'cup', teamSize: 2, scoreEntryLabel: 'Matchpoeng', scoreDisplay: 'Cup-score', leaderboardColumns: ['Lag', 'Poeng'], handicap: { method: 'percentage', handicapPercentage: 100 }, sorter: (a,b)=>(b.points||0)-(a.points||0) }
   };
 
@@ -93,6 +93,11 @@
     const sections = new Set(def.adminSections || []);
     if (options.usesStages) sections.add(ADMIN_SECTIONS.STAGES);
     return Array.from(sections);
+  }
+
+
+  function resolveAdminSectionsForTournamentFormats(format, options = {}) {
+    return resolveAdminSectionsForTournament(format, options);
   }
 
   function resolveHandicapConfig(format, stage = null, tournament = null) {
@@ -149,5 +154,5 @@
     return [...data].sort(def.sorter);
   }
 
-  global.TournamentFormats = { normalizeFormat, getFormatDefinition, resolveAdminSectionsForTournament, resolveHandicapConfig, calculatePlayingHandicap, calculateTeamHandicap, calculateHoleResult, calculateRoundResult, buildLeaderboard };
+  global.TournamentFormats = { normalizeFormat, getFormatDefinition, resolveAdminSectionsForTournament, resolveAdminSectionsForTournamentFormats, resolveHandicapConfig, calculatePlayingHandicap, calculateTeamHandicap, calculateHoleResult, calculateRoundResult, buildLeaderboard };
 })(window);
