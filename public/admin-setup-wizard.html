@@ -139,6 +139,7 @@ async function api(url, options = {}) {
   if (!res.ok) {
     const err = new Error(json.error || 'API-feil');
     err.details = json.details || '';
+    err.backendMessage = json.message || '';
     throw err;
   }
   return json;
@@ -527,6 +528,7 @@ function changeStep(delta) {
 
 function userErrorMessage(error) {
   const isDev = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+  if (isDev && error?.backendMessage) return `${error.message} Teknisk detalj: ${error.backendMessage}`;
   if (isDev && error?.details) return `${error.message} (${error.details})`;
   return error?.message || 'Kunne ikke lagre turneringen. Kontroller at alle lag og spillere er korrekt satt opp.';
 }

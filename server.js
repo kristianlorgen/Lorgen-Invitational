@@ -394,6 +394,77 @@ function validateWizardParticipants(format, participants, mode = 'single_format'
   return { valid: true };
 }
 
+function createSaveDiagnosticLogger(scope = 'TournamentWizardSave') {
+  let step = 0;
+  return (message, meta = null) => {
+    step += 1;
+    if (meta !== null && meta !== undefined) {
+      console.log(`[${step}] ${scope}: ${message}`, meta);
+      return;
+    }
+    console.log(`[${step}] ${scope}: ${message}`);
+  };
+}
+
+function runInsertWithLogging(statement, params, label, trace) {
+  console.log(`${label} SQL`, statement.source);
+  console.log(`${label} params`, params);
+  trace(`creating ${label}`, params);
+  const result = statement.run(...params);
+  trace(`${label} created`, { lastInsertRowid: result.lastInsertRowid, changes: result.changes });
+  return result;
+}
+
+function validateWizardSavePayload({ basics, rules, participants, format, mode, participantRows }) {
+  if (!String(basics?.name || '').trim()) throw new Error('Turneringsnavn mangler');
+  if (!format) throw new Error('Turneringsformat mangler');
+
+  const handicapRaw = rules?.handicapPercentage;
+  if (rules?.useHandicap !== false && !Number.isFinite(Number(handicapRaw))) {
+    throw new Error('Handicap-prosent må være et tall');
+  }
+
+  if (mode === 'ryder_cup') {
+    return;
+  }
+
+  const def = getFormatDefinition(format);
+  participantRows.forEach((row, idx) => {
+    if (def.participantMode === 'individual') {
+      const playerName = String(row?.name || '').trim();
+      if (!playerName) throw new Error(`Spiller ${idx + 1} mangler navn`);
+      if (!Number.isFinite(Number(row?.handicap))) throw new Error(`Spiller ${idx + 1} har ugyldig handicap`);
+      const pin = String(row?.pin || '').trim();
+      if (!/^\d{4}$/.test(pin)) throw new Error(`Spiller ${idx + 1} må ha en 4-sifret PIN`);
+      return;
+    }
+
+    const players = Array.isArray(row?.players) ? row.players : [];
+    if (players.length !== def.teamSize) {
+      throw new Error(`Lag ${idx + 1} må ha nøyaktig ${def.teamSize} spillere`);
+    }
+    const rawName = String(row?.teamName || row?.name || '').trim();
+    if (!rawName) {
+      row.teamName = `Lag ${idx + 1}`;
+    }
+    const pin = String(row?.pin || '').trim();
+    if (!/^\d{4}$/.test(pin)) throw new Error(`Lag ${idx + 1} må ha en 4-sifret PIN`);
+    players.forEach((player, playerIdx) => {
+      if (!String(player?.name || '').trim()) throw new Error(`Lag ${idx + 1}, spiller ${playerIdx + 1} mangler navn`);
+      if (!Number.isFinite(Number(player?.handicap))) throw new Error(`Lag ${idx + 1}, spiller ${playerIdx + 1} har ugyldig handicap`);
+    });
+  });
+}
+
+function mapWizardSaveError(error) {
+  const msg = String(error?.message || '').toLowerCase();
+  if (msg.includes('foreign key')) return 'Kunne ikke lagre lag eller spillere fordi turneringen ikke ble opprettet riktig.';
+  if (msg.includes('not null') || msg.includes('mangler')) return 'Ett eller flere obligatoriske felt mangler.';
+  if (msg.includes('unique') && msg.includes('pin')) return 'To lag kan ikke ha samme PIN i samme turnering.';
+  if (msg.includes('pin')) return 'PIN må være nøyaktig 4 sifre, og unik per lag.';
+  return 'Kunne ikke lagre turneringen. Kontroller at alle lag og spillere er korrekt satt opp.';
+}
+
 function safeJsonParse(raw, fallback = null) {
   if (!raw) return fallback;
   try { return JSON.parse(raw); } catch (_) { return fallback; }
@@ -1566,15 +1637,22 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
     }
   };
 
+  try {
+    validateWizardSavePayload({ basics, rules, participants, format, mode, participantRows });
+  } catch (error) {
+    return res.status(400).json({ error: error.message || 'Ugyldige deltakerdata' });
+  }
+
   const isLive = ['create_and_open_scoring', 'create_and_publish_leaderboard'].includes(publishAction);
   const status = publishAction === 'draft' ? 'draft' : (isLive ? 'live' : 'published');
 
   const tx = db.transaction(() => {
+    const trace = createSaveDiagnosticLogger('TournamentWizardSave');
     const insertTournament = db.prepare(
       `INSERT INTO tournaments (year, name, date, start_date, end_date, format, course, description, gameday_info, status, slope_rating, tournament_mode, handicap_percentage, format_settings, results_published, updated_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)`
     );
-    const tournamentRes = insertTournament.run(
+    const tournamentPayload = [
       year,
       name,
       startDate,
@@ -1590,13 +1668,19 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
       useHandicap ? handicapPercentage : null,
       JSON.stringify(formatSettings),
       publishAction === 'create_and_publish_leaderboard' ? 1 : 0
-    );
-    const tournamentId = tournamentRes.lastInsertRowid;
-    console.log('Saving tournament', tournamentId);
+    ];
+    const tournamentRes = runInsertWithLogging(insertTournament, tournamentPayload, 'tournament', trace);
+    const tournamentId = Number(tournamentRes.lastInsertRowid);
+    if (!Number.isFinite(tournamentId) || tournamentId <= 0) {
+      throw new Error('Kunne ikke opprette turnering: ugyldig turnerings-ID');
+    }
+    trace('tournament id resolved', { tournamentId });
 
     const holesCount = Number.isFinite(Number(structure.holesCount)) ? Number(structure.holesCount) : 18;
     const insertHole = db.prepare('INSERT INTO holes (tournament_id, hole_number, par, requires_photo) VALUES (?,?,4,0)');
-    for (let hole = 1; hole <= holesCount; hole++) insertHole.run(tournamentId, hole);
+    for (let hole = 1; hole <= holesCount; hole += 1) {
+      runInsertWithLogging(insertHole, [tournamentId, hole], `hole_${hole}`, trace);
+    }
 
     const stages = Array.isArray(structure.stages) && structure.stages.length
       ? structure.stages
@@ -1610,7 +1694,7 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
     let activeStageId = null;
     stages.forEach((stage, idx) => {
       const stageFormat = normalizeTournamentFormat(stage?.format || format);
-      const row = insertStage.run(
+      const stageRes = runInsertWithLogging(insertStage, [
         tournamentId,
         String(stage?.name || `Stage ${idx + 1}`),
         idx + 1,
@@ -1620,19 +1704,23 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
         mode === 'ryder_cup' ? 'cup' : getFormatDefinition(stageFormat).leaderboardMode,
         useHandicap ? handicapPercentage : null,
         JSON.stringify({ handicap: formatSettings.handicap })
-      );
-      if (idx === activeStageIndex) activeStageId = row.lastInsertRowid;
+      ], `stage_${idx + 1}`, trace);
+      if (idx === activeStageIndex) activeStageId = stageRes.lastInsertRowid;
     });
     db.prepare('UPDATE tournaments SET active_stage_id=? WHERE id=?').run(activeStageId, tournamentId);
+    trace('active stage updated on tournament', { tournamentId, activeStageId });
 
     if (mode === 'ryder_cup') {
-      const sideA = db.prepare('INSERT INTO tournament_sides (tournament_id, name, short_name, color, side_order, updated_at) VALUES (?,?,?,?,?,CURRENT_TIMESTAMP)')
-        .run(tournamentId, participants.sideAName || 'Lag A', 'A', '#1f6feb', 1).lastInsertRowid;
-      const sideB = db.prepare('INSERT INTO tournament_sides (tournament_id, name, short_name, color, side_order, updated_at) VALUES (?,?,?,?,?,CURRENT_TIMESTAMP)')
-        .run(tournamentId, participants.sideBName || 'Lag B', 'B', '#f59e0b', 2).lastInsertRowid;
+      const insertSide = db.prepare('INSERT INTO tournament_sides (tournament_id, name, short_name, color, side_order, updated_at) VALUES (?,?,?,?,?,CURRENT_TIMESTAMP)');
+      const sideA = runInsertWithLogging(insertSide, [tournamentId, participants.sideAName || 'Lag A', 'A', '#1f6feb', 1], 'ryder_side_a', trace).lastInsertRowid;
+      const sideB = runInsertWithLogging(insertSide, [tournamentId, participants.sideBName || 'Lag B', 'B', '#f59e0b', 2], 'ryder_side_b', trace).lastInsertRowid;
       const insertPlayer = db.prepare('INSERT INTO players (tournament_id, name, handicap, team_id, active, updated_at) VALUES (?,?,?,?,1,CURRENT_TIMESTAMP)');
-      (participants.sideA || []).forEach((player) => insertPlayer.run(tournamentId, String(player.name || '').trim(), player.handicap ?? null, sideA));
-      (participants.sideB || []).forEach((player) => insertPlayer.run(tournamentId, String(player.name || '').trim(), player.handicap ?? null, sideB));
+      (participants.sideA || []).forEach((player, index) => {
+        runInsertWithLogging(insertPlayer, [tournamentId, String(player.name || '').trim(), player.handicap ?? null, sideA], `ryder_side_a_player_${index + 1}`, trace);
+      });
+      (participants.sideB || []).forEach((player, index) => {
+        runInsertWithLogging(insertPlayer, [tournamentId, String(player.name || '').trim(), player.handicap ?? null, sideB], `ryder_side_b_player_${index + 1}`, trace);
+      });
     } else if (getFormatDefinition(format).leaderboardMode === 'individual') {
       const insertPlayer = db.prepare('INSERT INTO players (tournament_id, name, handicap, active, updated_at) VALUES (?,?,?,1,CURRENT_TIMESTAMP)');
       const insertTeam = db.prepare('INSERT INTO teams (tournament_id, team_name, player1, player2, player3, player4, pin_code, player1_handicap, player2_handicap, player3_handicap, player4_handicap) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
@@ -1647,8 +1735,21 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
         while (usedPins.has(pin)) pin = String(Number(pin) + 1).padStart(4, '0').slice(-4);
         assertValidPin(pin);
         usedPins.add(pin);
-        insertTeam.run(tournamentId, pName, pName, '', '', '', pin, Number(row.handicap || 0), 0, 0, 0);
-        insertPlayer.run(tournamentId, pName, row.handicap ?? null);
+        const teamRes = runInsertWithLogging(insertTeam, [
+          tournamentId,
+          pName,
+          pName,
+          '',
+          '',
+          '',
+          pin,
+          Number(row.handicap || 0),
+          0,
+          0,
+          0
+        ], `individual_team_${idx + 1}`, trace);
+        trace('individual team id resolved', { teamId: teamRes.lastInsertRowid, pin });
+        runInsertWithLogging(insertPlayer, [tournamentId, pName, row.handicap ?? null], `individual_player_${idx + 1}`, trace);
       });
     } else {
       const insertTeam = db.prepare(
@@ -1656,17 +1757,16 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
       );
       const insertTeamPlayer = db.prepare('INSERT INTO team_players (team_id, player_name, handicap, updated_at) VALUES (?,?,?,CURRENT_TIMESTAMP)');
       const getTeamName = createTeamNameGenerator(tournamentId);
+      const usedPins = new Set();
       participantRows.forEach((row, idx) => {
         const players = Array.isArray(row.players) ? row.players : [];
         const p = [0, 1, 2, 3].map((i) => players[i] || {});
-        const playerNames = p.map((player) => String(player.name || '').trim());
         let pin = normalizePin(row.pin);
         assertValidPin(pin);
         if (usedPins.has(pin)) throw new Error('Denne PIN-koden er allerede i bruk');
         usedPins.add(pin);
-        const resolvedTeamName = getTeamName(row.teamName || row.name);
-        console.log('Saving team', resolvedTeamName);
-        const teamRes = insertTeam.run(
+        const resolvedTeamName = getTeamName(row.teamName || row.name || `Lag ${idx + 1}`);
+        const teamPayload = [
           tournamentId,
           resolvedTeamName,
           String(p[0].name || '').trim(),
@@ -1678,27 +1778,35 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
           Number(p[1].handicap || 0),
           Number(p[2].handicap || 0),
           Number(p[3].handicap || 0)
-        );
-        const teamId = teamRes.lastInsertRowid;
-        if (!teamId) throw new Error('Kunne ikke opprette lag');
-        players.forEach((player) => {
+        ];
+        const teamRes = runInsertWithLogging(insertTeam, teamPayload, `team_${idx + 1}`, trace);
+        const teamId = Number(teamRes.lastInsertRowid);
+        if (!Number.isFinite(teamId) || teamId <= 0) throw new Error('Kunne ikke opprette lag');
+        trace(`team ${idx + 1} id resolved`, { teamId, teamName: resolvedTeamName });
+
+        players.forEach((player, playerIdx) => {
           const playerName = String(player?.name || '').trim();
           if (!playerName) return;
-          console.log('Saving player', playerName);
-          insertTeamPlayer.run(teamId, playerName, Number(player.handicap || 0));
+          const playerPayload = [teamId, playerName, Number(player.handicap || 0)];
+          runInsertWithLogging(insertTeamPlayer, playerPayload, `team_${idx + 1}_player_${playerIdx + 1}`, trace);
         });
       });
     }
 
     if (publishAction === 'create_and_set_active' || isLive || publishAction === 'create_and_publish_leaderboard') {
       setSetting('activeTournamentId', String(tournamentId));
+      trace('active tournament setting updated', { tournamentId });
     }
     if (publishAction === 'create_and_open_scoring') {
       setControlSettings({ scoringOpen: true, scoringLocked: false, tournamentStatus: 'live' });
+      trace('control settings updated for open scoring');
     }
     if (publishAction === 'create_and_publish_leaderboard') {
       setControlSettings({ leaderboardVisible: true, tournamentStatus: 'live' });
+      trace('control settings updated for published leaderboard');
     }
+
+    trace('transaction ready to commit', { tournamentId });
     return tournamentId;
   });
 
@@ -1706,16 +1814,19 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
     const id = tx();
     res.json({ success: true, id });
   } catch (e) {
-    console.error('Tournament wizard save failed', e);
+    console.error('Tournament save failed', e);
+    console.error('Message:', e?.message);
+    console.error('Stack:', e?.stack);
+    console.error('Cause:', e?.cause);
     const isDev = process.env.NODE_ENV !== 'production';
+    const friendly = mapWizardSaveError(e);
     res.status(500).json({
-      error: isDev
-        ? (e.message || 'Ukjent feil ved lagring av turnering')
-        : 'Kunne ikke lagre turneringen. Kontroller at alle lag og spillere er korrekt satt opp.',
-      ...(isDev ? { details: e.stack || e.message } : {})
+      error: friendly,
+      ...(isDev ? { message: e?.message || friendly, details: e?.stack || e?.message } : {})
     });
   }
 });
+
 
 app.put('/api/admin/tournament/:id', requireAdmin, (req, res) => {
   const { name, year, description, format, status, startDate, endDate, date, course, gameday_info, slope_rating, tournamentMode, handicapPercentage, formatSettings } = req.body;
