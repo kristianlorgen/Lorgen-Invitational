@@ -134,14 +134,59 @@ function tryRestoreTeamSessionFromPin(req) {
   }
 }
 
+function clearTeamSession(req) {
+  if (!req?.session) return;
+  delete req.session.teamId;
+  delete req.session.tournamentId;
+}
+
+function getAuthorizedTeamForActiveTournament(req) {
+  const activeTournament = getActiveTournament();
+  if (!activeTournament) {
+    clearTeamSession(req);
+    return { error: { status: 404, message: 'Det finnes ingen aktiv turnering akkurat nå' } };
+  }
+
+  const teamCountRow = db.prepare('SELECT COUNT(*) as count FROM teams WHERE tournament_id=?').get(activeTournament.id);
+  if (!Number(teamCountRow?.count || 0)) {
+    clearTeamSession(req);
+    return { error: { status: 404, message: 'Ingen lag er satt opp for aktiv turnering' } };
+  }
+
+  if (req.session?.teamId) {
+    const team = db.prepare('SELECT id, team_name, tournament_id FROM teams WHERE id=? LIMIT 1').get(req.session.teamId);
+    if (team && team.tournament_id === activeTournament.id) {
+      req.session.tournamentId = activeTournament.id;
+      return { team, tournament: activeTournament };
+    }
+    clearTeamSession(req);
+  }
+
+  if (tryRestoreTeamSessionFromPin(req)) {
+    const team = db.prepare('SELECT id, team_name, tournament_id FROM teams WHERE id=? LIMIT 1').get(req.session.teamId);
+    if (team && team.tournament_id === activeTournament.id) {
+      req.session.tournamentId = activeTournament.id;
+      return { team, tournament: activeTournament };
+    }
+    clearTeamSession(req);
+  }
+
+  return { error: { status: 401, message: 'Laginnlogging påkrevd' } };
+}
+
 const requireTeam = (req, res, next) => {
-  if (req.session.teamId) return next();
-  if (tryRestoreTeamSessionFromPin(req)) return next();
-  console.warn('[mobile-session] Missing team session and no valid pin fallback', {
+  const authorized = getAuthorizedTeamForActiveTournament(req);
+  if (!authorized.error) {
+    req.teamAuth = authorized;
+    return next();
+  }
+  console.warn('[mobile-session] Team access denied', {
     path: req.path,
+    status: authorized.error.status,
+    message: authorized.error.message,
     userAgent: req.get('user-agent') || 'unknown'
   });
-  return res.status(401).json({ error: 'Laginnlogging påkrevd' });
+  return res.status(authorized.error.status).json({ error: authorized.error.message });
 };
 
 const requireAdmin = (req, res, next) =>
@@ -1292,12 +1337,15 @@ app.get('/api/auth/github-url', (req, res) => {
 
 app.post('/api/auth/team-login', (req, res) => {
   const { pin } = req.body;
-  if (!pin) return res.status(400).json({ error: 'PIN er påkrevd' });
+  const pinText = String(pin || '').trim();
+  if (!/^\d{4}$/.test(pinText)) return res.status(400).json({ error: 'PIN må være nøyaktig 4 siffer' });
   try {
     const t = getActiveTournament();
-    if (!t) return res.status(404).json({ error: 'Ingen aktiv turnering' });
-    const team = db.prepare('SELECT * FROM teams WHERE tournament_id=? AND pin_code=? LIMIT 1').get(t.id, pin);
-    if (!team) return res.status(401).json({ error: 'Ugyldig PIN' });
+    if (!t) return res.status(404).json({ error: 'Det finnes ingen aktiv turnering akkurat nå' });
+    const teamCountRow = db.prepare('SELECT COUNT(*) as count FROM teams WHERE tournament_id=?').get(t.id);
+    if (!Number(teamCountRow?.count || 0)) return res.status(404).json({ error: 'Ingen lag er satt opp for aktiv turnering' });
+    const team = db.prepare('SELECT * FROM teams WHERE tournament_id=? AND pin_code=? LIMIT 1').get(t.id, pinText);
+    if (!team) return res.status(401).json({ error: 'Ugyldig PIN. Prøv igjen.' });
     req.session.teamId = team.id;
     req.session.tournamentId = t.id;
     res.json({
@@ -1325,11 +1373,24 @@ app.get('/api/auth/status', (req, res) => {
   if (req.session.isAdmin) {
     return res.json({ type: 'admin' });
   }
-  if (req.session.teamId) {
-    const team = db.prepare('SELECT id,team_name,player1,player2 FROM teams WHERE id=?').get(req.session.teamId);
+  const authorized = getAuthorizedTeamForActiveTournament(req);
+  if (!authorized.error) {
+    const team = db.prepare('SELECT id,team_name,player1,player2 FROM teams WHERE id=?').get(authorized.team.id);
     return res.json({ type: 'team', team });
   }
   res.json({ type: 'none' });
+});
+
+app.get('/api/scorecard/access-status', (req, res) => {
+  const activeTournament = getActiveTournament();
+  if (!activeTournament) {
+    return res.json({ hasActiveTournament: false, hasTeams: false, message: 'Det finnes ingen aktiv turnering akkurat nå' });
+  }
+  const teamCountRow = db.prepare('SELECT COUNT(*) as count FROM teams WHERE tournament_id=?').get(activeTournament.id);
+  if (!Number(teamCountRow?.count || 0)) {
+    return res.json({ hasActiveTournament: true, hasTeams: false, message: 'Ingen lag er satt opp for aktiv turnering' });
+  }
+  res.json({ hasActiveTournament: true, hasTeams: true, tournamentId: activeTournament.id });
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -3161,8 +3222,11 @@ app.get('/api/instagram-qr', (req, res) => {
 });
 
 // ── Clean URL routing ────────────────────────────────────────────────────────
-['gameday', 'scoreboard', 'legacy', 'historikk', 'enter-score', 'admin', 'gallery'].forEach(p => {
-  app.get(`/${p}`, (req, res) => res.sendFile(path.join(__dirname, `public/${p}.html`)));
+['gameday', 'scoreboard', 'legacy', 'historikk', 'enter-score', 'scorecard', 'admin', 'gallery'].forEach(p => {
+  app.get(`/${p}`, (req, res) => {
+  const file = p === 'scorecard' ? 'enter-score' : p;
+  res.sendFile(path.join(__dirname, `public/${file}.html`));
+});
 });
 app.get('/historikk/:id', (req, res) => res.sendFile(path.join(__dirname, 'public/historikk-detail.html')));
 app.get('/admin/control-panel', (req, res) => res.sendFile(path.join(__dirname, 'public/control-panel.html')));
