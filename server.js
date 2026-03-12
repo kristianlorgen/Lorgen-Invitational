@@ -1877,13 +1877,14 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
       db.prepare('DELETE FROM team_players WHERE team_id IN (SELECT id FROM teams WHERE tournament_id=?)').run(tournamentId);
       db.prepare('DELETE FROM teams WHERE tournament_id=?').run(tournamentId);
     } else {
-      const isIndividual = getFormatDefinition(format).leaderboardMode === 'individual';
+      const formatDefinition = getFormatDefinition(format);
+      const isTeamFormat = formatDefinition.participantMode !== 'individual' && Number(formatDefinition.teamSize || 1) > 1;
+      console.log('Tournament format', format);
+      console.log('Is team format', isTeamFormat);
       const existingPlayers = db.prepare('SELECT * FROM players WHERE tournament_id=?').all(tournamentId);
       const existingPlayersById = new Map(existingPlayers.map((row) => [row.id, row]));
       const insertPlayer = db.prepare('INSERT INTO players (tournament_id, name, handicap, active, updated_at) VALUES (?,?,?,1,CURRENT_TIMESTAMP)');
       const updatePlayer = db.prepare('UPDATE players SET name=?, handicap=?, active=1, team_id=NULL, ryder_cup_side=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=? AND tournament_id=?');
-      const deletePlayerById = db.prepare('DELETE FROM players WHERE id=? AND tournament_id=?');
-
       const insertTeam = db.prepare('INSERT INTO teams (tournament_id, team_name, player1, player2, player3, player4, pin_code, player1_handicap, player2_handicap, player3_handicap, player4_handicap, active) VALUES (?,?,?,?,?,?,?,?,?,?,?,1)');
       const updateTeam = db.prepare('UPDATE teams SET team_name=?, player1=?, player2=?, player3=?, player4=?, pin_code=?, player1_handicap=?, player2_handicap=?, player3_handicap=?, player4_handicap=?, active=1 WHERE id=?');
       const existingTeams = db.prepare('SELECT * FROM teams WHERE tournament_id=?').all(tournamentId);
@@ -1893,14 +1894,19 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
       const usedPins = new Set();
       const getTeamName = createTeamNameGenerator(tournamentId);
 
-      const rowsToPersist = isIndividual
-        ? participantRows.map((row, idx) => ({
+      const rowsToPersist = isTeamFormat
+        ? participantRows
+        : participantRows.map((row, idx) => ({
             id: row.id,
             teamName: String(row.name || '').trim() || `Lag ${idx + 1}`,
             pin: row.pin,
             players: [{ id: row.id, name: row.name, handicap: row.handicap }]
-          }))
-        : participantRows;
+          }));
+
+      if (!isTeamFormat) {
+        console.log('Skipping team sections for individual format', format);
+      }
+      console.log('Saving teams payload', rowsToPersist);
 
       const teamPlayersRows = [];
 
@@ -1942,6 +1948,7 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
           teamId = Number(teamRes.lastInsertRowid);
         }
         if (!Number.isFinite(teamId) || teamId <= 0) throw new Error('Kunne ikke opprette lag');
+        console.log('Inserted team', { teamId, teamName: resolvedTeamName, tournamentId });
         retainedTeamIds.add(teamId);
 
         players.forEach((player, playerIdx) => {
@@ -1971,7 +1978,9 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
       db.prepare('DELETE FROM team_players WHERE team_id IN (SELECT id FROM teams WHERE tournament_id=?)').run(tournamentId);
       const insertTeamPlayer = db.prepare('INSERT INTO team_players (team_id, player_id, player_name, handicap, sort_order, updated_at) VALUES (?,?,?,?,?,CURRENT_TIMESTAMP)');
       teamPlayersRows.forEach((row, idx) => {
+        const linkRow = { teamId: row.teamId, playerId: row.playerId, playerName: row.playerName, handicap: row.handicap, sortOrder: row.sortOrder };
         runInsertWithLogging(insertTeamPlayer, [row.teamId, row.playerId, row.playerName, row.handicap, row.sortOrder], `team_player_${idx + 1}`, trace);
+        console.log('Inserted team-player link', linkRow);
       });
 
       existingPlayers.forEach((player) => {
