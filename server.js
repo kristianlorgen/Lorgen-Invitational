@@ -192,6 +192,32 @@ function getActiveTournament() {
   return tournament;
 }
 
+function createTeamNameGenerator(tournamentId, excludeTeamId = null) {
+  const params = excludeTeamId ? [tournamentId, excludeTeamId] : [tournamentId];
+  const whereClause = excludeTeamId ? 'WHERE tournament_id=? AND id!=?' : 'WHERE tournament_id=?';
+  const existingTeamNames = db.prepare(`SELECT team_name FROM teams ${whereClause}`).all(...params)
+    .map((row) => String(row.team_name || '').trim())
+    .filter(Boolean);
+
+  const used = new Set(existingTeamNames);
+  let counter = existingTeamNames.reduce((max, name) => {
+    const match = /^Lag\s+(\d+)$/.exec(name);
+    if (!match) return max;
+    return Math.max(max, Number(match[1]));
+  }, 0);
+
+  return (candidate = '') => {
+    const normalized = String(candidate || '').trim();
+    if (normalized) return normalized;
+    do {
+      counter += 1;
+    } while (used.has(`Lag ${counter}`));
+    const generated = `Lag ${counter}`;
+    used.add(generated);
+    return generated;
+  };
+}
+
 const CONTROL_DEFAULTS = {
   scoringOpen: false,
   scoringLocked: false,
@@ -1628,7 +1654,7 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
         'INSERT INTO teams (tournament_id, team_name, player1, player2, player3, player4, pin_code, player1_handicap, player2_handicap, player3_handicap, player4_handicap) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
       );
       const insertPlayer = db.prepare('INSERT INTO players (tournament_id, name, handicap, team_id, active, updated_at) VALUES (?,?,?,?,1,CURRENT_TIMESTAMP)');
-      const usedPins = new Set();
+      const getTeamName = createTeamNameGenerator(tournamentId);
       participantRows.forEach((row, idx) => {
         const players = Array.isArray(row.players) ? row.players : [];
         const p = [0, 1, 2, 3].map((i) => players[i] || {});
@@ -1639,11 +1665,11 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
         usedPins.add(pin);
         const teamRes = insertTeam.run(
           tournamentId,
-          String(row.teamName || row.name || `Lag ${idx + 1}`),
-          playerNames[0],
-          playerNames[1],
-          playerNames[2],
-          playerNames[3],
+          getTeamName(row.teamName || row.name),
+          String(p[0].name || '').trim(),
+          String(p[1].name || '').trim(),
+          String(p[2].name || '').trim(),
+          String(p[3].name || '').trim(),
           pin,
           Number(p[0].handicap || 0),
           Number(p[1].handicap || 0),
@@ -2153,11 +2179,12 @@ app.get('/api/admin/tournament/:id/teams', requireAdmin, (req, res) => {
 
 app.post('/api/admin/team', requireAdmin, (req, res) => {
   const { tournament_id, team_name, player1, player2, player3, player4, pin_code, player1_handicap, player2_handicap, player3_handicap, player4_handicap } = req.body;
-  if (!tournament_id || !team_name || !player1 || !player2 || !pin_code)
+  if (!tournament_id || !player1 || !player2 || !pin_code)
     return res.status(400).json({ error: 'Alle felt er påkrevd' });
   try {
     const tournament = getTournamentById(tournament_id);
     if (!tournament) return res.status(404).json({ error: 'Turnering ikke funnet' });
+    const getTeamName = createTeamNameGenerator(tournament_id);
     const players = [player1, player2, player3, player4].filter((p) => String(p || '').trim());
     const sizeValidation = validateTeamSizeForFormat(tournament.format, players.length);
     if (!sizeValidation.valid) return res.status(400).json({ error: `Dette formatet krever nøyaktig ${sizeValidation.required} spillere per lag` });
@@ -2165,7 +2192,7 @@ app.post('/api/admin/team', requireAdmin, (req, res) => {
     if (existing) return res.status(400).json({ error: 'PIN allerede i bruk i denne turneringen' });
     const result = db.prepare(
       'INSERT INTO teams (tournament_id, team_name, player1, player2, player3, player4, pin_code, player1_handicap, player2_handicap, player3_handicap, player4_handicap) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
-    ).run(tournament_id, team_name, player1, player2, player3 || '', player4 || '', pin_code, parseFloat(player1_handicap)||0, parseFloat(player2_handicap)||0, parseFloat(player3_handicap)||0, parseFloat(player4_handicap)||0);
+    ).run(tournament_id, getTeamName(team_name), player1, player2, player3 || '', player4 || '', pin_code, parseFloat(player1_handicap)||0, parseFloat(player2_handicap)||0, parseFloat(player3_handicap)||0, parseFloat(player4_handicap)||0);
     res.json({ success: true, id: result.lastInsertRowid });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -2176,11 +2203,12 @@ app.put('/api/admin/team/:id', requireAdmin, (req, res) => {
     const existingTeam = db.prepare('SELECT tournament_id FROM teams WHERE id=?').get(req.params.id);
     if (!existingTeam) return res.status(404).json({ error: 'Lag ikke funnet' });
     const tournament = getTournamentById(existingTeam.tournament_id);
+    const getTeamName = createTeamNameGenerator(existingTeam.tournament_id, req.params.id);
     const players = [player1, player2, player3, player4].filter((p) => String(p || '').trim());
     const sizeValidation = validateTeamSizeForFormat(tournament?.format, players.length);
     if (!sizeValidation.valid) return res.status(400).json({ error: `Dette formatet krever nøyaktig ${sizeValidation.required} spillere per lag` });
     db.prepare('UPDATE teams SET team_name=?, player1=?, player2=?, player3=?, player4=?, pin_code=?, player1_handicap=?, player2_handicap=?, player3_handicap=?, player4_handicap=? WHERE id=?')
-      .run(team_name, player1, player2, player3 || '', player4 || '', pin_code, parseFloat(player1_handicap)||0, parseFloat(player2_handicap)||0, parseFloat(player3_handicap)||0, parseFloat(player4_handicap)||0, req.params.id);
+      .run(getTeamName(team_name), player1, player2, player3 || '', player4 || '', pin_code, parseFloat(player1_handicap)||0, parseFloat(player2_handicap)||0, parseFloat(player3_handicap)||0, parseFloat(player4_handicap)||0, req.params.id);
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
