@@ -32,6 +32,11 @@
         { title: 'Individuell konkurranse', text: 'Alle spiller for seg selv, og hver spillers poeng summeres gjennom hele runden.' },
         { title: 'Poeng fremfor slag', text: 'Denne spillformen belønner gode hull uten at ett svakt hull ødelegger hele dagen.' },
         { title: 'Handicapvennlig', text: 'Stableford fungerer godt både brutto og netto, og gjør det enklere å samle spillere på ulike nivåer.' }
+      ],
+      homepageCards: [
+        { icon: 'flag', title: 'Stableford', text: 'Poengsystem som belønner gode hull uten at ett svakt hull ødelegger hele runden.' },
+        { icon: 'star', title: 'Poeng per hull', text: 'Hvert hull gir poeng, og totalsummen avgjør plasseringen.' },
+        { icon: 'users', title: 'Handicapvennlig', text: 'Formatet gjør det enkelt å samle spillere med ulikt nivå i samme konkurranse.' }
       ]
     },
     slagspill: {
@@ -60,6 +65,11 @@
         { title: 'Klassisk format', text: 'Dette er den tradisjonelle konkurranseformen de fleste forbinder med golf.' },
         { title: 'Hvert slag teller', text: 'Det finnes ingen hull-poeng eller dueller — totalsummen gjennom runden avgjør.' },
         { title: 'Passer enkeltturneringer', text: 'Slagspill egner seg godt når man vil kåre den objektivt beste totalscoren.' }
+      ],
+      homepageCards: [
+        { icon: 'flag', title: 'Slagspill', text: 'Den klassiske konkurranseformen der alle slag teller fra start til slutt.' },
+        { icon: 'star', title: 'Alle slag teller', text: 'Hvert eneste slag påvirker totalscoren og sluttplasseringen.' },
+        { icon: 'trophy', title: 'Klassisk konkurranse', text: 'En tradisjonell turneringsform for deg som vil kåre laveste totalscore.' }
       ]
     },
     '2-manns scramble': {
@@ -88,6 +98,11 @@
         { title: 'To spillere per lag', text: 'Begge er involvert i hvert hull, og lagets valg avgjør den videre strategien.' },
         { title: 'Lagspill og taktikk', text: 'Formatet belønner samarbeid, trygge valg og evnen til å utnytte en god ball.' },
         { title: 'Én score per hull', text: 'Det er lagets hullscore som føres, ikke individuelle resultater.' }
+      ],
+      homepageCards: [
+        { icon: 'users', title: '2-Manns Scramble', text: 'Begge slår ut, laget velger beste ball og samarbeider videre mot lavest mulig score.' },
+        { icon: 'chess', title: 'Lagspill og taktikk', text: 'Trygge valg og riktig risikonivå gir store fordeler gjennom hele runden.' },
+        { icon: 'star', title: 'Én score per hull', text: 'Kun lagets hullscore registreres, ikke individuelle scorer.' }
       ]
     },
     'texas scramble (4-manns)': {
@@ -116,6 +131,11 @@
         { title: 'Fire spillere per lag', text: 'Alle fire bidrar, og laget får mange muligheter til å velge en sterk ball.' },
         { title: 'Samarbeid hele veien', text: 'Fra tee til green handler det om å maksimere lagets beste mulighet i hvert slag.' },
         { title: 'Perfekt for event', text: 'Texas Scramble er en svært sosial og publikumsvennlig spillform som passer godt til større turneringer.' }
+      ],
+      homepageCards: [
+        { icon: 'users', title: 'Texas Scramble', text: 'Fire spillere samarbeider om én lagscore på hvert hull.' },
+        { icon: 'flag', title: 'Fire spillere per lag', text: 'Alle bidrar i hvert slag, og laget velger beste posisjon underveis.' },
+        { icon: 'chess', title: 'Samarbeid hele veien', text: 'Formatet belønner kommunikasjon, bredde og gode taktiske beslutninger.' }
       ]
     },
     greensome: {
@@ -144,6 +164,11 @@
         { title: 'To utslag, én ball videre', text: 'Laget får to sjanser fra tee, men må deretter spille videre på én valgt ball.' },
         { title: 'Annenhver slag', text: 'Formatet krever rytme, samarbeid og god planlegging mellom spillerne.' },
         { title: 'Taktisk spillform', text: 'Greensome belønner lag som velger klokt og spiller stabilt underveis.' }
+      ],
+      homepageCards: [
+        { icon: 'flag', title: 'Greensome', text: 'Begge slår ut før laget velger én ball å spille videre med.' },
+        { icon: 'star', title: 'To utslag, én ball videre', text: 'Utslagsvalget setter rammen for resten av hullet.' },
+        { icon: 'chess', title: 'Annenhver slag', text: 'Etter valgt utslag spiller laget annenhver gang til ballen er i hullet.' }
       ]
     },
     foursome: {
@@ -172,6 +197,11 @@
         { title: 'Én ball hele veien', text: 'I motsetning til scramble finnes det ingen valgmuligheter underveis — laget må leve med hvert slag.' },
         { title: 'Annenhver slag', text: 'Begge spillere må være synkroniserte og komfortable med rollene sine.' },
         { title: 'Tradisjonell laggolf', text: 'Foursome er en klassisk konkurranseform i både klubbturneringer og lagmatcher.' }
+      ],
+      homepageCards: [
+        { icon: 'flag', title: 'Foursome', text: 'To spillere deler ansvaret for én ball gjennom hele hullet.' },
+        { icon: 'star', title: 'Én ball hele veien', text: 'Ingen valgmuligheter underveis gjør hvert slag ekstra viktig.' },
+        { icon: 'chess', title: 'Annenhver slag', text: 'Fast slagrekkefølge stiller høye krav til samspill og planlegging.' }
       ]
     },
     'bestball / four-ball': {
@@ -200,6 +230,11 @@
         { title: 'Egen ball hele hullet', text: 'Begge spiller fullt ut, og laget får uttelling for den sterkeste prestasjonen på hvert hull.' },
         { title: 'Laveste score teller', text: 'Formatet skaper mange birdie-sjanser uten at begge må levere samtidig.' },
         { title: 'God lagdynamikk', text: 'Bestball passer godt når man vil kombinere individuell følelse med lagkonkurranse.' }
+      ],
+      homepageCards: [
+        { icon: 'flag', title: 'Bestball / Four-ball', text: 'Begge spiller sin egen ball, og lagets beste score teller på hvert hull.' },
+        { icon: 'star', title: 'Begge spiller egen ball', text: 'Begge kan bidra med tellende score gjennom hele runden.' },
+        { icon: 'trophy', title: 'Beste score teller', text: 'Formatet kombinerer individuell flyt med tydelig lagdynamikk.' }
       ]
     },
     matchspill: {
@@ -228,9 +263,20 @@
         { title: 'Hull for hull-duell', text: 'Et dårlig hull kan glemmes med en gang — neste hull er en ny mulighet.' },
         { title: 'Taktikk mot motstander', text: 'Spillere kan velge mer aggressive eller konservative linjer ut fra matchsituasjonen.' },
         { title: 'Rask og intens konkurranse', text: 'Matchspill skaper mye nerve fordi stillingen kan svinge raskt.' }
+      ],
+      homepageCards: [
+        { icon: 'flag', title: 'Matchspill', text: 'En direkte duell der hvert hull vinnes, deles eller tapes separat.' },
+        { icon: 'star', title: 'Hull for hull-duell', text: 'Stillingen avgjøres av hullseire, ikke totalscore.' },
+        { icon: 'chess', title: 'Taktikk mot motstander', text: 'Spillvalg styres av matchbildet og pressituasjonen på hvert hull.' }
       ]
     }
   };
+
+  const SHARED_HOMEPAGE_CARDS = [
+    { icon: 'chart', title: 'Live Resultater', text: 'Følg stillingen i sanntid gjennom hele turneringen med fortløpende oppdateringer.' },
+    { icon: 'calendar', title: 'Årlig Tradisjon', text: 'Lorgen Invitational samler spillere hvert år til en ny runde med konkurranse og samhold.' },
+    { icon: 'crown', title: 'Premier og Utmerkelser', text: 'Vi kårer både totalvinnere og egne prestasjoner som fortjener ekstra heder.' }
+  ];
 
   const FALLBACK_CONTENT = {
     key: 'unknown',
@@ -249,8 +295,19 @@
     handicapText: 'Handicapoppsett vises når turneringsformat er konfigurert.',
     specialNotesTitle: 'Viktig å vite',
     specialNotesText: 'Sjekk tilbake senere for oppdatert turneringsinformasjon.',
-    infoCards: []
+    infoCards: [],
+    homepageCards: [
+      { icon: 'flag', title: 'Turneringsformat', text: 'Spillform oppdateres når turneringsoppsettet er satt av admin.' },
+      { icon: 'info', title: 'Oppdatert informasjon', text: 'Formatbeskrivelse, regler og nøkkelinfo vises så snart formatet er konfigurert.' },
+      { icon: 'users', title: 'Klar til turnering', text: 'Lag og spillere kan fortsatt følge med på øvrig turneringsinnhold.' }
+    ]
   };
+
+  function getHomepageCards(format) {
+    const content = getFormatContent(format);
+    const specificCards = Array.isArray(content.homepageCards) ? content.homepageCards : [];
+    return [...specificCards, ...SHARED_HOMEPAGE_CARDS];
+  }
 
   function normalizeTournamentFormat(format) {
     const raw = String(format || '').trim().toLowerCase();
@@ -298,6 +355,8 @@
     MODE_LABELS,
     normalizeTournamentFormat,
     getFormatContent,
-    getModeLabel
+    getModeLabel,
+    getHomepageCards,
+    SHARED_HOMEPAGE_CARDS
   };
 })(window);
