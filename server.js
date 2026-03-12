@@ -1592,6 +1592,7 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
       publishAction === 'create_and_publish_leaderboard' ? 1 : 0
     );
     const tournamentId = tournamentRes.lastInsertRowid;
+    console.log('Saving tournament', tournamentId);
 
     const holesCount = Number.isFinite(Number(structure.holesCount)) ? Number(structure.holesCount) : 18;
     const insertHole = db.prepare('INSERT INTO holes (tournament_id, hole_number, par, requires_photo) VALUES (?,?,4,0)');
@@ -1653,7 +1654,7 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
       const insertTeam = db.prepare(
         'INSERT INTO teams (tournament_id, team_name, player1, player2, player3, player4, pin_code, player1_handicap, player2_handicap, player3_handicap, player4_handicap) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
       );
-      const insertPlayer = db.prepare('INSERT INTO players (tournament_id, name, handicap, team_id, active, updated_at) VALUES (?,?,?,?,1,CURRENT_TIMESTAMP)');
+      const insertTeamPlayer = db.prepare('INSERT INTO team_players (team_id, player_name, handicap, updated_at) VALUES (?,?,?,CURRENT_TIMESTAMP)');
       const getTeamName = createTeamNameGenerator(tournamentId);
       participantRows.forEach((row, idx) => {
         const players = Array.isArray(row.players) ? row.players : [];
@@ -1663,9 +1664,11 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
         assertValidPin(pin);
         if (usedPins.has(pin)) throw new Error('Denne PIN-koden er allerede i bruk');
         usedPins.add(pin);
+        const resolvedTeamName = getTeamName(row.teamName || row.name);
+        console.log('Saving team', resolvedTeamName);
         const teamRes = insertTeam.run(
           tournamentId,
-          getTeamName(row.teamName || row.name),
+          resolvedTeamName,
           String(p[0].name || '').trim(),
           String(p[1].name || '').trim(),
           String(p[2].name || '').trim(),
@@ -1681,7 +1684,8 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
         players.forEach((player) => {
           const playerName = String(player?.name || '').trim();
           if (!playerName) return;
-          insertPlayer.run(tournamentId, playerName, Number(player.handicap || 0), teamId);
+          console.log('Saving player', playerName);
+          insertTeamPlayer.run(teamId, playerName, Number(player.handicap || 0));
         });
       });
     }

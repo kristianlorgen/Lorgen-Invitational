@@ -170,6 +170,16 @@ db.exec(`
     FOREIGN KEY (tournament_id) REFERENCES tournaments(id)
   );
 
+  CREATE TABLE IF NOT EXISTS team_players (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    team_id INTEGER NOT NULL,
+    player_name TEXT NOT NULL,
+    handicap REAL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
+  );
+
   CREATE TABLE IF NOT EXISTS scores (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     team_id INTEGER NOT NULL,
