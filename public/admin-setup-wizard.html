@@ -106,203 +106,495 @@
 </div>
 <script>
 const formatSettings = {
-  strokeplay: { label: "Slagspill", mode: "individual", playersPerUnit: 1, supportsTeams: false, defaultHcpPercent: 100 },
-  stableford: { label: "Stableford", mode: "individual", playersPerUnit: 1, supportsTeams: false, defaultHcpPercent: 100 },
-  scramble2: { label: "2-manns scramble", mode: "team", playersPerUnit: 2, supportsTeams: true, defaultHcpPercent: 25 },
-  scramble3: { label: "3-manns scramble", mode: "team", playersPerUnit: 3, supportsTeams: true, defaultHcpPercent: 20 },
-  scramble4: { label: "4-manns scramble", mode: "team", playersPerUnit: 4, supportsTeams: true, defaultHcpPercent: 10 },
-  bestball2: { label: "2-ball bestball", mode: "team", playersPerUnit: 2, supportsTeams: true, defaultHcpPercent: 85 }
+  strokeplay: { label: 'Slagspill', apiFormat: 'strokeplay', teamSize: 1, useTeams: false, participantMode: 'players', defaultMode: 'players', defaultHcpPercent: 100 },
+  stableford: { label: 'Stableford', apiFormat: 'stableford', teamSize: 1, useTeams: false, participantMode: 'players', defaultMode: 'players', defaultHcpPercent: 100 },
+  scramble2: { label: '2-manns scramble', apiFormat: 'texas_scramble', teamSize: 2, useTeams: true, participantMode: 'team', defaultMode: 'manual', defaultHcpPercent: 25 },
+  scramble3: { label: '3-manns scramble', apiFormat: 'scramble3', teamSize: 3, useTeams: true, participantMode: 'team', defaultMode: 'manual', defaultHcpPercent: 20 },
+  scramble4: { label: '4-manns scramble', apiFormat: 'texas_scramble_4', teamSize: 4, useTeams: true, participantMode: 'team', defaultMode: 'manual', defaultHcpPercent: 10 },
+  bestball2: { label: '2-ball bestball', apiFormat: 'fourball', teamSize: 2, useTeams: true, participantMode: 'team', defaultMode: 'manual', defaultHcpPercent: 85 }
 };
-const formatApiMap = { scramble2:'texas_scramble', scramble3:'scramble3', scramble4:'texas_scramble_4', bestball2:'fourball', strokeplay:'strokeplay', stableford:'stableford' };
+
 let step = 0;
 const totalSteps = 4;
-const state = { selectedFormat:'strokeplay', participants:[], teams:[], teamPool:[], generationStrategy:'random' };
-const pinSanitize = (v) => String(v||'').replace(/\D/g,'').slice(0,4);
-const pinValid = (v) => /^\d{4}$/.test(String(v||''));
+let saving = false;
+const state = {
+  selectedFormat: 'strokeplay',
+  participants: [],
+  teams: [],
+  teamPool: [],
+  teamSetupMode: 'players'
+};
 
-async function api(url, options={}) {
-  const res = await fetch(url, { credentials:'include', headers:{'Content-Type':'application/json', ...(options.headers||{})}, ...options });
-  if (!res.ok) throw new Error((await res.json().catch(()=>({}))).error || 'API-feil');
-  return res.json();
-}
-async function checkAdmin(){ try { await api('/api/admin/tournaments'); return true; } catch { return false; } }
-async function doAdminLogin(){ try { await api('/api/auth/admin-login', { method:'POST', body:JSON.stringify({ password:document.getElementById('adminPass').value })}); boot(); } catch(e){ document.getElementById('loginError').textContent=e.message; }}
+const pinSanitize = (v) => String(v || '').replace(/\D/g, '').slice(0, 4);
+const pinValid = (v) => /^\d{4}$/.test(String(v || ''));
+const escapeHtml = (v) => String(v ?? '').replace(/[&<>'"]/g, (m) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[m]));
 
-function selectedFormatConfig(){ return formatSettings[state.selectedFormat] ?? formatSettings.strokeplay; }
-function playersPerUnit(){ return selectedFormatConfig().playersPerUnit; }
-function hcpTeam(team){ const total=(team.players||[]).reduce((s,p)=>s+Number(p.handicap||0),0); const adjusted=Math.round(total*(Number(document.getElementById('hcpPercent').value||0)/100)); return { total, adjusted }; }
-function createPin(){ return String(Math.floor(Math.random()*9000)+1000); }
-function createUniquePin(usedPins = new Set()){ let pin=createPin(); while(usedPins.has(pin)) pin=createPin(); usedPins.add(pin); return pin; }
-
-function renderFormatOptions(){
-  const sel = document.getElementById('format');
-  sel.innerHTML = Object.entries(formatSettings).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('');
-  sel.value = state.selectedFormat;
-}
-function addPlayer(){ state.participants.push({id:crypto.randomUUID(), name:'', pin:'', handicap:''}); renderParticipants(); }
-function addTeam(){ state.teams.push({id:crypto.randomUUID(), name:`Lag ${state.teams.length+1}`, pin:'', players:Array.from({length:playersPerUnit()},()=>({id:crypto.randomUUID(),name:'',handicap:''}))}); renderParticipants(); }
-
-function renderParticipants(){
-  const cfg = selectedFormatConfig();
-  const area = document.getElementById('participantsArea');
-  document.getElementById('participantsHint').textContent = cfg.mode==='team' ? `Hvert lag må ha nøyaktig ${cfg.playersPerUnit} spillere` : 'Legg inn spillere med PIN og handicap';
-  if (cfg.mode === 'individual') {
-    area.innerHTML = `<div class="actions"><button class="btn btn--outline" onclick="addPlayer()">Legg til spiller</button></div>` +
-      state.participants.map((p,i)=>`<div class="player-row"><input class="form-input" placeholder="Spillernavn" value="${p.name||''}" oninput="state.participants[${i}].name=this.value"><input class="pin-input form-input" type="text" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="1234" value="${p.pin||''}" oninput="state.participants[${i}].pin=pinSanitize(this.value);this.value=state.participants[${i}].pin"><input class="form-input" type="number" placeholder="Handicap" value="${p.handicap??''}" oninput="state.participants[${i}].handicap=this.value"><button class="btn btn--outline" onclick="state.participants.splice(${i},1);renderParticipants()">Fjern</button></div>`).join('');
-    return;
+async function api(url, options = {}) {
+  const res = await fetch(url, {
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    ...options
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(json.error || 'API-feil');
+    err.details = json.details || '';
+    throw err;
   }
-  area.innerHTML = `<h4>PLAYER POOL</h4><div class="actions"><button class="btn btn--outline" onclick="addPoolPlayer()">Add player</button><button class="btn btn--outline" onclick="generateTeams('random')">Generate teams random</button><button class="btn btn--outline" onclick="generateTeams('balanced')">Generate teams balanced</button></div><div id="poolWrap"></div>`;
-  renderPool();
-  area.innerHTML += state.teams.map((t,ti)=>`<div class="team-card"><h4>Team ${ti+1}</h4><div style="margin-bottom:8px"><strong>PIN ${t.pin}</strong></div><div>${t.players.map((pl,pi)=>`<div class="team-player-row"><input class="form-input" placeholder="Player ${pi+1}" value="${pl.name||''}" oninput="state.teams[${ti}].players[${pi}].name=this.value"><input class="form-input" type="number" placeholder="Handicap" value="${pl.handicap??''}" oninput="state.teams[${ti}].players[${pi}].handicap=this.value"></div>`).join('')}</div></div>`).join('');
+  return json;
 }
-function addPoolPlayer(){ state.teamPool.push({id:crypto.randomUUID(),name:'',handicap:''}); renderPool(); }
-function renderPool(){ const wrap=document.getElementById('poolWrap'); if(!wrap) return; wrap.innerHTML = `${state.teamPool.map((p,i)=>`<div class="team-player-row"><input class="form-input" placeholder="Name" value="${p.name||''}" oninput="state.teamPool[${i}].name=this.value"><input class="form-input" type="number" placeholder="Handicap" value="${p.handicap??''}" oninput="state.teamPool[${i}].handicap=this.value"></div>`).join('')}`; }
-function shuffle(arr){ for(let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]];} return arr; }
-function generateTeams(strategy){
-  const size = playersPerUnit();
-  const players = state.teamPool.filter(p=>String(p.name||'').trim());
-  if (!players.length || players.length % size !== 0) { document.getElementById('step2Error').textContent = `Antall spillere i pool må kunne deles på ${size}`; return; }
-  document.getElementById('step2Error').textContent = '';
-  let ordered = [...players];
-  if (strategy === 'random') ordered = shuffle(ordered);
-  if (strategy === 'balanced') {
-    ordered = [...players].sort((a,b)=>Number(a.handicap||0)-Number(b.handicap||0));
-    const tmp=[]; while(ordered.length){ tmp.push(ordered.shift()); if(ordered.length) tmp.push(ordered.pop()); } ordered=tmp;
+
+async function checkAdmin() {
+  try {
+    await api('/api/admin/tournaments');
+    return true;
+  } catch {
+    return false;
   }
-  const usedPins = new Set();
-  const teams=[]; for(let i=0;i<ordered.length;i+=size){ const group=ordered.slice(i,i+size); teams.push({id:crypto.randomUUID(),name:`Team ${teams.length+1}`,pin:createUniquePin(usedPins),players:group.map(g=>({id:g.id,name:g.name,handicap:g.handicap}))}); }
-  state.teams = teams; renderParticipants();
 }
 
-function uniqErrors(errors){ return [...new Set(errors)]; }
-function validateStep1(){
-  const errors=[];
-  if(!document.getElementById('name').value.trim()) errors.push('Turneringsnavn mangler');
-  if(!state.selectedFormat) errors.push('Velg turneringsformat');
-  if(!document.getElementById('date').value) errors.push('Dato mangler');
-  const hcpValue = document.getElementById('hcpPercent').value;
-  const hcpNumber = Number(hcpValue);
-  if(hcpValue === '' || !Number.isFinite(hcpNumber) || hcpNumber < 0 || hcpNumber > 100) errors.push('Handicapprosent må være et tall mellom 0 og 100');
-  return uniqErrors(errors);
-}
-function validateStep2(){
-  const errors=[];
-  const cfg=selectedFormatConfig();
-  const pins=[];
-
-  if(cfg.mode==='individual'){
-    if(!state.participants.length) errors.push('Legg til minst én spiller');
-    state.participants.forEach(p=>{
-      if(!String(p.name||'').trim()) errors.push('Alle spillere må ha navn');
-      if(!pinValid(p.pin)) errors.push('PIN må være nøyaktig 4 siffer');
-      if(!Number.isFinite(Number(p.handicap))) errors.push('Alle spillere må ha handicap');
-      if(pinValid(p.pin)) pins.push(p.pin);
-    });
-  } else {
-    if(!state.teams.length) errors.push('Legg til minst ett lag');
-    state.teams.forEach(t=>{
-      if(!String(t.name||'').trim()) errors.push('Alle lag må ha navn');
-      if(!pinValid(t.pin)) errors.push('PIN må være nøyaktig 4 siffer');
-      if(pinValid(t.pin)) pins.push(t.pin);
-      if((t.players||[]).length !== cfg.playersPerUnit) errors.push(`Hvert lag må ha nøyaktig ${cfg.playersPerUnit} spillere`);
-      (t.players||[]).forEach(p=>{
-        if(!String(p.name||'').trim()) errors.push('Alle spillere må ha navn');
-        if(!Number.isFinite(Number(p.handicap))) errors.push('Alle spillere må ha handicap');
-      });
-    });
+async function doAdminLogin() {
+  try {
+    await api('/api/auth/admin-login', { method: 'POST', body: JSON.stringify({ password: document.getElementById('adminPass').value }) });
+    boot();
+  } catch (e) {
+    document.getElementById('loginError').textContent = e.message;
   }
+}
 
-  if(new Set(pins).size !== pins.length) errors.push('Denne PIN-koden er allerede i bruk');
-  return uniqErrors(errors);
+function selectedFormatConfig() {
+  return formatSettings[state.selectedFormat] ?? formatSettings.strokeplay;
 }
-function validateStep(currentStep){
-  if(currentStep === 0) return validateStep1();
-  if(currentStep === 1) return validateStep2();
-  return validateAll();
+
+function hcpTeam(team) {
+  const percent = Number(document.getElementById('hcpPercent').value || 0);
+  const total = (team.players || []).reduce((sum, p) => sum + Number(p.handicap || 0), 0);
+  return { total, adjusted: Math.round(total * (percent / 100)) };
 }
-function validateAll(){ return uniqErrors([...validateStep1(), ...validateStep2()]); }
-function fillReview(){
-  const cfg=selectedFormatConfig();
-  const rows = cfg.mode==='individual' ? state.participants.map(p=>`<li>${p.name} — PIN ${p.pin} — HCP ${p.handicap}</li>`).join('') : state.teams.map(t=>{ const h=hcpTeam(t); return `<li><strong>${t.name}</strong> (PIN ${t.pin}) — Spillere: ${(t.players||[]).map(p=>`${p.name} (${p.handicap})`).join(', ')} — Total HCP ${h.total}, ${document.getElementById('hcpPercent').value}% => ${h.adjusted}</li>`; }).join('');
-  document.getElementById('review').innerHTML = `<div>Format: ${cfg.label}</div><div>Handicapprosent: ${document.getElementById('hcpPercent').value}%</div><ul>${rows}</ul>`;
-  document.getElementById('validationSummary').textContent = validateAll().join(' · ');
+
+function createPin() { return String(Math.floor(Math.random() * 9000) + 1000); }
+function createUniquePin(usedPins = new Set()) {
+  let pin = createPin();
+  while (usedPins.has(pin)) pin = createPin();
+  usedPins.add(pin);
+  return pin;
 }
-function buildPayload(action='draft'){
-  const cfg=selectedFormatConfig();
+
+function ensureTeamShape(team, idx, size) {
   return {
-    basics:{ name:document.getElementById('name').value.trim(), year:new Date(document.getElementById('date').value || Date.now()).getFullYear(), startDate:document.getElementById('date').value, endDate:document.getElementById('date').value, format:formatApiMap[state.selectedFormat] || 'strokeplay', description:'', mode:'single_format' },
-    structure:{ course:document.getElementById('course').value.trim(), holesCount:18, slopeRating:113, stages:[] },
-    rules:{ useHandicap:true, handicapMethod:'percentage', handicapPercentage:Number(document.getElementById('hcpPercent').value || cfg.defaultHcpPercent) },
-    participants:{ mode:cfg.mode, playersPerUnit:cfg.playersPerUnit, participants:state.participants, teams:state.teams, rows: cfg.mode==='individual' ? state.participants : state.teams.map(t=>({ teamName:t.name, pin:t.pin, players:t.players })) },
-    publishAction:action
+    id: team?.id || crypto.randomUUID(),
+    name: String(team?.name || team?.teamName || `Lag ${idx + 1}`),
+    pin: pinSanitize(team?.pin || ''),
+    players: Array.from({ length: size }, (_, pi) => ({
+      id: team?.players?.[pi]?.id || crypto.randomUUID(),
+      name: String(team?.players?.[pi]?.name || ''),
+      handicap: team?.players?.[pi]?.handicap ?? ''
+    }))
   };
 }
 
-function clearStepErrors(){
+function renderFormatOptions() {
+  const sel = document.getElementById('format');
+  sel.innerHTML = Object.entries(formatSettings).map(([key, cfg]) => `<option value="${key}">${cfg.label}</option>`).join('');
+  sel.value = state.selectedFormat;
+}
+
+function addPlayer() {
+  state.participants.push({ id: crypto.randomUUID(), name: '', pin: '', handicap: '' });
+  renderParticipants();
+}
+
+function addTeam() {
+  const cfg = selectedFormatConfig();
+  state.teams.push(ensureTeamShape({}, state.teams.length, cfg.teamSize));
+  renderParticipants();
+}
+
+function addPoolPlayer() {
+  state.teamPool.push({ id: crypto.randomUUID(), name: '', handicap: '' });
+  renderParticipants();
+}
+
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function generateTeams(strategy) {
+  const cfg = selectedFormatConfig();
+  const size = cfg.teamSize;
+  const validPoolPlayers = state.teamPool.filter((p) => String(p.name || '').trim());
+  if (validPoolPlayers.length < size || validPoolPlayers.length % size !== 0) {
+    document.getElementById('step2Error').textContent = `Spillerpool må ha et partall som kan deles i lag på ${size}.`;
+    return;
+  }
+  if (validPoolPlayers.some((p) => !Number.isFinite(Number(p.handicap)))) {
+    document.getElementById('step2Error').textContent = 'Alle spillere må ha navn og handicap';
+    return;
+  }
+
+  let ordered = [...validPoolPlayers];
+  if (strategy === 'random') ordered = shuffle(ordered);
+  if (strategy === 'balanced') {
+    ordered = [...validPoolPlayers].sort((a, b) => Number(a.handicap || 0) - Number(b.handicap || 0));
+    const alternating = [];
+    while (ordered.length) {
+      alternating.push(ordered.shift());
+      if (ordered.length) alternating.push(ordered.pop());
+    }
+    ordered = alternating;
+  }
+
+  const usedPins = new Set(state.teams.map((t) => t.pin).filter(pinValid));
+  const generated = [];
+  for (let i = 0; i < ordered.length; i += size) {
+    const group = ordered.slice(i, i + size);
+    generated.push({
+      id: crypto.randomUUID(),
+      name: `Lag ${generated.length + 1}`,
+      pin: createUniquePin(usedPins),
+      players: group.map((p) => ({ id: p.id, name: p.name, handicap: p.handicap }))
+    });
+  }
+  state.teams = generated.map((team, idx) => ensureTeamShape(team, idx, size));
+  document.getElementById('step2Error').textContent = '';
+  renderParticipants();
+}
+
+function setSetupMode(mode) {
+  state.teamSetupMode = mode;
+  renderParticipants();
+}
+
+function renderTeamCards() {
+  const cfg = selectedFormatConfig();
+  if (!state.teams.length) {
+    return '<p style="color:var(--text-muted)">Ingen lag enda. Klikk «Legg til lag» for å opprette første lag.</p>';
+  }
+  return state.teams.map((team, teamIdx) => {
+    const hcp = hcpTeam(team);
+    const players = team.players.map((player, pi) => `
+      <div class="team-player-row">
+        <input class="form-input" placeholder="Spiller ${pi + 1} navn" value="${escapeHtml(player.name)}" oninput="state.teams[${teamIdx}].players[${pi}].name=this.value">
+        <input class="form-input" type="number" placeholder="Handicap" value="${escapeHtml(player.handicap)}" oninput="state.teams[${teamIdx}].players[${pi}].handicap=this.value">
+      </div>
+    `).join('');
+    return `
+      <div class="team-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+          <strong>Lag ${teamIdx + 1}</strong>
+          <button class="btn btn--outline btn--sm" onclick="state.teams.splice(${teamIdx},1);renderParticipants()">Slett lag</button>
+        </div>
+        <div class="grid" style="margin-top:8px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));">
+          <input class="form-input" placeholder="Lagnavn" value="${escapeHtml(team.name)}" oninput="state.teams[${teamIdx}].name=this.value">
+          <input class="pin-input form-input" type="text" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="PIN (4 siffer)" value="${escapeHtml(team.pin)}" oninput="state.teams[${teamIdx}].pin=pinSanitize(this.value);this.value=state.teams[${teamIdx}].pin">
+        </div>
+        ${players}
+        <div style="margin-top:8px;font-size:.88rem;color:var(--text-muted)">Total HCP: <strong>${hcp.total}</strong> · ${document.getElementById('hcpPercent').value}% = <strong>${hcp.adjusted}</strong></div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderPoolEditor() {
+  if (!state.teamPool.length) return '<p style="color:var(--text-muted)">Ingen spillere i pool enda.</p>';
+  return state.teamPool.map((p, i) => `
+    <div class="player-row">
+      <input class="form-input" placeholder="Spillernavn" value="${escapeHtml(p.name)}" oninput="state.teamPool[${i}].name=this.value">
+      <input class="form-input" type="number" placeholder="Handicap" value="${escapeHtml(p.handicap)}" oninput="state.teamPool[${i}].handicap=this.value">
+      <div></div>
+      <button class="btn btn--outline" onclick="state.teamPool.splice(${i},1);renderParticipants()">Fjern</button>
+    </div>
+  `).join('');
+}
+
+function renderParticipants() {
+  const cfg = selectedFormatConfig();
+  const area = document.getElementById('participantsArea');
+
+  if (!cfg.useTeams) {
+    state.teamSetupMode = 'players';
+    document.getElementById('participantsHint').textContent = 'Legg inn spillere med PIN og handicap';
+    area.innerHTML = `<div class="actions"><button class="btn btn--outline" onclick="addPlayer()">Legg til spiller</button></div>` +
+      state.participants.map((p, i) => `
+        <div class="player-row">
+          <input class="form-input" placeholder="Spillernavn" value="${escapeHtml(p.name)}" oninput="state.participants[${i}].name=this.value">
+          <input class="pin-input form-input" type="text" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="1234" value="${escapeHtml(p.pin)}" oninput="state.participants[${i}].pin=pinSanitize(this.value);this.value=state.participants[${i}].pin">
+          <input class="form-input" type="number" placeholder="Handicap" value="${escapeHtml(p.handicap)}" oninput="state.participants[${i}].handicap=this.value">
+          <button class="btn btn--outline" onclick="state.participants.splice(${i},1);renderParticipants()">Fjern</button>
+        </div>
+      `).join('');
+    return;
+  }
+
+  document.getElementById('participantsHint').textContent = `Hvert lag må ha nøyaktig ${cfg.teamSize} spillere.`;
+  const modeButtons = `<div class="actions" style="margin-top:0"><button class="btn ${state.teamSetupMode === 'manual' ? 'btn--gold' : 'btn--outline'}" onclick="setSetupMode('manual')">Manuelt lagoppsett</button><button class="btn ${state.teamSetupMode === 'pool' ? 'btn--gold' : 'btn--outline'}" onclick="setSetupMode('pool')">Generer fra spillerpool</button></div>`;
+
+  if (state.teamSetupMode === 'pool') {
+    area.innerHTML = `
+      <h4>Lagoppsett</h4>
+      ${modeButtons}
+      <div class="actions">
+        <button class="btn btn--outline" onclick="addPoolPlayer()">Legg til spiller</button>
+        <button class="btn btn--outline" onclick="generateTeams('random')">Generer lag tilfeldig</button>
+        <button class="btn btn--outline" onclick="generateTeams('balanced')">Generer lag balansert</button>
+      </div>
+      ${renderPoolEditor()}
+      <div style="margin-top:10px">${renderTeamCards()}</div>
+    `;
+    return;
+  }
+
+  area.innerHTML = `
+    <h4>Lagoppsett</h4>
+    ${modeButtons}
+    <div class="actions"><button class="btn btn--outline" onclick="addTeam()">Legg til lag</button></div>
+    ${renderTeamCards()}
+  `;
+}
+
+function uniqErrors(errors) { return [...new Set(errors)]; }
+
+function validateStep1() {
+  const errors = [];
+  if (!document.getElementById('name').value.trim()) errors.push('Turneringsnavn mangler');
+  if (!state.selectedFormat) errors.push('Velg turneringsformat');
+  if (!document.getElementById('date').value) errors.push('Dato mangler');
+  const hcpValue = document.getElementById('hcpPercent').value;
+  const hcpNumber = Number(hcpValue);
+  if (hcpValue === '' || !Number.isFinite(hcpNumber) || hcpNumber < 0 || hcpNumber > 100) errors.push('Handicapprosent må være et tall mellom 0 og 100');
+  return uniqErrors(errors);
+}
+
+function validateStep2() {
+  const errors = [];
+  const cfg = selectedFormatConfig();
+  const pins = [];
+
+  if (!cfg.useTeams) {
+    if (!state.participants.length) errors.push('Legg til minst én spiller');
+    state.participants.forEach((p) => {
+      if (!String(p.name || '').trim() || !Number.isFinite(Number(p.handicap))) errors.push('Alle spillere må ha navn og handicap');
+      if (!pinValid(p.pin)) errors.push('PIN må være nøyaktig 4 siffer');
+      if (pinValid(p.pin)) pins.push(p.pin);
+    });
+    if (new Set(pins).size !== pins.length) errors.push('Denne PIN-koden er allerede i bruk');
+    return uniqErrors(errors);
+  }
+
+  if (state.teamSetupMode === 'manual') {
+    if (!state.teams.length) errors.push('Du må opprette minst ett lag');
+    state.teams.forEach((team, idx) => {
+      if (!String(team.name || '').trim()) team.name = `Lag ${idx + 1}`;
+      if (!pinValid(team.pin)) errors.push('PIN må være nøyaktig 4 siffer');
+      if (pinValid(team.pin)) pins.push(team.pin);
+      if ((team.players || []).length !== cfg.teamSize) errors.push(`Hvert lag må ha nøyaktig ${cfg.teamSize} spillere`);
+      if ((team.players || []).some((p) => !String(p.name || '').trim() || !Number.isFinite(Number(p.handicap)))) errors.push('Alle spillere må ha navn og handicap');
+    });
+  } else {
+    const pool = state.teamPool.filter((p) => String(p.name || '').trim() || String(p.handicap || '').trim());
+    if (pool.length < cfg.teamSize) errors.push('Du må legge inn minst 2 spillere i spillerpool');
+    if (pool.length % cfg.teamSize !== 0) errors.push('Spillerpool må ha et partall spillere som kan fordeles i lag');
+    if (pool.some((p) => !String(p.name || '').trim() || !Number.isFinite(Number(p.handicap)))) errors.push('Alle spillere må ha navn og handicap');
+    if (!state.teams.length) errors.push('Alle spillere må fordeles i lag før du går videre');
+    const assigned = state.teams.flatMap((t) => t.players || []).filter((p) => String(p.name || '').trim()).length;
+    if (pool.length && assigned !== pool.length) errors.push('Alle spillere må fordeles i lag før du går videre');
+    state.teams.forEach((team, idx) => {
+      if (!String(team.name || '').trim()) team.name = `Lag ${idx + 1}`;
+      if (!pinValid(team.pin)) errors.push('PIN må være nøyaktig 4 siffer');
+      if (pinValid(team.pin)) pins.push(team.pin);
+      if ((team.players || []).length !== cfg.teamSize) errors.push(`Hvert lag må ha nøyaktig ${cfg.teamSize} spillere`);
+      if ((team.players || []).some((p) => !String(p.name || '').trim() || !Number.isFinite(Number(p.handicap)))) errors.push('Alle spillere må ha navn og handicap');
+    });
+  }
+
+  if (new Set(pins).size !== pins.length) errors.push('Denne PIN-koden er allerede i bruk');
+  return uniqErrors(errors);
+}
+
+function validateStep(currentStep) {
+  if (currentStep === 0) return validateStep1();
+  if (currentStep === 1) return validateStep2();
+  return validateAll();
+}
+
+function validateAll() { return uniqErrors([...validateStep1(), ...validateStep2()]); }
+
+function fillReview() {
+  const cfg = selectedFormatConfig();
+  const hcpPercent = Number(document.getElementById('hcpPercent').value || cfg.defaultHcpPercent);
+  const blocks = !cfg.useTeams
+    ? state.participants.map((p, idx) => `
+      <div class="team-card">
+        <strong>Spiller ${idx + 1}</strong>
+        <div>Navn: ${escapeHtml(p.name)}</div>
+        <div>PIN: ${escapeHtml(p.pin)}</div>
+        <div>Handicap: ${escapeHtml(p.handicap)}</div>
+      </div>`).join('')
+    : state.teams.map((team, idx) => {
+      const h = hcpTeam(team);
+      const players = team.players.map((p) => `<div>${escapeHtml(p.name)} (${escapeHtml(p.handicap)})</div>`).join('');
+      return `
+        <div class="team-card">
+          <strong>${escapeHtml(team.name || `Lag ${idx + 1}`)}</strong>
+          <div>PIN ${escapeHtml(team.pin)}</div>
+          ${players}
+          <div>Total HCP: ${h.total}</div>
+          <div>${hcpPercent}% = ${h.adjusted}</div>
+        </div>`;
+    }).join('');
+  document.getElementById('review').innerHTML = `
+    <div class="team-card"><strong>Format</strong><div>${cfg.label}</div><div>Handicapprosent: ${hcpPercent}%</div></div>
+    ${blocks}
+  `;
+  document.getElementById('validationSummary').textContent = validateAll().join(' · ');
+}
+
+function buildPayload(action = 'draft') {
+  const cfg = selectedFormatConfig();
+  return {
+    basics: {
+      name: document.getElementById('name').value.trim(),
+      year: new Date(document.getElementById('date').value || Date.now()).getFullYear(),
+      startDate: document.getElementById('date').value,
+      endDate: document.getElementById('date').value,
+      format: cfg.apiFormat,
+      description: '',
+      mode: 'single_format'
+    },
+    structure: { course: document.getElementById('course').value.trim(), holesCount: 18, slopeRating: 113, stages: [] },
+    rules: { useHandicap: true, handicapMethod: 'percentage', handicapPercentage: Number(document.getElementById('hcpPercent').value || cfg.defaultHcpPercent) },
+    participants: {
+      mode: cfg.useTeams ? 'team' : 'individual',
+      setupMode: state.teamSetupMode,
+      playersPerUnit: cfg.teamSize,
+      participants: state.participants,
+      teams: state.teams,
+      teamPool: state.teamPool,
+      rows: cfg.useTeams
+        ? state.teams.map((team, idx) => ({ teamName: String(team.name || '').trim() || `Lag ${idx + 1}`, pin: team.pin, players: team.players }))
+        : state.participants
+    },
+    publishAction: action
+  };
+}
+
+function clearStepErrors() {
   document.getElementById('step1Error').textContent = '';
   document.getElementById('step2Error').textContent = '';
   document.getElementById('validationSummary').textContent = '';
   document.getElementById('step4Error').textContent = '';
 }
 
-function setActiveStepError(errors){
-  if(!errors.length) return;
-  if(step===0) document.getElementById('step1Error').textContent = errors.join(' · ');
-  else if(step===1) document.getElementById('step2Error').textContent = errors.join(' · ');
-  else if(step===2) document.getElementById('validationSummary').textContent = errors.join(' · ');
+function setActiveStepError(errors) {
+  if (!errors.length) return;
+  if (step === 0) document.getElementById('step1Error').textContent = errors.join(' · ');
+  else if (step === 1) document.getElementById('step2Error').textContent = errors.join(' · ');
+  else if (step === 2) document.getElementById('validationSummary').textContent = errors.join(' · ');
   else document.getElementById('step4Error').textContent = errors.join(' · ');
 }
 
-function renderStep(){
+function renderStep() {
   clearStepErrors();
-  document.querySelectorAll('.step').forEach((el,i)=>el.classList.toggle('active',i===step));
-  document.getElementById('stepLabel').textContent = `Steg ${step+1} av ${totalSteps}`;
-  document.getElementById('bar').style.width = `${((step+1)/totalSteps)*100}%`;
-  document.getElementById('prevBtn').style.visibility = step===0?'hidden':'visible';
-  document.getElementById('nextBtn').style.display = step===totalSteps-1?'none':'inline-flex';
-  if(step===2) fillReview();
-  document.getElementById('saveBtn').disabled = validateAll().length > 0;
+  document.querySelectorAll('.step').forEach((el, i) => el.classList.toggle('active', i === step));
+  document.getElementById('stepLabel').textContent = `Steg ${step + 1} av ${totalSteps}`;
+  document.getElementById('bar').style.width = `${((step + 1) / totalSteps) * 100}%`;
+  document.getElementById('prevBtn').style.visibility = step === 0 ? 'hidden' : 'visible';
+  document.getElementById('nextBtn').style.display = step === totalSteps - 1 ? 'none' : 'inline-flex';
+  if (step === 2) fillReview();
+  document.getElementById('saveBtn').disabled = saving || validateAll().length > 0;
 }
 
-function changeStep(delta){
-  if(delta < 0){
-    step=Math.max(0,step+delta);
+function changeStep(delta) {
+  if (delta < 0) {
+    step = Math.max(0, step + delta);
     renderStep();
     return;
   }
 
   const validationErrors = validateStep(step);
-  if(validationErrors.length){
+  if (validationErrors.length) {
     setActiveStepError(validationErrors);
     return;
   }
 
-  step=Math.max(0,Math.min(totalSteps-1,step+delta));
+  step = Math.max(0, Math.min(totalSteps - 1, step + delta));
   renderStep();
 }
 
-async function saveDraft(){ try{ await api('/api/admin/tournament-wizard',{ method:'POST', body:JSON.stringify(buildPayload('draft'))}); alert('Utkast lagret'); }catch(e){ alert(e.message);} }
-async function submitWizard(){ const errs=validateAll(); if(errs.length){ document.getElementById('step4Error').textContent=errs.join(' · '); return; } try{ const r=await api('/api/admin/tournament-wizard',{ method:'POST', body:JSON.stringify(buildPayload(document.getElementById('publishAction').value))}); window.location.href=`/admin.html#tournament-created-${r.id}`; } catch(e){ document.getElementById('step4Error').textContent=e.message; }}
-
-function hook(){
-  document.getElementById('format').addEventListener('change',(e)=>{ state.selectedFormat=e.target.value; const cfg=selectedFormatConfig(); document.getElementById('hcpPercent').value = cfg.defaultHcpPercent; if(cfg.mode==='team'){ state.teams = state.teams.map(t=>({ ...t, players:Array.from({length:cfg.playersPerUnit},(_,i)=>t.players?.[i]||{id:crypto.randomUUID(),name:'',handicap:''}) })); } renderParticipants(); renderStep(); });
-  document.getElementById('hcpPercent').addEventListener('input', renderStep);
+function userErrorMessage(error) {
+  const isDev = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+  if (isDev && error?.details) return `${error.message} (${error.details})`;
+  return error?.message || 'Kunne ikke lagre turneringen. Kontroller at alle lag og spillere er korrekt satt opp.';
 }
 
-async function boot(){
-  const ok = await checkAdmin();
-  document.getElementById('loginCard').style.display = ok ? 'none' : 'block';
-  document.getElementById('wizard').style.display = ok ? 'block' : 'none';
-  if(!ok) return;
-  document.getElementById('name').value = 'Lorgen Invitational';
-  const now = new Date(); now.setMinutes(now.getMinutes()-now.getTimezoneOffset());
-  document.getElementById('date').value = now.toISOString().slice(0,16);
-  renderFormatOptions();
-  document.getElementById('hcpPercent').value = selectedFormatConfig().defaultHcpPercent;
-  hook();
+async function saveDraft() {
+  try {
+    await api('/api/admin/tournament-wizard', { method: 'POST', body: JSON.stringify(buildPayload('draft')) });
+    alert('Utkast lagret');
+  } catch (e) {
+    alert(userErrorMessage(e));
+  }
+}
+
+async function submitWizard() {
+  const errs = validateAll();
+  if (errs.length) {
+    document.getElementById('step4Error').textContent = errs.join(' · ');
+    return;
+  }
+  const saveBtn = document.getElementById('saveBtn');
+  const originalLabel = 'Lagre turneringsoppsett';
+  saving = true;
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Lagrer turneringsoppsett...';
+  document.getElementById('step4Error').textContent = '';
+  try {
+    const response = await api('/api/admin/tournament-wizard', { method: 'POST', body: JSON.stringify(buildPayload(document.getElementById('publishAction').value)) });
+    alert('Turneringen ble lagret.');
+    window.location.href = `/admin.html#tournament-${response.id}`;
+  } catch (e) {
+    console.error('Wizard save failed', e);
+    document.getElementById('step4Error').textContent = userErrorMessage(e);
+  } finally {
+    saving = false;
+    saveBtn.disabled = validateAll().length > 0;
+    saveBtn.textContent = originalLabel;
+  }
+}
+
+function applyFormatDefaults(formatKey) {
+  const cfg = formatSettings[formatKey] ?? formatSettings.strokeplay;
+  state.selectedFormat = formatKey;
+  state.teamSetupMode = cfg.defaultMode;
+  document.getElementById('hcpPercent').value = cfg.defaultHcpPercent;
+  state.teams = state.teams.map((team, idx) => ensureTeamShape(team, idx, cfg.teamSize));
   renderParticipants();
   renderStep();
 }
+
+function hook() {
+  document.getElementById('format').addEventListener('change', (e) => applyFormatDefaults(e.target.value));
+  document.getElementById('hcpPercent').addEventListener('input', renderStep);
+}
+
+async function boot() {
+  const ok = await checkAdmin();
+  document.getElementById('loginCard').style.display = ok ? 'none' : 'block';
+  document.getElementById('wizard').style.display = ok ? 'block' : 'none';
+  if (!ok) return;
+  document.getElementById('name').value = 'Lorgen Invitational';
+  const now = new Date();
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  document.getElementById('date').value = now.toISOString().slice(0, 16);
+  renderFormatOptions();
+  applyFormatDefaults(state.selectedFormat);
+  hook();
+}
+
 boot();
 </script>
 </body>
