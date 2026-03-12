@@ -603,13 +603,35 @@ function getStageMatches(stageId) {
 
 
 function getTournamentPlayers(tournamentId) {
-  return db.prepare(
-    `SELECT p.*, s.name AS side_name
+  const players = db.prepare(
+    `SELECT
+       p.*,
+       s.name AS cup_side_name,
+       lt.team_name AS linked_team_name,
+       COALESCE(lt.team_name, s.name) AS side_name,
+       lt.team_id AS linked_team_id
      FROM players p
      LEFT JOIN tournament_sides s ON s.id=p.team_id
+     LEFT JOIN (
+       SELECT tp.player_id, tp.team_id, tm.team_name
+       FROM team_players tp
+       JOIN teams tm ON tm.id=tp.team_id
+       WHERE tm.tournament_id=?
+         AND tp.id = (
+           SELECT tp2.id
+           FROM team_players tp2
+           JOIN teams tm2 ON tm2.id=tp2.team_id
+           WHERE tp2.player_id=tp.player_id
+             AND tm2.tournament_id=?
+           ORDER BY tp2.updated_at DESC, tp2.id DESC
+           LIMIT 1
+         )
+     ) lt ON lt.player_id=p.id
      WHERE p.tournament_id=?
      ORDER BY p.active DESC, p.name COLLATE NOCASE ASC, p.id ASC`
-  ).all(tournamentId);
+  ).all(tournamentId, tournamentId, tournamentId);
+  console.log('Players with team data', { tournamentId: Number(tournamentId), players });
+  return players;
 }
 
 function getStagePairings(stageId) {
@@ -2518,6 +2540,8 @@ app.delete('/api/admin/tournament/:id', requireAdmin, (req, res) => {
 
 app.get('/api/admin/tournament/:id/teams', requireAdmin, (req, res) => {
   try {
+    const selectedTournamentId = Number(req.params.id);
+    console.log('Selected tournament id', selectedTournamentId);
     const tournament = getTournamentById(req.params.id);
     const fetchTeams = () => db.prepare('SELECT * FROM teams WHERE tournament_id=? ORDER BY team_name COLLATE NOCASE ASC, id ASC').all(req.params.id);
     const fetchLinks = () => db.prepare(
@@ -2602,6 +2626,7 @@ app.get('/api/admin/tournament/:id/teams', requireAdmin, (req, res) => {
       const adjustedHandicap = handicapPercent > 0 ? Math.round(totalHandicap * (handicapPercent / 100)) : totalHandicap;
       return { ...team, players, total_handicap: totalHandicap, adjusted_handicap: adjustedHandicap };
     });
+    console.log('Loaded teams', { selectedTournamentId, count: enriched.length, teams: enriched });
     res.json({ teams: enriched, tournament });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -2630,11 +2655,12 @@ app.post('/api/admin/team', requireAdmin, (req, res) => {
     const slots = [0, 1, 2, 3].map((idx) => payload.players[idx] || { name: '', handicap: 0 });
 
     const insertResult = db.transaction(() => {
+      const resolvedTeamName = getTeamName(payload.team_name);
       const teamResult = db.prepare(
         'INSERT INTO teams (tournament_id, team_name, player1, player2, player3, player4, pin_code, player1_handicap, player2_handicap, player3_handicap, player4_handicap) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
       ).run(
         tournamentId,
-        getTeamName(payload.team_name),
+        resolvedTeamName,
         slots[0].name,
         slots[1].name,
         slots[2].name,
@@ -2647,11 +2673,13 @@ app.post('/api/admin/team', requireAdmin, (req, res) => {
       );
 
       const teamId = Number(teamResult.lastInsertRowid);
+      console.log('Created team', { teamId, tournamentId, teamName: resolvedTeamName, pinCode: payload.pin_code });
       const findPlayer = db.prepare('SELECT * FROM players WHERE tournament_id=? AND lower(name)=lower(?) LIMIT 1');
       const insertPlayer = db.prepare('INSERT INTO players (tournament_id, name, handicap, active, updated_at) VALUES (?,?,?,1,CURRENT_TIMESTAMP)');
       const updatePlayer = db.prepare('UPDATE players SET handicap=?, active=1, updated_at=CURRENT_TIMESTAMP WHERE id=?');
       const insertTeamPlayer = db.prepare('INSERT INTO team_players (team_id, player_id, player_name, handicap, sort_order, updated_at) VALUES (?,?,?,?,?,CURRENT_TIMESTAMP)');
 
+      const createdLinks = [];
       payload.players.forEach((player, idx) => {
         let playerRow = findPlayer.get(tournamentId, player.name);
         if (!playerRow) {
@@ -2661,7 +2689,9 @@ app.post('/api/admin/team', requireAdmin, (req, res) => {
           updatePlayer.run(Number(player.handicap || 0), playerRow.id);
         }
         insertTeamPlayer.run(teamId, playerRow.id, player.name, Number(player.handicap || 0), idx + 1);
+        createdLinks.push({ team_id: teamId, player_id: playerRow.id, sort_order: idx + 1 });
       });
+      console.log('Created team-player links', createdLinks);
 
       return teamId;
     })();
@@ -2714,6 +2744,7 @@ app.put('/api/admin/team/:id', requireAdmin, (req, res) => {
       const updatePlayer = db.prepare('UPDATE players SET handicap=?, active=1, updated_at=CURRENT_TIMESTAMP WHERE id=?');
       const insertTeamPlayer = db.prepare('INSERT INTO team_players (team_id, player_id, player_name, handicap, sort_order, updated_at) VALUES (?,?,?,?,?,CURRENT_TIMESTAMP)');
 
+      const createdLinks = [];
       payload.players.forEach((player, idx) => {
         let playerRow = findPlayer.get(existingTeam.tournament_id, player.name);
         if (!playerRow) {
@@ -2723,7 +2754,9 @@ app.put('/api/admin/team/:id', requireAdmin, (req, res) => {
           updatePlayer.run(Number(player.handicap || 0), playerRow.id);
         }
         insertTeamPlayer.run(req.params.id, playerRow.id, player.name, Number(player.handicap || 0), idx + 1);
+        createdLinks.push({ team_id: Number(req.params.id), player_id: playerRow.id, sort_order: idx + 1 });
       });
+      console.log('Created team-player links', createdLinks);
     })();
 
     res.json({ success: true });
