@@ -2490,14 +2490,63 @@ app.delete('/api/admin/tournament/:id', requireAdmin, (req, res) => {
 app.get('/api/admin/tournament/:id/teams', requireAdmin, (req, res) => {
   try {
     const tournament = getTournamentById(req.params.id);
-    const teams = db.prepare('SELECT * FROM teams WHERE tournament_id=? ORDER BY team_name COLLATE NOCASE ASC, id ASC').all(req.params.id);
-    const links = db.prepare(
+    const fetchTeams = () => db.prepare('SELECT * FROM teams WHERE tournament_id=? ORDER BY team_name COLLATE NOCASE ASC, id ASC').all(req.params.id);
+    const fetchLinks = () => db.prepare(
       `SELECT tp.*, p.name AS linked_player_name, p.handicap AS linked_player_handicap
        FROM team_players tp
        LEFT JOIN players p ON p.id=tp.player_id
        WHERE tp.team_id IN (SELECT id FROM teams WHERE tournament_id=?)
        ORDER BY tp.team_id ASC, tp.sort_order ASC, tp.id ASC`
     ).all(req.params.id);
+
+    let teams = fetchTeams();
+
+    if (!teams.length && tournament) {
+      const def = getFormatDefinition(tournament.format);
+      const teamSize = Number(def.teamSize || 1);
+      if (teamSize > 1) {
+        const orphanPlayers = db.prepare(
+          'SELECT * FROM players WHERE tournament_id=? AND active=1 ORDER BY id ASC'
+        ).all(req.params.id);
+        if (orphanPlayers.length >= teamSize) {
+          const rebuildTeams = db.transaction(() => {
+            const insertTeam = db.prepare(
+              'INSERT INTO teams (tournament_id, team_name, player1, player2, player3, player4, pin_code, player1_handicap, player2_handicap, player3_handicap, player4_handicap, active) VALUES (?,?,?,?,?,?,?,?,?,?,?,1)'
+            );
+            const insertTeamPlayer = db.prepare(
+              'INSERT INTO team_players (team_id, player_id, player_name, handicap, sort_order, updated_at) VALUES (?,?,?,?,?,CURRENT_TIMESTAMP)'
+            );
+            for (let idx = 0; idx < orphanPlayers.length; idx += teamSize) {
+              const group = orphanPlayers.slice(idx, idx + teamSize);
+              if (group.length !== teamSize) break;
+              const members = [0, 1, 2, 3].map((offset) => group[offset] || {});
+              const pin = String(1000 + Math.floor(idx / teamSize)).slice(-4).padStart(4, '0');
+              const teamRes = insertTeam.run(
+                req.params.id,
+                `Lag ${Math.floor(idx / teamSize) + 1}`,
+                String(members[0].name || '').trim(),
+                String(members[1].name || '').trim(),
+                String(members[2].name || '').trim(),
+                String(members[3].name || '').trim(),
+                pin,
+                Number(members[0].handicap || 0),
+                Number(members[1].handicap || 0),
+                Number(members[2].handicap || 0),
+                Number(members[3].handicap || 0)
+              );
+              const teamId = Number(teamRes.lastInsertRowid);
+              group.forEach((player, order) => {
+                insertTeamPlayer.run(teamId, player.id, String(player.name || '').trim(), Number(player.handicap || 0), order + 1);
+              });
+            }
+          });
+          rebuildTeams();
+          teams = fetchTeams();
+        }
+      }
+    }
+
+    const links = fetchLinks();
     const linksByTeam = new Map();
     links.forEach((row) => {
       const bucket = linksByTeam.get(row.team_id) || [];
