@@ -118,7 +118,7 @@ function tryRestoreTeamSessionFromPin(req) {
   try {
     const t = getActiveTournament();
     if (!t) return false;
-    const team = db.prepare('SELECT id, tournament_id FROM teams WHERE tournament_id=? AND pin_code=? LIMIT 1').get(t.id, headerPin);
+    const team = getTeamByTournamentAndPin(t.id, headerPin);
     if (!team) return false;
     req.session.teamId = team.id;
     req.session.tournamentId = team.tournament_id;
@@ -334,6 +334,17 @@ function assertValidPin(pin) {
   if (!/^\d{4}$/.test(String(pin || ''))) {
     throw new Error('PIN must be exactly 4 digits');
   }
+}
+
+function getTeamByTournamentAndPin(tournamentId, pinInput) {
+  const normalizedPin = normalizePin(pinInput);
+  if (!pinValid(normalizedPin)) return null;
+
+  const directMatch = db.prepare('SELECT * FROM teams WHERE tournament_id=? AND pin_code=? LIMIT 1').get(tournamentId, normalizedPin);
+  if (directMatch) return directMatch;
+
+  const teams = db.prepare('SELECT * FROM teams WHERE tournament_id=?').all(tournamentId);
+  return teams.find((team) => normalizePin(team.pin_code) === normalizedPin) || null;
 }
 
 function validateWizardParticipants(format, participants, mode = 'single_format') {
@@ -742,7 +753,7 @@ function resolveTeamForActiveTournament(req, pinInput) {
 
   const pin = String(pinInput || '').trim();
   if (pin) {
-    const teamByPin = db.prepare('SELECT id, team_name, tournament_id FROM teams WHERE tournament_id=? AND pin_code=? LIMIT 1').get(t.id, pin);
+    const teamByPin = getTeamByTournamentAndPin(t.id, pin);
     if (!teamByPin) return { error: { status: 401, message: 'Ugyldig PIN' } };
     return { tournament: t, team: teamByPin };
   }
@@ -1296,7 +1307,7 @@ app.post('/api/auth/team-login', (req, res) => {
   try {
     const t = getActiveTournament();
     if (!t) return res.status(404).json({ error: 'Ingen aktiv turnering' });
-    const team = db.prepare('SELECT * FROM teams WHERE tournament_id=? AND pin_code=? LIMIT 1').get(t.id, pin);
+    const team = getTeamByTournamentAndPin(t.id, pin);
     if (!team) return res.status(401).json({ error: 'Ugyldig PIN' });
     req.session.teamId = team.id;
     req.session.tournamentId = t.id;
@@ -2433,8 +2444,10 @@ app.get('/api/admin/tournament/:id/teams', requireAdmin, (req, res) => {
 
 app.post('/api/admin/team', requireAdmin, (req, res) => {
   const { tournament_id, team_name, player1, player2, player3, player4, pin_code, player1_handicap, player2_handicap, player3_handicap, player4_handicap } = req.body;
+  const normalizedPin = normalizePin(pin_code);
   if (!tournament_id || !player1 || !player2 || !pin_code)
     return res.status(400).json({ error: 'Alle felt er påkrevd' });
+  if (!pinValid(normalizedPin)) return res.status(400).json({ error: 'PIN må være nøyaktig 4 siffer' });
   try {
     const tournament = getTournamentById(tournament_id);
     if (!tournament) return res.status(404).json({ error: 'Turnering ikke funnet' });
@@ -2442,17 +2455,21 @@ app.post('/api/admin/team', requireAdmin, (req, res) => {
     const players = [player1, player2, player3, player4].filter((p) => String(p || '').trim());
     const sizeValidation = validateTeamSizeForFormat(tournament.format, players.length);
     if (!sizeValidation.valid) return res.status(400).json({ error: `Dette formatet krever nøyaktig ${sizeValidation.required} spillere per lag` });
-    const existing = db.prepare('SELECT id FROM teams WHERE tournament_id=? AND pin_code=?').get(tournament_id, pin_code);
+    const existing = getTeamByTournamentAndPin(tournament_id, normalizedPin);
     if (existing) return res.status(400).json({ error: 'PIN allerede i bruk i denne turneringen' });
     const result = db.prepare(
       'INSERT INTO teams (tournament_id, team_name, player1, player2, player3, player4, pin_code, player1_handicap, player2_handicap, player3_handicap, player4_handicap) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
-    ).run(tournament_id, getTeamName(team_name), player1, player2, player3 || '', player4 || '', pin_code, parseFloat(player1_handicap)||0, parseFloat(player2_handicap)||0, parseFloat(player3_handicap)||0, parseFloat(player4_handicap)||0);
+    ).run(tournament_id, getTeamName(team_name), player1, player2, player3 || '', player4 || '', normalizedPin, parseFloat(player1_handicap)||0, parseFloat(player2_handicap)||0, parseFloat(player3_handicap)||0, parseFloat(player4_handicap)||0);
     res.json({ success: true, id: result.lastInsertRowid });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.put('/api/admin/team/:id', requireAdmin, (req, res) => {
   const { team_name, player1, player2, player3, player4, pin_code, player1_handicap, player2_handicap, player3_handicap, player4_handicap } = req.body;
+  const normalizedPin = normalizePin(pin_code);
+  if (!player1 || !player2 || !pin_code)
+    return res.status(400).json({ error: 'Alle felt er påkrevd' });
+  if (!pinValid(normalizedPin)) return res.status(400).json({ error: 'PIN må være nøyaktig 4 siffer' });
   try {
     const existingTeam = db.prepare('SELECT tournament_id FROM teams WHERE id=?').get(req.params.id);
     if (!existingTeam) return res.status(404).json({ error: 'Lag ikke funnet' });
@@ -2461,8 +2478,10 @@ app.put('/api/admin/team/:id', requireAdmin, (req, res) => {
     const players = [player1, player2, player3, player4].filter((p) => String(p || '').trim());
     const sizeValidation = validateTeamSizeForFormat(tournament?.format, players.length);
     if (!sizeValidation.valid) return res.status(400).json({ error: `Dette formatet krever nøyaktig ${sizeValidation.required} spillere per lag` });
+    const duplicatePin = db.prepare('SELECT id FROM teams WHERE tournament_id=? AND pin_code=? AND id<>? LIMIT 1').get(existingTeam.tournament_id, normalizedPin, req.params.id);
+    if (duplicatePin) return res.status(400).json({ error: 'PIN allerede i bruk i denne turneringen' });
     db.prepare('UPDATE teams SET team_name=?, player1=?, player2=?, player3=?, player4=?, pin_code=?, player1_handicap=?, player2_handicap=?, player3_handicap=?, player4_handicap=? WHERE id=?')
-      .run(getTeamName(team_name), player1, player2, player3 || '', player4 || '', pin_code, parseFloat(player1_handicap)||0, parseFloat(player2_handicap)||0, parseFloat(player3_handicap)||0, parseFloat(player4_handicap)||0, req.params.id);
+      .run(getTeamName(team_name), player1, player2, player3 || '', player4 || '', normalizedPin, parseFloat(player1_handicap)||0, parseFloat(player2_handicap)||0, parseFloat(player3_handicap)||0, parseFloat(player4_handicap)||0, req.params.id);
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
