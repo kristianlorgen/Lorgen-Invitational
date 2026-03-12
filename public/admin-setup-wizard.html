@@ -314,7 +314,10 @@ function addPlayer() {
 
 function addTeam() {
   const cfg = selectedFormatConfig();
-  state.teams.push(ensureTeamShape({}, state.teams.length, cfg.teamSize));
+  const newTeam = ensureTeamShape({}, state.teams.length, cfg.teamSize);
+  console.log('Wizard add team', { tournamentId: state.tournamentId, selectedFormat: state.selectedFormat, newTeam, beforeTeams: state.teams });
+  state.teams.push(newTeam);
+  console.log('Wizard teams after add', state.teams);
   renderParticipants();
 }
 
@@ -664,7 +667,9 @@ async function submitWizard() {
   saveBtn.textContent = 'Lagrer turneringsoppsett...';
   document.getElementById('step4Error').textContent = '';
   try {
-    const response = await api('/api/admin/tournament-wizard', { method: 'POST', body: JSON.stringify(buildPayload(document.getElementById('publishAction').value)) });
+    const payload = buildPayload(document.getElementById('publishAction').value);
+    console.log('Wizard submit payload', payload);
+    const response = await api('/api/admin/tournament-wizard', { method: 'POST', body: JSON.stringify(payload) });
     alert('Turneringsoppsettet ble lagret.');
     window.location.href = '/admin.html#dashboard';
   } catch (e) {

@@ -1386,74 +1386,195 @@ async function loadDashboard() {
 }
 
 // ── Lag ───────────────────────────────────────────────────────────────────────
-async function loadTeams() {
-  const tid = document.getElementById('teamsTournamentSelect').value;
-  if (!tid) return;
-  const d = await api('/api/admin/tournament/'+tid+'/teams');
-  applyFormatDrivenAdminLayout(tid);
-  const teams = d.teams || [];
-  const handicapPercent = Number(d?.tournament?.handicap_percentage || 0);
-  document.getElementById('teamCount').textContent = `(${teams.length} lag)`;
-  renderTeamRuleHint(tid);
-  document.getElementById('teamsTable').innerHTML = !teams.length
-    ? '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen lag ennå. Legg til ett ovenfor.</td></tr>'
-    : teams.map((t,i) => {
-        const players = Array.isArray(t.players) ? t.players : [];
-        return `
-        <tr>
-          <td>${i+1}</td>
-          <td><strong>${t.team_name}</strong></td>
-          <td>${players[0]?.player_name || t.player1 || '—'}</td>
-          <td>${players[1]?.player_name || t.player2 || '—'}</td>
-          <td><code style="background:var(--gold-pale);padding:2px 8px;border-radius:4px;font-weight:700;color:var(--gold-dark)">${t.pin_code}</code></td>
-          <td style="display:flex;gap:6px">
-            <button onclick='editTeam(${t.id},${JSON.stringify(t.team_name)},${JSON.stringify(t.player1)},${JSON.stringify(t.player2)},${JSON.stringify(t.player3 || '')},${JSON.stringify(t.player4 || '')},${JSON.stringify(t.pin_code)},${t.player1_handicap || 0},${t.player2_handicap || 0},${t.player3_handicap || 0},${t.player4_handicap || 0})' class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)" title="Rediger"><i class="fas fa-pen"></i></button>
-            <button onclick='deleteTeam(${t.id},${JSON.stringify(t.team_name)})' class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
-          </td>
-        </tr>`;
-      }).join('');
+let teamsState = [];
+let selectedTeamId = null;
 
+function getSelectedTeamsTournamentId() {
+  const selectedTournamentId = document.getElementById('teamsTournamentSelect').value;
+  return selectedTournamentId ? Number(selectedTournamentId) : null;
+}
+
+function teamPlayers(team) {
+  if (Array.isArray(team?.players) && team.players.length) return team.players;
+  return [
+    { player_name: team?.player1 || '', handicap: team?.player1_handicap ?? 0 },
+    { player_name: team?.player2 || '', handicap: team?.player2_handicap ?? 0 },
+    { player_name: team?.player3 || '', handicap: team?.player3_handicap ?? 0 },
+    { player_name: team?.player4 || '', handicap: team?.player4_handicap ?? 0 }
+  ].filter((player) => String(player.player_name || '').trim());
+}
+
+function nextTeamName() {
+  return `Lag ${teamsState.length + 1}`;
+}
+
+function resetTeamForm() {
+  ['newPlayer1','newPlayer2','newPlayer3','newPlayer4','newPin','newHcp1','newHcp2','newHcp3','newHcp4'].forEach((id) => {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('newTeamName').value = nextTeamName();
+}
+
+function selectTeam(teamId) {
+  selectedTeamId = Number(teamId);
+  renderTeamsTable();
+  renderTeamDetails(getSelectedTeamsTournamentId());
+}
+
+function renderTeamsTable() {
+  const table = document.getElementById('teamsTable');
+  if (!teamsState.length) {
+    table.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen lag ennå. Legg til ett ovenfor.</td></tr>';
+    return;
+  }
+
+  table.innerHTML = teamsState.map((team, idx) => {
+    const players = teamPlayers(team);
+    const hasMorePlayers = players.length > 2;
+    return `
+      <tr onclick="selectTeam(${team.id})" style="cursor:pointer;${selectedTeamId === team.id ? 'background:rgba(201,168,76,.12)' : ''}">
+        <td>${idx + 1}</td>
+        <td>
+          <strong>${team.team_name || `Lag ${idx + 1}`}</strong>
+          ${hasMorePlayers ? `<div style="font-size:.74rem;color:var(--text-muted)">+${players.length - 2} spillere</div>` : ''}
+        </td>
+        <td>${players[0]?.player_name || '—'}</td>
+        <td>${players[1]?.player_name || (hasMorePlayers ? players.slice(1).map((p) => p.player_name).join(', ') : '—')}</td>
+        <td><code style="background:var(--gold-pale);padding:2px 8px;border-radius:4px;font-weight:700;color:var(--gold-dark)">${team.pin_code}</code></td>
+        <td style="display:flex;gap:6px">
+          <button onclick='event.stopPropagation();editTeam(${team.id},${JSON.stringify(team.team_name)},${JSON.stringify(team.player1)},${JSON.stringify(team.player2)},${JSON.stringify(team.player3 || '')},${JSON.stringify(team.player4 || '')},${JSON.stringify(team.pin_code)},${team.player1_handicap || 0},${team.player2_handicap || 0},${team.player3_handicap || 0},${team.player4_handicap || 0})' class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)" title="Rediger"><i class="fas fa-pen"></i></button>
+          <button onclick='event.stopPropagation();deleteTeam(${team.id},${JSON.stringify(team.team_name)})' class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+function renderTeamDetails(tournamentId) {
   const cardsWrap = document.getElementById('teamsDebugCards');
-  if (!teams.length) {
+  if (!tournamentId) {
+    cardsWrap.innerHTML = 'Velg en turnering.';
+    return;
+  }
+  if (!teamsState.length) {
     cardsWrap.innerHTML = '<div style="color:var(--text-muted)">Ingen lag å vise.</div>';
-  } else {
-    cardsWrap.innerHTML = teams.map((team, idx) => {
-      const players = Array.isArray(team.players) ? team.players : [];
-      const playersList = players.length
-        ? players.map((player, pIdx) => `<div>Spiller ${pIdx + 1}: ${player.player_name} (${player.handicap ?? 0})</div>`).join('')
-        : '<div style="color:var(--text-muted)">Ingen spillere koblet til laget.</div>';
-      return `<div style="border:1px solid var(--gold-border);border-radius:12px;background:var(--white);padding:14px">
-        <div style="font-weight:700;font-family:var(--font-heading)">${team.team_name || `Lag ${idx + 1}`}</div>
-        <div style="margin:4px 0 10px 0;color:var(--gold-dark);font-weight:700">PIN ${team.pin_code}</div>
-        ${playersList}
-        <div style="margin-top:10px">Total HCP: <strong>${team.total_handicap ?? 0}</strong></div>
-        <div>Justert HCP (${handicapPercent}%): <strong>${team.adjusted_handicap ?? 0}</strong></div>
-        <div style="margin-top:8px;color:var(--text-muted)">Status: ${team.active ? 'Aktiv' : 'Inaktiv'}</div>
-      </div>`;
-    }).join('');
+    return;
+  }
+
+  const activeTeam = teamsState.find((team) => team.id === selectedTeamId) || teamsState[0];
+  const tournament = getTournamentByIdLocal(tournamentId);
+  const handicapPercent = Number(tournament?.handicap_percentage || 0);
+  const players = teamPlayers(activeTeam);
+  const totalHcp = players.reduce((sum, player) => sum + Number(player.handicap || 0), 0);
+  const adjustedHcp = handicapPercent > 0 ? Math.round(totalHcp * (handicapPercent / 100)) : totalHcp;
+
+  cardsWrap.innerHTML = `
+    <div style="border:1px solid var(--gold-border);border-radius:12px;background:var(--white);padding:14px">
+      <div style="font-weight:700;font-family:var(--font-heading)">${activeTeam.team_name || 'Lag'}</div>
+      <div style="margin:4px 0 10px 0;color:var(--gold-dark);font-weight:700">PIN ${activeTeam.pin_code}</div>
+      ${players.map((player, pIdx) => `<div>Spiller ${pIdx + 1}: ${player.player_name} (${player.handicap ?? 0})</div>`).join('')}
+      <div style="margin-top:10px">Total HCP: <strong>${activeTeam.total_handicap ?? totalHcp}</strong></div>
+      <div>Justert HCP (${handicapPercent}%): <strong>${activeTeam.adjusted_handicap ?? adjustedHcp}</strong></div>
+      <div style="margin-top:8px;color:var(--text-muted)">Status: ${activeTeam.active ? 'Aktiv' : 'Inaktiv'}</div>
+    </div>`;
+}
+
+function validateTeamDraft(draft, cfg) {
+  if (!draft.tournament_id) return 'Du må velge en turnering';
+  if (!/^\d{4}$/.test(draft.pin_code)) return 'PIN må være nøyaktig 4 siffer';
+
+  const allPlayers = [
+    { name: draft.player1, handicap: draft.player1_handicap },
+    { name: draft.player2, handicap: draft.player2_handicap },
+    { name: draft.player3, handicap: draft.player3_handicap },
+    { name: draft.player4, handicap: draft.player4_handicap }
+  ];
+  const filledPlayers = allPlayers.filter((p) => String(p.name || '').trim() || String(p.handicap || '').trim());
+  if (cfg.teamBased) {
+    if (filledPlayers.length !== cfg.teamSize) return `Hvert lag må ha nøyaktig ${cfg.teamSize} spillere`;
+    if (filledPlayers.some((p) => !String(p.name || '').trim() || !Number.isFinite(Number(p.handicap)))) return 'Alle spillere må ha navn og handicap';
+  }
+  if (teamsState.some((team) => String(team.pin_code) === String(draft.pin_code))) return 'PIN allerede i bruk i denne turneringen';
+  return null;
+}
+
+async function loadTeams() {
+  const selectedTournamentId = getSelectedTeamsTournamentId();
+  if (!selectedTournamentId) {
+    teamsState = [];
+    selectedTeamId = null;
+    document.getElementById('teamCount').textContent = '';
+    document.getElementById('teamsTable').innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Velg en turnering ovenfor</td></tr>';
+    document.getElementById('teamsDebugCards').innerHTML = 'Velg en turnering.';
+    return;
+  }
+
+  const d = await api('/api/admin/tournament/' + selectedTournamentId + '/teams');
+  applyFormatDrivenAdminLayout(selectedTournamentId);
+  teamsState = d.teams || [];
+  if (!teamsState.some((team) => team.id === selectedTeamId)) selectedTeamId = teamsState[0]?.id ?? null;
+  document.getElementById('teamCount').textContent = `(${teamsState.length} lag)`;
+  renderTeamRuleHint(selectedTournamentId);
+  renderTeamsTable();
+  renderTeamDetails(selectedTournamentId);
+
+  if (!document.getElementById('newTeamName').value.trim()) {
+    document.getElementById('newTeamName').value = nextTeamName();
   }
 }
 
 async function addTeam() {
-  const tid = document.getElementById('teamsTournamentSelect').value;
-  if (!tid) { showToast('Velg en turnering først','error'); return; }
-  const team_name=document.getElementById('newTeamName').value,
-        player1=document.getElementById('newPlayer1').value,
-        player2=document.getElementById('newPlayer2').value,
-        player3=document.getElementById('newPlayer3').value,
-        player4=document.getElementById('newPlayer4').value,
-        pin_code=document.getElementById('newPin').value,
-        player1_handicap=document.getElementById('newHcp1').value||0,
-        player2_handicap=document.getElementById('newHcp2').value||0,
-        player3_handicap=document.getElementById('newHcp3').value||0,
-        player4_handicap=document.getElementById('newHcp4').value||0;
-  if (!team_name||!player1||!player2||!pin_code) { showToast('Alle felt er påkrevd','error'); return; }
-  if (!/^\d{4}$/.test(pin_code)) { showToast('PIN må være nøyaktig 4 siffer','error'); return; }
+  const selectedTournamentId = getSelectedTeamsTournamentId();
+  console.log('Selected tournament', selectedTournamentId);
+  const tournament = getTournamentByIdLocal(selectedTournamentId);
+  const formatDef = TournamentFormats.getFormatDefinition(tournament?.format || 'strokeplay');
+  const draftTeam = {
+    tournament_id: selectedTournamentId,
+    team_name: document.getElementById('newTeamName').value.trim() || nextTeamName(),
+    player1: document.getElementById('newPlayer1').value.trim(),
+    player2: document.getElementById('newPlayer2').value.trim(),
+    player3: document.getElementById('newPlayer3').value.trim(),
+    player4: document.getElementById('newPlayer4').value.trim(),
+    pin_code: document.getElementById('newPin').value.trim(),
+    player1_handicap: document.getElementById('newHcp1').value.trim(),
+    player2_handicap: document.getElementById('newHcp2').value.trim(),
+    player3_handicap: document.getElementById('newHcp3').value.trim(),
+    player4_handicap: document.getElementById('newHcp4').value.trim()
+  };
+
+  console.log('Adding team', draftTeam);
+  console.log('Teams before', teamsState);
+
+  const validationError = validateTeamDraft(draftTeam, formatDef);
+  if (validationError) {
+    showToast(validationError, 'error');
+    return;
+  }
+
   try {
-    await api('/api/admin/team',{method:'POST',body:JSON.stringify({tournament_id:tid,team_name,player1,player2,player3,player4,pin_code,player1_handicap,player2_handicap,player3_handicap,player4_handicap})});
+    const response = await api('/api/admin/team', { method: 'POST', body: JSON.stringify(draftTeam) });
+    console.log('DB insert response', response);
+    const optimisticTeam = {
+      ...draftTeam,
+      id: Number(response.id),
+      total_handicap: Number(draftTeam.player1_handicap || 0) + Number(draftTeam.player2_handicap || 0) + Number(draftTeam.player3_handicap || 0) + Number(draftTeam.player4_handicap || 0),
+      players: teamPlayers(draftTeam),
+      active: 1
+    };
+    const updatedTeams = [...teamsState, optimisticTeam];
+    teamsState = updatedTeams;
+    selectedTeamId = optimisticTeam.id;
+    console.log('Teams after', updatedTeams);
+
+    document.getElementById('teamCount').textContent = `(${teamsState.length} lag)`;
+    renderTeamRuleHint(selectedTournamentId);
+    renderTeamsTable();
+    renderTeamDetails(selectedTournamentId);
     showToast('Lag lagt til!');
-    ['newTeamName','newPlayer1','newPlayer2','newPlayer3','newPlayer4','newPin','newHcp1','newHcp2','newHcp3','newHcp4'].forEach(id=>document.getElementById(id).value='');
-    await loadTeams(); await loadDashboard(); loadAwardTeams();
+    resetTeamForm();
+
+    loadTeams();
+    loadDashboard();
+    loadAwardTeams();
   } catch(e) { showToast(e.message,'error'); }
 }
 
