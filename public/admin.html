@@ -1017,6 +1017,21 @@ function populateTournamentSelects() {
   });
 
   if (defaultT) applyFormatDrivenAdminLayout(defaultT.id);
+
+  const activePanelId = document.querySelector('.admin-panel.active')?.id;
+  const panelLoaderMap = {
+    'panel-teams': loadTeams,
+    'panel-players': loadPlayersPanel,
+    'panel-holes': loadHoles,
+    'panel-scores': loadScores,
+    'panel-awards': loadAwards,
+    'panel-gameday': loadGameday,
+    'panel-photos': loadPhotos,
+    'panel-sponsors': loadSponsorsAdmin,
+    'panel-stages': loadStagesPanel
+  };
+  const activeLoader = panelLoaderMap[activePanelId];
+  if (typeof activeLoader === 'function') activeLoader();
 }
 
 function renderTournamentsTable() {
@@ -1647,10 +1662,27 @@ async function loadTeams() {
 
   applyFormatDrivenAdminLayout(selectedTournamentId);
 
-  const [teamsData, playersData] = await Promise.all([
-    api('/api/admin/tournament/' + selectedTournamentId + '/teams'),
-    api('/api/admin/tournament/' + selectedTournamentId + '/players')
-  ]);
+  let teamsData;
+  try {
+    teamsData = await api('/api/admin/tournament/' + selectedTournamentId + '/teams');
+  } catch (err) {
+    teamsState = [];
+    tournamentPlayersState = [];
+    selectedTeamId = null;
+    document.getElementById('teamCount').textContent = '';
+    renderTeamsTable();
+    document.getElementById('teamsDebugCards').innerHTML = '<div style="color:var(--danger)">Kunne ikke laste lag. Prøv å oppdatere siden.</div>';
+    showToast(err.message || 'Kunne ikke laste lag', 'error');
+    return;
+  }
+
+  let playersData = { players: [] };
+  try {
+    playersData = await api('/api/admin/tournament/' + selectedTournamentId + '/players');
+  } catch (err) {
+    console.warn('Could not load tournament players for team form', { selectedTournamentId, error: err?.message || err });
+  }
+
   teamsState = teamsData.teams || [];
   tournamentPlayersState = playersData.players || [];
   console.log('Loaded teams', { selectedTournamentId, teams: teamsState, tournament: teamsData.tournament });
