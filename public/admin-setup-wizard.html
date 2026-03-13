@@ -111,12 +111,12 @@
 </div>
 <script>
 const formatSettings = {
-  strokeplay: { label: 'Slagspill', apiFormat: 'strokeplay', teamSize: 1, useTeams: false, participantMode: 'players', defaultMode: 'players', defaultHcpPercent: 100 },
-  stableford: { label: 'Stableford', apiFormat: 'stableford', teamSize: 1, useTeams: false, participantMode: 'players', defaultMode: 'players', defaultHcpPercent: 100 },
-  scramble2: { label: '2-manns scramble', apiFormat: 'texas_scramble', teamSize: 2, useTeams: true, participantMode: 'team', defaultMode: 'manual', defaultHcpPercent: 25 },
-  scramble3: { label: '3-manns scramble', apiFormat: 'scramble3', teamSize: 3, useTeams: true, participantMode: 'team', defaultMode: 'manual', defaultHcpPercent: 20 },
-  scramble4: { label: '4-manns scramble', apiFormat: 'texas_scramble_4', teamSize: 4, useTeams: true, participantMode: 'team', defaultMode: 'manual', defaultHcpPercent: 10 },
-  bestball2: { label: '2-ball bestball', apiFormat: 'fourball', teamSize: 2, useTeams: true, participantMode: 'team', defaultMode: 'manual', defaultHcpPercent: 85 }
+  strokeplay: { label: 'Slagspill', apiFormat: 'strokeplay', teamSize: 1, useTeams: false, participantMode: 'players', defaultMode: 'players', handicapMethod: 'percentage', defaultHcpPercent: 100 },
+  stableford: { label: 'Stableford', apiFormat: 'stableford', teamSize: 1, useTeams: false, participantMode: 'players', defaultMode: 'players', handicapMethod: 'percentage', defaultHcpPercent: 100 },
+  scramble2: { label: '2-manns scramble', apiFormat: 'texas_scramble', teamSize: 2, useTeams: true, participantMode: 'team', defaultMode: 'manual', handicapMethod: 'weighted', defaultWeights: [35, 15], defaultHcpPercent: 100 },
+  scramble3: { label: '3-manns scramble', apiFormat: 'scramble3', teamSize: 3, useTeams: true, participantMode: 'team', defaultMode: 'manual', handicapMethod: 'percentage', defaultHcpPercent: 20 },
+  scramble4: { label: '4-manns scramble', apiFormat: 'texas_scramble_4', teamSize: 4, useTeams: true, participantMode: 'team', defaultMode: 'manual', handicapMethod: 'weighted', defaultWeights: [25, 20, 15, 10], defaultHcpPercent: 100 },
+  bestball2: { label: '2-ball bestball', apiFormat: 'fourball', teamSize: 2, useTeams: true, participantMode: 'team', defaultMode: 'manual', handicapMethod: 'percentage', defaultHcpPercent: 85 }
 };
 
 let step = 0;
@@ -175,9 +175,15 @@ function selectedFormatConfig() {
 }
 
 function hcpTeam(team) {
-  const percent = Number(document.getElementById('hcpPercent').value || 0);
+  const cfg = selectedFormatConfig();
   const total = (team.players || []).reduce((sum, p) => sum + Number(p.handicap || 0), 0);
-  return { total, adjusted: Math.round(total * (percent / 100)) };
+  if (cfg.handicapMethod === 'weighted') {
+    const sorted = (team.players || []).map((p) => Number(p.handicap || 0)).sort((a, b) => a - b);
+    const adjusted = Math.round(sorted.reduce((sum, h, idx) => sum + (h * ((cfg.defaultWeights?.[idx] || 0) / 100)), 0));
+    return { total, adjusted, label: (cfg.defaultWeights || []).join('/') };
+  }
+  const percent = Number(document.getElementById('hcpPercent').value || cfg.defaultHcpPercent || 0);
+  return { total, adjusted: Math.round(total * (percent / 100)), label: `${percent}%` };
 }
 
 function createPin() { return String(Math.floor(Math.random() * 9000) + 1000); }
@@ -404,7 +410,7 @@ function renderTeamCards() {
           <input class="pin-input form-input" type="text" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="PIN (4 siffer)" value="${escapeHtml(team.pin)}" oninput="state.teams[${teamIdx}].pin=pinSanitize(this.value);this.value=state.teams[${teamIdx}].pin">
         </div>
         ${players}
-        <div style="margin-top:8px;font-size:.88rem;color:var(--text-muted)">Total HCP: <strong>${hcp.total}</strong> · ${document.getElementById('hcpPercent').value}% = <strong>${hcp.adjusted}</strong></div>
+        <div style="margin-top:8px;font-size:.88rem;color:var(--text-muted)">Total HCP: <strong>${hcp.total}</strong> · ${hcp.label} = <strong>${hcp.adjusted}</strong></div>
       </div>
     `;
   }).join('');
@@ -554,11 +560,11 @@ function fillReview() {
           <div>PIN ${escapeHtml(team.pin)}</div>
           ${players}
           <div>Total HCP: ${h.total}</div>
-          <div>${hcpPercent}% = ${h.adjusted}</div>
+          <div>${h.label} = ${h.adjusted}</div>
         </div>`;
     }).join('');
   document.getElementById('review').innerHTML = `
-    <div class="team-card"><strong>Format</strong><div>${cfg.label}</div><div>Handicapprosent: ${hcpPercent}%</div></div>
+    <div class="team-card"><strong>Format</strong><div>${cfg.label}</div><div>Handicapmetode: ${cfg.handicapMethod === 'weighted' ? `Vektet (${(cfg.defaultWeights || []).join('/')})` : `Prosent (${hcpPercent}%)`}</div></div>
     ${blocks}
   `;
   document.getElementById('validationSummary').textContent = validateAll().join(' · ');
@@ -566,6 +572,8 @@ function fillReview() {
 
 function buildPayload(action = 'draft') {
   const cfg = selectedFormatConfig();
+  const handicapPercentage = Number(document.getElementById('hcpPercent').value || cfg.defaultHcpPercent);
+  const weightedPercentages = Array.isArray(cfg.defaultWeights) ? cfg.defaultWeights : [];
   return {
     basics: {
       name: document.getElementById('name').value.trim(),
@@ -579,7 +587,12 @@ function buildPayload(action = 'draft') {
       tournamentId: state.tournamentId
     },
     structure: { course: document.getElementById('course').value.trim(), holesCount: 18, slopeRating: 113, stages: [{ name: 'Dag 1', date: document.getElementById('date').value, format: cfg.apiFormat }] },
-    rules: { useHandicap: true, handicapMethod: 'percentage', handicapPercentage: Number(document.getElementById('hcpPercent').value || cfg.defaultHcpPercent) },
+    rules: {
+      useHandicap: true,
+      handicapMethod: cfg.handicapMethod || 'percentage',
+      handicapPercentage,
+      ...(cfg.handicapMethod === 'weighted' ? { weightedPercentages } : {})
+    },
     participants: {
       mode: cfg.useTeams ? 'team' : 'individual',
       setupMode: state.teamSetupMode,

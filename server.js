@@ -438,6 +438,48 @@ function normalizeTeamPayload(body = {}, requiredTeamSize = 2) {
   };
 }
 
+function normalizeWizardPlayerRow(player = {}) {
+  const handicapRaw = player?.handicap ?? player?.hcp ?? player?.courseHandicap;
+  return {
+    id: player?.id,
+    name: String(player?.name || player?.player_name || player?.playerName || '').trim(),
+    pin: normalizePin(player?.pin || player?.pin_code || ''),
+    handicap: Number.isFinite(Number(handicapRaw)) ? Number(handicapRaw) : NaN
+  };
+}
+
+function normalizeWizardTeamRow(row = {}, idx = 0, teamSize = 2) {
+  const sourcePlayers = Array.isArray(row?.players) && row.players.length
+    ? row.players
+    : [
+        { id: row?.player1_id, name: row?.player1 || row?.player1_name, handicap: row?.player1_handicap },
+        { id: row?.player2_id, name: row?.player2 || row?.player2_name, handicap: row?.player2_handicap },
+        { id: row?.player3_id, name: row?.player3 || row?.player3_name, handicap: row?.player3_handicap },
+        { id: row?.player4_id, name: row?.player4 || row?.player4_name, handicap: row?.player4_handicap }
+      ];
+  const players = sourcePlayers
+    .map((player) => normalizeWizardPlayerRow(player))
+    .filter((player) => player.name || Number.isFinite(player.handicap))
+    .slice(0, Math.max(Number(teamSize) || 0, 4));
+  return {
+    id: row?.id,
+    teamName: String(row?.teamName || row?.team_name || row?.name || `Lag ${idx + 1}`).trim(),
+    pin: normalizePin(row?.pin || row?.pin_code || ''),
+    players
+  };
+}
+
+function extractWizardParticipantRows(format, participants = {}) {
+  const def = getFormatDefinition(format);
+  const rows = Array.isArray(participants?.rows)
+    ? participants.rows
+    : (Array.isArray(participants?.teams) ? participants.teams : (Array.isArray(participants?.participants) ? participants.participants : []));
+  if (def.teamSize === 1 || def.participantMode === 'individual') {
+    return rows.map((row) => normalizeWizardPlayerRow(row));
+  }
+  return rows.map((row, idx) => normalizeWizardTeamRow(row, idx, def.teamSize));
+}
+
 function validateTeamPayloadForFormat({ payload, meta, format }) {
   if (!meta?.isTeamFormat) return 'Denne spillformen tillater ikke lag i dette oppsettet';
   if (!payload.team_name) return 'Lagnavn er påkrevd';
@@ -461,9 +503,7 @@ function validateWizardParticipants(format, participants, mode = 'single_format'
     return { valid: true };
   }
   const def = getFormatDefinition(format);
-  const rows = Array.isArray(participants?.rows)
-    ? participants.rows
-    : (Array.isArray(participants?.teams) ? participants.teams : (Array.isArray(participants?.participants) ? participants.participants : []));
+  const rows = extractWizardParticipantRows(format, participants);
   const setupMode = String(participants?.setupMode || 'manual');
   if (!rows.length) return { valid: false, error: 'Du må registrere minst én deltaker/ett lag' };
 
@@ -479,7 +519,9 @@ function validateWizardParticipants(format, participants, mode = 'single_format'
   } else {
     if (setupMode === 'pool') {
       const pool = Array.isArray(participants?.teamPool)
-        ? participants.teamPool.filter((p) => String(p?.name || '').trim() || String(p?.handicap || '').trim())
+        ? participants.teamPool
+          .map((player) => normalizeWizardPlayerRow(player))
+          .filter((player) => String(player?.name || '').trim() || Number.isFinite(player?.handicap))
         : [];
       if (pool.length < 2) return { valid: false, error: 'Du må legge inn minst 2 spillere i spillerpool' };
       if (pool.length % def.teamSize !== 0) return { valid: false, error: 'Spillerpool må ha et partall spillere som kan fordeles i lag' };
@@ -1806,9 +1848,7 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
   }
   if (!participantValidation.valid) return res.status(400).json({ error: participantValidation.error });
 
-  const participantRows = Array.isArray(participants.rows)
-    ? participants.rows
-    : (Array.isArray(participants.teams) ? participants.teams : (Array.isArray(participants.participants) ? participants.participants : []));
+  const participantRows = extractWizardParticipantRows(format, participants);
 
   const defaultHandicap = resolveHandicapConfig(format, null, { format, format_settings: null, handicap_percentage: null });
   const useHandicap = rules.useHandicap !== false;
