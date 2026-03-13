@@ -922,14 +922,34 @@ function showPanel(id) {
 let allTournaments = [];
 const tournamentSelectIds = ['teamsTournamentSelect','playersTournamentSelect','holesTournamentSelect','scoresTournamentSelect',
   'awardsTournamentSelect','gamedayTournamentSelect','photosTournamentSelect','sponsorsTournamentSelect','stagesTournamentSelect'];
+const ADMIN_TOURNAMENT_STORAGE_KEY = 'admin:selectedTournamentId';
 let tournamentSelectSyncBound = false;
 
 function resolveDefaultTournamentId() {
+  const persistedTournamentId = String(localStorage.getItem(ADMIN_TOURNAMENT_STORAGE_KEY) || '').trim();
+  if (persistedTournamentId && allTournaments.some((t) => String(t.id) === persistedTournamentId)) return persistedTournamentId;
   const defaultT = allTournaments.find((t) => t.is_active)
     || allTournaments.find((t) => t.status === 'live')
     || allTournaments.find((t) => t.status === 'published')
     || allTournaments[0];
   return defaultT ? String(defaultT.id) : '';
+}
+
+function loadActivePanelData() {
+  const activePanelId = document.querySelector('.admin-panel.active')?.id;
+  const panelLoaderMap = {
+    'panel-teams': loadTeams,
+    'panel-players': loadPlayersPanel,
+    'panel-holes': loadHoles,
+    'panel-scores': loadScores,
+    'panel-awards': loadAwards,
+    'panel-gameday': loadGameday,
+    'panel-photos': loadPhotos,
+    'panel-sponsors': loadSponsorsAdmin,
+    'panel-stages': loadStagesPanel
+  };
+  const activeLoader = panelLoaderMap[activePanelId];
+  if (typeof activeLoader === 'function') activeLoader();
 }
 
 function syncTournamentSelects(sourceId, tournamentId) {
@@ -951,8 +971,15 @@ function bindTournamentSelectSync() {
     const sel = document.getElementById(id);
     if (!sel) return;
     sel.addEventListener('change', (event) => {
-      syncTournamentSelects(id, event.target.value);
-      if (id === 'teamsTournamentSelect') applyFormatDrivenAdminLayout(event.target.value);
+      const selectedTournamentId = String(event.target.value || '').trim();
+      syncTournamentSelects(id, selectedTournamentId);
+      if (!selectedTournamentId) {
+        localStorage.removeItem(ADMIN_TOURNAMENT_STORAGE_KEY);
+        return;
+      }
+      localStorage.setItem(ADMIN_TOURNAMENT_STORAGE_KEY, selectedTournamentId);
+      applyFormatDrivenAdminLayout(selectedTournamentId);
+      loadActivePanelData();
     });
   });
 }
@@ -1055,24 +1082,12 @@ function populateTournamentSelects() {
   });
 
   if (defaultTournamentId) {
+    localStorage.setItem(ADMIN_TOURNAMENT_STORAGE_KEY, String(defaultTournamentId));
     syncTournamentSelects('teamsTournamentSelect', defaultTournamentId);
     applyFormatDrivenAdminLayout(defaultTournamentId);
   }
 
-  const activePanelId = document.querySelector('.admin-panel.active')?.id;
-  const panelLoaderMap = {
-    'panel-teams': loadTeams,
-    'panel-players': loadPlayersPanel,
-    'panel-holes': loadHoles,
-    'panel-scores': loadScores,
-    'panel-awards': loadAwards,
-    'panel-gameday': loadGameday,
-    'panel-photos': loadPhotos,
-    'panel-sponsors': loadSponsorsAdmin,
-    'panel-stages': loadStagesPanel
-  };
-  const activeLoader = panelLoaderMap[activePanelId];
-  if (typeof activeLoader === 'function') activeLoader();
+  loadActivePanelData();
 }
 
 function renderTournamentsTable() {
