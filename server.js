@@ -2596,6 +2596,18 @@ app.get('/api/admin/tournament/:id/teams', requireAdmin, (req, res) => {
   }
 });
 
+app.get('/api/admin/tournament/:id/teams/available-players', requireAdmin, (req, res) => {
+  try {
+    const tournamentId = Number(req.params.id);
+    const availablePlayers = teamRepository.getAvailablePlayersForTournament(tournamentId);
+    console.log('Fetched available players', { tournamentId, availablePlayers });
+    res.json({ players: availablePlayers });
+  } catch (error) {
+    console.error('Failed loading available players', { tournamentId: Number(req.params.id), message: error?.message, stack: error?.stack });
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post('/api/admin/team', requireAdmin, (req, res) => {
   try {
     const tournamentId = Number(req.body.tournament_id);
@@ -2639,6 +2651,20 @@ app.put('/api/admin/team/:id', requireAdmin, (req, res) => {
   }
 });
 
+app.put('/api/admin/team/:id/players', requireAdmin, (req, res) => {
+  try {
+    const teamId = Number(req.params.id);
+    const playerIds = Array.isArray(req.body.playerIds) ? req.body.playerIds : [];
+    console.log('Assign players payload', { teamId, playerIds });
+    const updatedTeam = teamRepository.assignPlayersToTeam(teamId, playerIds);
+    console.log('Assign players result', updatedTeam);
+    res.json({ success: true, team: updatedTeam });
+  } catch (error) {
+    console.error('Assign players failed', { teamId: Number(req.params.id), payload: req.body, message: error?.message, stack: error?.stack });
+    res.status(500).json({ error: error.message });
+  }
+});
+
 
 app.post('/api/admin/tournament/:id/teams/auto-generate', requireAdmin, (req, res) => {
   try {
@@ -2650,7 +2676,7 @@ app.post('/api/admin/tournament/:id/teams/auto-generate', requireAdmin, (req, re
     const meta = getTournamentFormatMeta(tournament.format);
     if (!meta.isTeamFormat) return res.status(400).json({ error: 'Denne spillformen bruker ikke lag' });
 
-    const createResult = teamRepository.generateTeamsForTournament(tournamentId);
+    const createResult = teamRepository.generateTeamsAutomatically(tournamentId);
     console.log('Auto generate teams result', { tournamentId, ...createResult });
     res.json({ success: true, ...createResult });
   } catch (e) {
