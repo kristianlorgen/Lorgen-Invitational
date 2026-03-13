@@ -920,8 +920,52 @@ function showPanel(id) {
 
 // ── Tilstand ──────────────────────────────────────────────────────────────────
 let allTournaments = [];
+const tournamentSelectIds = ['teamsTournamentSelect','playersTournamentSelect','holesTournamentSelect','scoresTournamentSelect',
+  'awardsTournamentSelect','gamedayTournamentSelect','photosTournamentSelect','sponsorsTournamentSelect','stagesTournamentSelect'];
+let tournamentSelectSyncBound = false;
+
+function resolveDefaultTournamentId() {
+  const defaultT = allTournaments.find((t) => t.is_active)
+    || allTournaments.find((t) => t.status === 'live')
+    || allTournaments.find((t) => t.status === 'published')
+    || allTournaments[0];
+  return defaultT ? String(defaultT.id) : '';
+}
+
+function syncTournamentSelects(sourceId, tournamentId) {
+  const normalized = String(tournamentId || '').trim();
+  if (!normalized) return;
+  tournamentSelectIds.forEach((id) => {
+    if (id === sourceId) return;
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const hasOption = Array.from(sel.options || []).some((option) => String(option.value) === normalized);
+    if (hasOption) sel.value = normalized;
+  });
+}
+
+function bindTournamentSelectSync() {
+  if (tournamentSelectSyncBound) return;
+  tournamentSelectSyncBound = true;
+  tournamentSelectIds.forEach((id) => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    sel.addEventListener('change', (event) => {
+      syncTournamentSelects(id, event.target.value);
+      if (id === 'teamsTournamentSelect') applyFormatDrivenAdminLayout(event.target.value);
+    });
+  });
+}
+
+function getCurrentTournamentSelection() {
+  const selected = tournamentSelectIds
+    .map((id) => document.getElementById(id)?.value)
+    .find((value) => value && allTournaments.some((t) => String(t.id) === String(value)));
+  return selected || resolveDefaultTournamentId();
+}
 
 async function initAdmin() {
+  bindTournamentSelectSync();
   await loadTournaments();
   await loadDashboard();
   await loadLegacy();
@@ -996,14 +1040,8 @@ function formatTournamentDate(dateValue, includeWeekday = false) {
 }
 
 function populateTournamentSelects() {
-  const ids = ['teamsTournamentSelect','playersTournamentSelect','holesTournamentSelect','scoresTournamentSelect',
-               'awardsTournamentSelect','gamedayTournamentSelect','photosTournamentSelect','sponsorsTournamentSelect','stagesTournamentSelect'];
-  // Always fall back to first tournament so admin panels never stay unselected.
-  const defaultT = allTournaments.find(t => t.is_active) ||
-                   allTournaments.find(t => t.status === 'live') ||
-                   allTournaments.find(t => t.status === 'published') ||
-                   allTournaments[0];
-  ids.forEach(id => {
+  const defaultTournamentId = getCurrentTournamentSelection();
+  tournamentSelectIds.forEach(id => {
     const sel = document.getElementById(id);
     if (!sel) return;
 
@@ -1013,10 +1051,13 @@ function populateTournamentSelects() {
 
     const hasCurrent = cur && allTournaments.some((t) => String(t.id) === String(cur));
     if (hasCurrent) sel.value = cur;
-    else if (defaultT) sel.value = String(defaultT.id);
+    else if (defaultTournamentId) sel.value = String(defaultTournamentId);
   });
 
-  if (defaultT) applyFormatDrivenAdminLayout(defaultT.id);
+  if (defaultTournamentId) {
+    syncTournamentSelects('teamsTournamentSelect', defaultTournamentId);
+    applyFormatDrivenAdminLayout(defaultTournamentId);
+  }
 
   const activePanelId = document.querySelector('.admin-panel.active')?.id;
   const panelLoaderMap = {
@@ -1399,7 +1440,13 @@ let selectedTeamId = null;
 let tournamentPlayersState = [];
 
 function getSelectedTeamsTournamentId() {
-  const rawTournamentId = document.getElementById('teamsTournamentSelect')?.value;
+  const teamSelector = document.getElementById('teamsTournamentSelect');
+  let rawTournamentId = teamSelector?.value;
+  if (!rawTournamentId) {
+    rawTournamentId = getCurrentTournamentSelection();
+    if (teamSelector && rawTournamentId) teamSelector.value = rawTournamentId;
+    syncTournamentSelects('teamsTournamentSelect', rawTournamentId);
+  }
   const selectedTournamentId = Number(rawTournamentId);
   const resolvedTournamentId = Number.isFinite(selectedTournamentId) && selectedTournamentId > 0 ? selectedTournamentId : null;
   console.log('Selected tournament id', { rawTournamentId, selectedTournamentId: resolvedTournamentId });
