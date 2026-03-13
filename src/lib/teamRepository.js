@@ -1,6 +1,22 @@
 const db = require('../../database');
 const { normalizeTournamentFormat, getFormatDefinition, getTournamentFormatMeta, calculateTeamHandicap } = require('../../lib/tournament-formats');
 
+const schemaColumnCache = new Map();
+
+function hasColumn(tableName, columnName) {
+  const cacheKey = `${tableName}:${columnName}`;
+  if (schemaColumnCache.has(cacheKey)) return schemaColumnCache.get(cacheKey);
+  try {
+    const cols = db.prepare(`PRAGMA table_info(${tableName})`).all();
+    const exists = cols.some((col) => String(col.name) === String(columnName));
+    schemaColumnCache.set(cacheKey, exists);
+    return exists;
+  } catch (_) {
+    schemaColumnCache.set(cacheKey, false);
+    return false;
+  }
+}
+
 function normalizeTournament(row) {
   if (!row) return null;
   const format = normalizeTournamentFormat(row.format);
@@ -88,13 +104,15 @@ function enrichTeam(team, players, tournament) {
 function getTeamsByTournament(tournamentId) {
   migrateLegacyTeamPlayers(tournamentId);
   const tournament = getTournamentById(tournamentId);
-  const teamRows = db.prepare('SELECT * FROM teams WHERE tournament_id=? AND active=1 ORDER BY id ASC').all(tournamentId);
+  const teamsActiveClause = hasColumn('teams', 'active') ? ' AND active=1' : '';
+  const teamRows = db.prepare(`SELECT * FROM teams WHERE tournament_id=?${teamsActiveClause} ORDER BY id ASC`).all(tournamentId);
+  const teamPlayersActiveClause = hasColumn('teams', 'active') ? ' AND active=1' : '';
   const links = db.prepare(
     `SELECT tp.id, tp.team_id, tp.player_id, tp.player_name, tp.handicap, tp.sort_order,
             p.name AS linked_player_name, p.handicap AS linked_player_handicap
      FROM team_players tp
      LEFT JOIN players p ON p.id = tp.player_id
-     WHERE tp.team_id IN (SELECT id FROM teams WHERE tournament_id=? AND active=1)
+     WHERE tp.team_id IN (SELECT id FROM teams WHERE tournament_id=?${teamPlayersActiveClause})
      ORDER BY tp.team_id ASC, tp.sort_order ASC, tp.id ASC`
   ).all(tournamentId);
 
@@ -124,13 +142,26 @@ function getTeamById(teamId) {
 function getTeamWithPlayers(teamId) { return getTeamById(teamId); }
 
 function getAvailablePlayersForTournament(tournamentId) {
+  const hasPlayerActive = hasColumn('players', 'active');
+  const hasRyderCupSide = hasColumn('players', 'ryder_cup_side');
+  const hasPlayerCreatedAt = hasColumn('players', 'created_at');
+  const hasPlayerUpdatedAt = hasColumn('players', 'updated_at');
+  const hasTeamActive = hasColumn('teams', 'active');
+
+  const selectPlayerActive = hasPlayerActive ? 'p.active' : '1 AS active';
+  const selectRyderCupSide = hasRyderCupSide ? 'p.ryder_cup_side' : "'' AS ryder_cup_side";
+  const selectCreatedAt = hasPlayerCreatedAt ? 'p.created_at' : 'NULL AS created_at';
+  const selectUpdatedAt = hasPlayerUpdatedAt ? 'p.updated_at' : 'NULL AS updated_at';
+  const playerActiveWhere = hasPlayerActive ? ' AND p.active=1' : '';
+  const teamActiveJoin = hasTeamActive ? ' AND t.active=1' : '';
+
   return db.prepare(
-    `SELECT p.id, p.tournament_id, p.name, p.handicap, p.active, p.ryder_cup_side, p.created_at, p.updated_at,
+    `SELECT p.id, p.tournament_id, p.name, p.handicap, ${selectPlayerActive}, ${selectRyderCupSide}, ${selectCreatedAt}, ${selectUpdatedAt},
             tp.team_id as assigned_team_id, t.team_name as assigned_team_name
      FROM players p
      LEFT JOIN team_players tp ON tp.player_id = p.id
-     LEFT JOIN teams t ON t.id = tp.team_id AND t.tournament_id = p.tournament_id AND t.active=1
-     WHERE p.tournament_id=? AND p.active=1
+     LEFT JOIN teams t ON t.id = tp.team_id AND t.tournament_id = p.tournament_id${teamActiveJoin}
+     WHERE p.tournament_id=?${playerActiveWhere}
      ORDER BY p.name COLLATE NOCASE ASC, p.id ASC`
   ).all(tournamentId);
 }
