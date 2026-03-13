@@ -351,6 +351,22 @@ try { db.exec(`ALTER TABLE teams ADD COLUMN player4 TEXT DEFAULT ''`); } catch(_
 try { db.exec(`ALTER TABLE teams ADD COLUMN player3_handicap REAL DEFAULT 0`); } catch(_) {}
 try { db.exec(`ALTER TABLE teams ADD COLUMN player4_handicap REAL DEFAULT 0`); } catch(_) {}
 try { db.exec(`ALTER TABLE teams ADD COLUMN active INTEGER NOT NULL DEFAULT 1`); } catch(_) {}
+
+try { db.exec(`ALTER TABLE teams ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP`); } catch(_) {}
+try { db.exec(`ALTER TABLE teams ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP`); } catch(_) {}
+try { db.exec(`ALTER TABLE teams ADD COLUMN handicap_total REAL`); } catch(_) {}
+try { db.exec(`ALTER TABLE teams ADD COLUMN handicap_adjusted REAL`); } catch(_) {}
+try { db.exec(`ALTER TABLE scores ADD COLUMN tournament_id INTEGER`); } catch(_) {}
+try { db.exec(`ALTER TABLE scores ADD COLUMN player_id INTEGER`); } catch(_) {}
+try { db.exec(`ALTER TABLE scores ADD COLUMN gross_score INTEGER`); } catch(_) {}
+try { db.exec(`ALTER TABLE scores ADD COLUMN points INTEGER`); } catch(_) {}
+try { db.exec(`ALTER TABLE scores ADD COLUMN relative_to_par INTEGER`); } catch(_) {}
+try { db.exec(`ALTER TABLE scores ADD COLUMN image_url TEXT`); } catch(_) {}
+try { db.exec(`ALTER TABLE scores ADD COLUMN locked INTEGER NOT NULL DEFAULT 0`); } catch(_) {}
+try { db.exec(`ALTER TABLE scores ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP`); } catch(_) {}
+try { db.exec(`ALTER TABLE scores ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP`); } catch(_) {}
+try { db.exec(`UPDATE scores SET tournament_id=(SELECT tournament_id FROM teams WHERE teams.id=scores.team_id) WHERE tournament_id IS NULL`); } catch(_) {}
+try { db.exec(`UPDATE scores SET gross_score=score WHERE gross_score IS NULL`); } catch(_) {}
 try { db.exec(`ALTER TABLE team_players ADD COLUMN player_id INTEGER`); } catch(_) {}
 try { db.exec(`ALTER TABLE team_players ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 1`); } catch(_) {}
 try { db.exec(`ALTER TABLE players ADD COLUMN ryder_cup_side TEXT`); } catch(_) {}
