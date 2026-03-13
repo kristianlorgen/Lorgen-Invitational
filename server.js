@@ -396,6 +396,19 @@ function getTeamByTournamentAndPin(tournamentId, pinInput) {
   return teams.find((team) => normalizePin(team.pin_code) === normalizedPin) || null;
 }
 
+function createUniquePin(tournamentId, usedPins = new Set()) {
+  let attempt = 0;
+  while (attempt < 10000) {
+    const pin = String(1000 + Math.floor(Math.random() * 9000));
+    if (usedPins.has(pin)) {
+      attempt += 1;
+      continue;
+    }
+    if (!getTeamByTournamentAndPin(tournamentId, pin)) return pin;
+    attempt += 1;
+  }
+  throw new Error('Kunne ikke generere unik PIN');
+}
 
 function teamSizeErrorMessage(format, required) {
   const normalized = normalizeTournamentFormat(format);
@@ -421,7 +434,7 @@ function normalizeTeamPayload(body = {}, requiredTeamSize = 2) {
     tournament_id: Number(body.tournament_id),
     team_name: String(body.team_name || '').trim(),
     pin_code: normalizePin(body.pin_code),
-    players: players.slice(0, Math.max(requiredTeamSize, 4))
+    players: players.slice(0, Math.max(Number(requiredTeamSize) || 0, 4))
   };
 }
 
@@ -2643,11 +2656,12 @@ app.post('/api/admin/team', requireAdmin, (req, res) => {
     if (!meta.isTeamFormat) return res.status(400).json({ error: 'Denne spillformen tillater ikke lag i dette oppsettet' });
     if (!payload.team_name) return res.status(400).json({ error: 'Lagnavn er påkrevd' });
     if (!pinValid(payload.pin_code)) return res.status(400).json({ error: 'PIN må være nøyaktig 4 siffer' });
-    if (payload.players.length !== meta.teamSize) return res.status(400).json({ error: teamSizeErrorMessage(tournament.format, meta.teamSize) });
-    if (payload.players.some((player) => !player.name || !Number.isFinite(Number(player.handicap)))) {
-      return res.status(400).json({ error: 'Alle spillere må ha navn og handicap' });
+    if (payload.players.length > meta.teamSize) return res.status(400).json({ error: teamSizeErrorMessage(tournament.format, meta.teamSize) });
+    if (payload.players.some((player) => !Number.isFinite(Number(player.handicap)))) {
+      return res.status(400).json({ error: 'Alle spillere må ha gyldig handicap' });
     }
 
+    console.log('Create team payload', { tournamentId, payload });
     const existing = getTeamByTournamentAndPin(tournamentId, payload.pin_code);
     if (existing) return res.status(400).json({ error: 'PIN allerede i bruk i denne turneringen' });
 
@@ -2711,11 +2725,12 @@ app.put('/api/admin/team/:id', requireAdmin, (req, res) => {
     if (!meta.isTeamFormat) return res.status(400).json({ error: 'Denne spillformen tillater ikke lag i dette oppsettet' });
     if (!payload.team_name) return res.status(400).json({ error: 'Lagnavn er påkrevd' });
     if (!pinValid(payload.pin_code)) return res.status(400).json({ error: 'PIN må være nøyaktig 4 siffer' });
-    if (payload.players.length !== meta.teamSize) return res.status(400).json({ error: teamSizeErrorMessage(tournament?.format, meta.teamSize) });
-    if (payload.players.some((player) => !player.name || !Number.isFinite(Number(player.handicap)))) {
-      return res.status(400).json({ error: 'Alle spillere må ha navn og handicap' });
+    if (payload.players.length > meta.teamSize) return res.status(400).json({ error: teamSizeErrorMessage(tournament?.format, meta.teamSize) });
+    if (payload.players.some((player) => !Number.isFinite(Number(player.handicap)))) {
+      return res.status(400).json({ error: 'Alle spillere må ha gyldig handicap' });
     }
 
+    console.log('Player assignment payload', { teamId: Number(req.params.id), tournamentId: existingTeam.tournament_id, payload });
     const duplicatePin = db.prepare('SELECT id FROM teams WHERE tournament_id=? AND pin_code=? AND id<>? LIMIT 1').get(existingTeam.tournament_id, payload.pin_code, req.params.id);
     if (duplicatePin) return res.status(400).json({ error: 'PIN allerede i bruk i denne turneringen' });
 
@@ -2759,8 +2774,71 @@ app.put('/api/admin/team/:id', requireAdmin, (req, res) => {
       console.log('Created team-player links', createdLinks);
     })();
 
+    console.log('Player assignment result', { teamId: Number(req.params.id), success: true });
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+
+app.post('/api/admin/tournament/:id/teams/auto-generate', requireAdmin, (req, res) => {
+  try {
+    const tournamentId = Number(req.params.id);
+    if (!tournamentId) return res.status(400).json({ error: 'Velg en turnering først' });
+    const tournament = getTournamentById(tournamentId);
+    if (!tournament) return res.status(404).json({ error: 'Turnering ikke funnet' });
+
+    const meta = getTournamentFormatMeta(tournament.format);
+    if (!meta.isTeamFormat) return res.status(400).json({ error: 'Denne spillformen bruker ikke lag' });
+
+    const existingTeams = db.prepare('SELECT id FROM teams WHERE tournament_id=?').all(tournamentId);
+    if (existingTeams.length) return res.status(400).json({ error: 'Slett eksisterende lag før automatisk generering' });
+
+    const players = db.prepare('SELECT id, name, handicap FROM players WHERE tournament_id=? AND active=1 ORDER BY id ASC').all(tournamentId);
+    if (!players.length || (players.length % meta.teamSize) !== 0) {
+      return res.status(400).json({ error: 'Antall spillere passer ikke med valgt lagstørrelse' });
+    }
+
+    const createResult = db.transaction(() => {
+      const insertTeam = db.prepare('INSERT INTO teams (tournament_id, team_name, player1, player2, player3, player4, pin_code, player1_handicap, player2_handicap, player3_handicap, player4_handicap, active) VALUES (?,?,?,?,?,?,?,?,?,?,?,1)');
+      const insertTeamPlayer = db.prepare('INSERT INTO team_players (team_id, player_id, player_name, handicap, sort_order, updated_at) VALUES (?,?,?,?,?,CURRENT_TIMESTAMP)');
+      const usedPins = new Set();
+      let createdTeams = 0;
+
+      for (let idx = 0; idx < players.length; idx += meta.teamSize) {
+        const group = players.slice(idx, idx + meta.teamSize);
+        const slots = [0, 1, 2, 3].map((offset) => group[offset] || { name: '', handicap: 0 });
+        const teamName = `Lag ${createdTeams + 1}`;
+        const pin = createUniquePin(tournamentId, usedPins);
+        usedPins.add(pin);
+        const team = insertTeam.run(
+          tournamentId,
+          teamName,
+          String(slots[0].name || '').trim(),
+          String(slots[1].name || '').trim(),
+          String(slots[2].name || '').trim(),
+          String(slots[3].name || '').trim(),
+          pin,
+          Number(slots[0].handicap || 0),
+          Number(slots[1].handicap || 0),
+          Number(slots[2].handicap || 0),
+          Number(slots[3].handicap || 0)
+        );
+        const teamId = Number(team.lastInsertRowid);
+        group.forEach((player, order) => {
+          insertTeamPlayer.run(teamId, player.id, String(player.name || '').trim(), Number(player.handicap || 0), order + 1);
+        });
+        createdTeams += 1;
+      }
+
+      return { createdTeams };
+    })();
+
+    console.log('Auto generate teams result', { tournamentId, ...createResult });
+    res.json({ success: true, ...createResult });
+  } catch (e) {
+    console.error('Auto generate teams failed', e);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.delete('/api/admin/team/:id', requireAdmin, (req, res) => {
