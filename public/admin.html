@@ -333,6 +333,7 @@
               <button onclick="addTeam()" class="btn btn--gold btn--sm"><i class="fas fa-plus"></i> Legg til lag</button>
               <button onclick="generatePin()" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-dice"></i> Tilfeldig PIN</button>
               <button id="autoGenerateTeamsBtn" onclick="autoGenerateTeams()" class="btn btn--outline btn--sm" style="display:none;color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-wand-magic-sparkles"></i> Generer lag automatisk</button>
+              <button id="rebuildTeamsBtn" onclick="rebuildTeamsFromPlayers()" class="btn btn--outline btn--sm" style="display:none;color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-rotate"></i> Bygg opp lag fra spillere</button>
             </div>
           </div>
         </div>
@@ -1543,6 +1544,7 @@ function applyTeamFormByTournament(tournamentId) {
   const meta = getSelectedTournamentFormatMeta(tournamentId);
   const notice = document.getElementById('teamFormNotice');
   const autoBtn = document.getElementById('autoGenerateTeamsBtn');
+  const rebuildBtn = document.getElementById('rebuildTeamsBtn');
   if (!notice) return;
 
   renderTeamFormGrid('addTeamFormGrid', 'new', meta.teamSize);
@@ -1553,12 +1555,14 @@ function applyTeamFormByTournament(tournamentId) {
     notice.style.display = 'block';
     document.getElementById('addTeamFormGrid').style.display = 'none';
     if (autoBtn) autoBtn.style.display = 'none';
+    if (rebuildBtn) rebuildBtn.style.display = 'none';
     return;
   }
 
   notice.style.display = 'none';
   document.getElementById('addTeamFormGrid').style.display = 'grid';
   if (autoBtn) autoBtn.style.display = 'inline-flex';
+  if (rebuildBtn) rebuildBtn.style.display = 'inline-flex';
   const addName = document.getElementById('newTeamName');
   if (addName && !addName.value.trim()) addName.value = nextTeamName();
 }
@@ -1883,6 +1887,24 @@ async function autoGenerateTeams() {
   try {
     const result = await api('/api/admin/tournament/' + selectedTournamentId + '/teams/auto-generate', { method: 'POST' });
     showToast(`Genererte ${result.createdTeams || 0} lag`);
+    await loadTeams();
+  } catch (e) {
+    showToast(e.message, 'error');
+  }
+}
+
+async function rebuildTeamsFromPlayers() {
+  const selectedTournamentId = getSelectedTeamsTournamentId();
+  if (!selectedTournamentId) {
+    showToast('Velg en turnering først', 'error');
+    return;
+  }
+
+  if (!confirm('Dette vil bygge opp alle lag på nytt fra spillerlisten for valgt turnering. Eksisterende lag og score slettes. Fortsette?')) return;
+
+  try {
+    const result = await api('/api/admin/tournament/' + selectedTournamentId + '/teams/rebuild-from-players', { method: 'POST' });
+    showToast(`Bygget opp ${result.createdTeams || 0} lag på nytt`);
     await loadTeams();
   } catch (e) {
     showToast(e.message, 'error');

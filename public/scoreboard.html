@@ -312,7 +312,7 @@ function posBadge(i) {
 function renderLeaderboard() {
   const tbody = document.getElementById('leaderboardBody');
   if (scoreboard.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text-muted)">Ingen poeng ennå — sjekk tilbake snart!</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text-muted)">Ingen lag eller poeng ennå. <a href="/admin.html#teams" class="btn btn--outline btn--sm" style="margin-left:8px">Legg til lag</a></td></tr>';
     return;
   }
   scoreboard = TournamentFormats.buildLeaderboard(currentFormatDef.key, scoreboard);
