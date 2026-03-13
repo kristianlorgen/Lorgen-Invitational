@@ -910,7 +910,7 @@ function renderScoreStatus(kind) {
 async function ensureActiveTournamentForScorecard() {
   const error = document.getElementById('loginError');
   const loginBtn = document.getElementById('loginBtn');
-  if (error) error.textContent = '';
+  if (error) error.innerHTML = '';
   if (document.getElementById('loginSuccess')) document.getElementById('loginSuccess').textContent = '';
   if (loginBtn) {
     loginBtn.disabled = false;
@@ -923,7 +923,7 @@ async function ensureActiveTournamentForScorecard() {
       const r = await fetch('/api/scorecard/access-status', { credentials: 'same-origin' });
       const d = await r.json();
       if (d.hasActiveTournament && d.hasTeams) return true;
-      if (error) error.textContent = d.message || 'Det finnes ingen aktiv turnering akkurat nå';
+      if (error) error.innerHTML = `${d.message || 'Det finnes ingen aktiv turnering akkurat nå'} <a href="/admin.html#teams" style="color:var(--gold-light);font-weight:700">Legg til lag</a>`;
     } catch (_) {
       if (error) error.textContent = 'Kunne ikke verifisere aktiv turnering akkurat nå';
     }
