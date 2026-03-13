@@ -88,6 +88,30 @@
     return DEFINITIONS[key] || DEFINITIONS.strokeplay;
   }
 
+  function normalizeTournamentFormat(format) {
+    return normalizeFormat(format);
+  }
+
+  function getTournamentFormatConfig(format) {
+    const key = normalizeFormat(format);
+    const def = getFormatDefinition(key);
+    return {
+      key,
+      label: def.label,
+      teamSize: Number(def.teamSize || 1),
+      isTeamFormat: Number(def.teamSize || 1) > 1,
+      definition: def
+    };
+  }
+
+  function isTeamFormat(format) {
+    return getTournamentFormatConfig(format).isTeamFormat;
+  }
+
+  function getTeamSizeForFormat(format) {
+    const teamSize = getTournamentFormatConfig(format).teamSize;
+    return teamSize > 1 ? teamSize : null;
+  }
 
   function getTournamentFormatMeta(format) {
     const def = getFormatDefinition(format);
@@ -165,5 +189,21 @@
     return [...data].sort(def.sorter);
   }
 
-  global.TournamentFormats = { normalizeFormat, getFormatDefinition, getTournamentFormatMeta, resolveAdminSectionsForTournament, resolveAdminSectionsForTournamentFormats, resolveHandicapConfig, calculatePlayingHandicap, calculateTeamHandicap, calculateHoleResult, calculateRoundResult, buildLeaderboard };
+  global.TournamentFormats = {
+    normalizeFormat,
+    normalizeTournamentFormat,
+    getFormatDefinition,
+    getTournamentFormatConfig,
+    getTournamentFormatMeta,
+    isTeamFormat,
+    getTeamSizeForFormat,
+    resolveAdminSectionsForTournament,
+    resolveAdminSectionsForTournamentFormats,
+    resolveHandicapConfig,
+    calculatePlayingHandicap,
+    calculateTeamHandicap,
+    calculateHoleResult,
+    calculateRoundResult,
+    buildLeaderboard
+  };
 })(window);
