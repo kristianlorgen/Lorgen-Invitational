@@ -988,18 +988,24 @@ function formatTournamentDate(dateValue, includeWeekday = false) {
 function populateTournamentSelects() {
   const ids = ['teamsTournamentSelect','playersTournamentSelect','holesTournamentSelect','scoresTournamentSelect',
                'awardsTournamentSelect','gamedayTournamentSelect','photosTournamentSelect','sponsorsTournamentSelect','stagesTournamentSelect'];
-  // Find the default (active > upcoming) tournament
+  // Always fall back to first tournament so admin panels never stay unselected.
   const defaultT = allTournaments.find(t => t.is_active) ||
+                   allTournaments.find(t => t.status === 'live') ||
                    allTournaments.find(t => t.status === 'published') ||
-                   allTournaments.find(t => t.status === 'live');
+                   allTournaments[0];
   ids.forEach(id => {
     const sel = document.getElementById(id);
+    if (!sel) return;
+
     const cur = sel.value;
     sel.innerHTML = '<option value="">— Velg turnering —</option>' +
       allTournaments.map(t => `<option value="${t.id}">${t.name} (${t.year}) — ${statusLabel(t.status)}</option>`).join('');
-    if (cur) sel.value = cur;
-    else if (defaultT && !cur) sel.value = String(defaultT.id);
+
+    const hasCurrent = cur && allTournaments.some((t) => String(t.id) === String(cur));
+    if (hasCurrent) sel.value = cur;
+    else if (defaultT) sel.value = String(defaultT.id);
   });
+
   if (defaultT) applyFormatDrivenAdminLayout(defaultT.id);
 }
 
