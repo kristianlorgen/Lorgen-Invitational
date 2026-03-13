@@ -332,6 +332,7 @@
             <div style="margin-top:16px;display:flex;gap:10px">
               <button onclick="addTeam()" class="btn btn--gold btn--sm"><i class="fas fa-plus"></i> Legg til lag</button>
               <button onclick="generatePin()" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-dice"></i> Tilfeldig PIN</button>
+              <button id="autoGenerateTeamsBtn" onclick="autoGenerateTeams()" class="btn btn--outline btn--sm" style="display:none;color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-wand-magic-sparkles"></i> Generer lag automatisk</button>
             </div>
           </div>
         </div>
@@ -340,7 +341,7 @@
           <div class="card-header"><strong>Lag</strong> <span id="teamCount" style="color:var(--text-muted);font-size:.82rem"></span></div>
           <div style="overflow-x:auto">
             <table class="data-table">
-              <thead><tr><th>#</th><th>Lagnavn</th><th>Spiller 1</th><th>Spiller 2</th><th>PIN</th><th>Handlinger</th></tr></thead>
+              <thead id="teamsTableHead"><tr><th>#</th><th>Lagnavn</th><th>Spiller 1</th><th>Spiller 2</th><th>PIN</th><th>Handlinger</th></tr></thead>
               <tbody id="teamsTable"><tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Velg en turnering ovenfor</td></tr></tbody>
             </table>
           </div>
@@ -807,6 +808,15 @@
 <script src="/js/tournament-formats.js"></script>
 <script>
 // ── Hjelpefunksjoner ──────────────────────────────────────────────────────────
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('\"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
 function showToast(msg, type='success') {
   const t = document.createElement('div');
   t.className = `toast toast--${type}`;
@@ -1371,6 +1381,7 @@ async function loadDashboard() {
 // ── Lag ───────────────────────────────────────────────────────────────────────
 let teamsState = [];
 let selectedTeamId = null;
+let tournamentPlayersState = [];
 
 function getSelectedTeamsTournamentId() {
   const rawTournamentId = document.getElementById('teamsTournamentSelect')?.value;
@@ -1406,12 +1417,34 @@ function nextTeamName() {
   return `Lag ${teamsState.length + 1}`;
 }
 
+function generateRandomPin(existingPins = new Set()) {
+  let pin = '';
+  let attempts = 0;
+  do {
+    pin = String(Math.floor(1000 + Math.random() * 9000));
+    attempts += 1;
+  } while (existingPins.has(pin) && attempts < 10000);
+  return pin;
+}
+
+function getTeamPlayerOptions(selectedName = '') {
+  const selected = String(selectedName || '').trim().toLowerCase();
+  const options = ['<option value="">— Velg spiller —</option>'];
+  tournamentPlayersState.forEach((player) => {
+    const name = String(player.name || '').trim();
+    if (!name) return;
+    const isSelected = name.toLowerCase() === selected;
+    options.push(`<option value="${escapeHtml(name)}" ${isSelected ? 'selected' : ''}>${escapeHtml(name)}</option>`);
+  });
+  return options.join('');
+}
+
 function renderTeamFormGrid(containerId, prefix, teamSize) {
   const container = document.getElementById(containerId);
   if (!container) return;
   const slots = Array.from({ length: teamSize || 0 });
   const playerFields = slots.map((_, idx) => `
-    <div class="form-group"><label class="form-label">Spiller ${idx + 1}</label><input class="form-input" id="${prefix}Player${idx + 1}" placeholder="Fornavn"></div>
+    <div class="form-group"><label class="form-label">Spiller ${idx + 1}</label><select class="form-select" id="${prefix}Player${idx + 1}" onchange="onTeamPlayerSelect('${prefix}', ${idx + 1})">${getTeamPlayerOptions()}</select></div>
     <div class="form-group"><label class="form-label">Hcp Spiller ${idx + 1}</label><input class="form-input" id="${prefix}Hcp${idx + 1}" type="number" step="0.1" min="0" max="54" placeholder="0.0"></div>
   `).join('');
   container.innerHTML = `
@@ -1421,24 +1454,34 @@ function renderTeamFormGrid(containerId, prefix, teamSize) {
   `;
 }
 
+function onTeamPlayerSelect(prefix, slot) {
+  const playerName = document.getElementById(`${prefix}Player${slot}`)?.value || '';
+  const player = tournamentPlayersState.find((row) => String(row.name || '').trim().toLowerCase() === String(playerName).trim().toLowerCase());
+  if (!player) return;
+  const handicapInput = document.getElementById(`${prefix}Hcp${slot}`);
+  if (handicapInput && (handicapInput.value === '' || handicapInput.value === null)) handicapInput.value = Number(player.handicap || 0);
+}
+
 function applyTeamFormByTournament(tournamentId) {
-  const tournament = getTournamentByIdLocal(tournamentId);
   const meta = getSelectedTournamentFormatMeta(tournamentId);
-  const addCard = document.getElementById('addTeamCard');
   const notice = document.getElementById('teamFormNotice');
-  if (!addCard || !notice) return;
+  const autoBtn = document.getElementById('autoGenerateTeamsBtn');
+  if (!notice) return;
 
   renderTeamFormGrid('addTeamFormGrid', 'new', meta.teamSize);
   renderTeamFormGrid('editTeamFormGrid', 'edit', meta.teamSize);
 
   if (!meta.isTeamFormat) {
-    notice.textContent = 'Denne spillformen bruker individuelle spillere, ikke lag.';
+    notice.textContent = 'Denne spillformen bruker ikke lag';
     notice.style.display = 'block';
     document.getElementById('addTeamFormGrid').style.display = 'none';
+    if (autoBtn) autoBtn.style.display = 'none';
     return;
   }
+
   notice.style.display = 'none';
   document.getElementById('addTeamFormGrid').style.display = 'grid';
+  if (autoBtn) autoBtn.style.display = 'inline-flex';
   const addName = document.getElementById('newTeamName');
   if (addName && !addName.value.trim()) addName.value = nextTeamName();
 }
@@ -1466,25 +1509,36 @@ function selectTeam(teamId) {
 
 function renderTeamsTable() {
   const table = document.getElementById('teamsTable');
-  const meta = getSelectedTournamentFormatMeta();
+  const head = document.getElementById('teamsTableHead');
+  const tid = getSelectedTeamsTournamentId();
+  const meta = getSelectedTournamentFormatMeta(tid);
+  const playerHeaders = Array.from({ length: Math.max(meta.teamSize, 2) }, (_, idx) => `<th>Spiller ${idx + 1}</th>`).join('');
+  if (head) head.innerHTML = `<tr><th>#</th><th>Lagnavn</th>${playerHeaders}<th>PIN</th><th>Handlinger</th></tr>`;
+  const totalCols = Math.max(meta.teamSize, 2) + 4;
+
+  if (!tid) {
+    table.innerHTML = `<tr><td colspan="${totalCols}" style="text-align:center;padding:24px;color:var(--text-muted)">Velg en turnering ovenfor</td></tr>`;
+    return;
+  }
+
   if (!meta.isTeamFormat) {
-    table.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Denne spillformen bruker individuelle spillere.</td></tr>';
+    table.innerHTML = `<tr><td colspan="${totalCols}" style="text-align:center;padding:24px;color:var(--text-muted)">Denne spillformen bruker individuelle spillere, ikke lag</td></tr>`;
     return;
   }
   if (!teamsState.length) {
-    table.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen lag opprettet ennå.</td></tr>';
+    table.innerHTML = `<tr><td colspan="${totalCols}" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen lag opprettet ennå</td></tr>`;
     return;
   }
 
   table.innerHTML = teamsState.map((team, idx) => {
     const players = teamPlayers(team);
+    const playerCells = Array.from({ length: Math.max(meta.teamSize, 2) }, (_, pIdx) => `<td>${players[pIdx]?.player_name || '—'}</td>`).join('');
     return `
       <tr onclick="selectTeam(${team.id})" style="cursor:pointer;${selectedTeamId === team.id ? 'background:rgba(201,168,76,.12)' : ''}">
         <td>${idx + 1}</td>
         <td><strong>${team.team_name || `Lag ${idx + 1}`}</strong></td>
-        <td>${players[0]?.player_name || '—'}</td>
-        <td>${meta.teamSize === 2 ? (players[1]?.player_name || '—') : (players.slice(1).map((p) => p.player_name).join(', ') || '—')}</td>
-        <td><code style="background:var(--gold-pale);padding:2px 8px;border-radius:4px;font-weight:700;color:var(--gold-dark)">${team.pin_code}</code></td>
+        ${playerCells}
+        <td><code style="background:var(--gold-pale);padding:2px 8px;border-radius:4px;font-weight:700;color:var(--gold-dark)">${team.pin_code || '—'}</code></td>
         <td style="display:flex;gap:6px">
           <button onclick='event.stopPropagation();editTeam(${team.id})' class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)" title="Rediger"><i class="fas fa-pen"></i></button>
           <button onclick='event.stopPropagation();deleteTeam(${team.id},${JSON.stringify(team.team_name)})' class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
@@ -1496,17 +1550,17 @@ function renderTeamsTable() {
 function renderTeamDetails(tournamentId) {
   const cardsWrap = document.getElementById('teamsDebugCards');
   if (!tournamentId) {
-    cardsWrap.innerHTML = 'Velg en turnering.';
+    cardsWrap.innerHTML = 'Velg en turnering ovenfor';
     return;
   }
   const tournament = getTournamentByIdLocal(tournamentId);
   const meta = getSelectedTournamentFormatMeta(tournamentId);
   if (!meta.isTeamFormat) {
-    cardsWrap.innerHTML = '<div style="color:var(--text-muted)">Denne spillformen bruker individuelle spillere, ikke lag.</div>';
+    cardsWrap.innerHTML = '<div style="color:var(--text-muted)">Denne spillformen bruker individuelle spillere, ikke lag</div>';
     return;
   }
   if (!teamsState.length) {
-    cardsWrap.innerHTML = '<div style="color:var(--text-muted)">Ingen lag opprettet ennå.</div>';
+    cardsWrap.innerHTML = '<div style="color:var(--text-muted)">Ingen lag opprettet ennå</div>';
     return;
   }
 
@@ -1521,7 +1575,7 @@ function renderTeamDetails(tournamentId) {
       <div style="font-weight:700;font-family:var(--font-heading)">${activeTeam.team_name || 'Lag'}</div>
       <div style="margin:4px 0;color:var(--text-muted)">Format: ${meta.displayName}</div>
       <div style="margin:4px 0 10px 0;color:var(--gold-dark);font-weight:700">PIN ${activeTeam.pin_code}</div>
-      ${players.map((player, pIdx) => `<div>Spiller ${pIdx + 1}: ${player.player_name} (${player.handicap ?? 0})</div>`).join('')}
+      ${players.map((player, pIdx) => `<div>Spiller ${pIdx + 1}: ${player.player_name} (${player.handicap ?? 0})</div>`).join('') || '<div style="color:var(--text-muted)">Ingen spillere tildelt enda</div>'}
       <div style="margin-top:10px">Total HCP: <strong>${activeTeam.total_handicap ?? totalHcp}</strong></div>
       <div>Justert HCP (${handicapPercent}%): <strong>${activeTeam.adjusted_handicap ?? adjustedHcp}</strong></div>
       <div style="margin-top:8px;color:var(--text-muted)">Status: ${activeTeam.active ? 'Aktiv' : 'Inaktiv'}</div>
@@ -1529,20 +1583,28 @@ function renderTeamDetails(tournamentId) {
 }
 
 function readPlayersFromForm(prefix, teamSize) {
-  return Array.from({ length: teamSize }, (_, idx) => ({
-    name: document.getElementById(`${prefix}Player${idx + 1}`)?.value.trim() || '',
-    handicap: document.getElementById(`${prefix}Hcp${idx + 1}`)?.value.trim() || ''
-  }));
+  return Array.from({ length: teamSize }, (_, idx) => {
+    const selectedName = document.getElementById(`${prefix}Player${idx + 1}`)?.value.trim() || '';
+    const handicapRaw = document.getElementById(`${prefix}Hcp${idx + 1}`)?.value.trim();
+    const matched = tournamentPlayersState.find((player) => String(player.name || '').trim().toLowerCase() === selectedName.toLowerCase());
+    return {
+      name: selectedName,
+      handicap: handicapRaw !== '' && handicapRaw !== undefined ? handicapRaw : (matched ? Number(matched.handicap || 0) : '')
+    };
+  }).filter((player) => player.name);
 }
 
 function validateTeamDraft(draft, tournament, existingTeamId = null) {
   const meta = TournamentFormats.getTournamentFormatMeta(tournament?.format || 'strokeplay');
-  if (!draft.tournament_id) return 'Du må velge en turnering';
+  if (!draft.tournament_id) return 'Velg en turnering først';
   if (!meta.isTeamFormat) return 'Denne spillformen tillater ikke lag i dette oppsettet';
   if (!draft.team_name) return 'Lagnavn er påkrevd';
   if (!/^\d{4}$/.test(draft.pin_code)) return 'PIN må være nøyaktig 4 siffer';
-  if (draft.players.length !== meta.teamSize) return teamValidationMessage(tournament?.format, meta.teamSize);
-  if (draft.players.some((p) => !p.name || !Number.isFinite(Number(p.handicap)))) return 'Alle spillere må ha navn og handicap';
+  if (draft.players.length > meta.teamSize) return teamValidationMessage(tournament?.format, meta.teamSize);
+  if (draft.players.some((p) => !Number.isFinite(Number(p.handicap)))) return 'Alle spillere må ha gyldig handicap';
+
+  const uniqueNames = new Set(draft.players.map((player) => String(player.name || '').trim().toLowerCase()));
+  if (uniqueNames.size !== draft.players.length) return 'En spiller kan ikke velges flere ganger i samme lag';
 
   const duplicatePin = teamsState.find((team) => String(team.pin_code) === String(draft.pin_code) && Number(team.id) !== Number(existingTeamId));
   if (duplicatePin) return 'PIN allerede i bruk i denne turneringen';
@@ -1575,20 +1637,26 @@ async function loadTeams() {
   const selectedTournamentId = getSelectedTeamsTournamentId();
   if (!selectedTournamentId) {
     teamsState = [];
+    tournamentPlayersState = [];
     selectedTeamId = null;
     document.getElementById('teamCount').textContent = '';
-    document.getElementById('teamsTable').innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Velg en turnering ovenfor</td></tr>';
-    document.getElementById('teamsDebugCards').innerHTML = 'Velg en turnering.';
+    renderTeamsTable();
+    document.getElementById('teamsDebugCards').innerHTML = 'Velg en turnering ovenfor';
     return;
   }
 
   applyFormatDrivenAdminLayout(selectedTournamentId);
-  applyTeamFormByTournament(selectedTournamentId);
 
-  const d = await api('/api/admin/tournament/' + selectedTournamentId + '/teams');
-  teamsState = d.teams || [];
-  console.log('Loaded teams', { selectedTournamentId, teams: teamsState, tournament: d.tournament });
+  const [teamsData, playersData] = await Promise.all([
+    api('/api/admin/tournament/' + selectedTournamentId + '/teams'),
+    api('/api/admin/tournament/' + selectedTournamentId + '/players')
+  ]);
+  teamsState = teamsData.teams || [];
+  tournamentPlayersState = playersData.players || [];
+  console.log('Loaded teams', { selectedTournamentId, teams: teamsState, tournament: teamsData.tournament });
   if (!teamsState.some((team) => team.id === selectedTeamId)) selectedTeamId = teamsState[0]?.id ?? null;
+
+  applyTeamFormByTournament(selectedTournamentId);
   document.getElementById('teamCount').textContent = `(${teamsState.length} lag)`;
   renderTeamRuleHint(selectedTournamentId);
   renderTeamsTable();
@@ -1597,12 +1665,23 @@ async function loadTeams() {
 
 async function addTeam() {
   const selectedTournamentId = getSelectedTeamsTournamentId();
+  if (!selectedTournamentId) {
+    showToast('Velg en turnering først', 'error');
+    return;
+  }
+
   const tournament = getTournamentByIdLocal(selectedTournamentId);
   const meta = TournamentFormats.getTournamentFormatMeta(tournament?.format || 'strokeplay');
+  if (!meta.isTeamFormat) {
+    showToast('Denne spillformen bruker ikke lag', 'error');
+    return;
+  }
+
+  const existingPins = new Set(teamsState.map((team) => String(team.pin_code || '')));
   const draft = {
     tournament_id: selectedTournamentId,
     team_name: document.getElementById('newTeamName')?.value.trim() || nextTeamName(),
-    pin_code: document.getElementById('newPin')?.value.trim() || '',
+    pin_code: document.getElementById('newPin')?.value.trim() || generateRandomPin(existingPins),
     players: readPlayersFromForm('new', meta.teamSize)
   };
 
@@ -1614,14 +1693,19 @@ async function addTeam() {
 
   try {
     const payload = buildTeamPayload(draft, tournament);
+    console.log('Create team payload', payload);
     const response = await api('/api/admin/team', { method: 'POST', body: JSON.stringify(payload) });
+    console.log('Create team result', response);
     showToast('Lag lagt til!');
     selectedTeamId = Number(response.id);
     resetTeamForm();
     await loadTeams();
     await loadDashboard();
     await loadAwardTeams();
-  } catch(e) { showToast(e.message,'error'); }
+  } catch(e) {
+    console.error('Create team failed', e);
+    showToast(e.message,'error');
+  }
 }
 
 function editTeam(id) {
@@ -1632,12 +1716,18 @@ function editTeam(id) {
   document.getElementById('editTeamId').value = id;
   document.getElementById('editTeamName').value = team.team_name || '';
   document.getElementById('editTeamPin').value = team.pin_code || '';
+
+  renderTeamFormGrid('editTeamFormGrid', 'edit', meta.teamSize);
+
   const players = teamPlayers(team).slice(0, meta.teamSize);
   Array.from({ length: meta.teamSize }, (_, idx) => {
     const row = players[idx] || { player_name: '', handicap: '' };
     const playerInput = document.getElementById(`editPlayer${idx + 1}`);
     const hcpInput = document.getElementById(`editHcp${idx + 1}`);
-    if (playerInput) playerInput.value = row.player_name || '';
+    if (playerInput) {
+      playerInput.innerHTML = getTeamPlayerOptions(row.player_name || '');
+      playerInput.value = row.player_name || '';
+    }
     if (hcpInput) hcpInput.value = row.handicap ?? '';
   });
   document.getElementById('editTeamCard').classList.remove('d-none');
@@ -1664,11 +1754,16 @@ async function saveTeamEdit() {
 
   try {
     const payload = buildTeamPayload(draft, tournament);
-    await api('/api/admin/team/' + id, { method: 'PUT', body: JSON.stringify(payload) });
+    console.log('Player assignment payload', payload);
+    const result = await api('/api/admin/team/' + id, { method: 'PUT', body: JSON.stringify(payload) });
+    console.log('Player assignment result', result);
     showToast('Lag oppdatert!');
     document.getElementById('editTeamCard').classList.add('d-none');
     await loadTeams();
-  } catch(e) { showToast(e.message, 'error'); }
+  } catch(e) {
+    console.error('Player assignment failed', e);
+    showToast(e.message, 'error');
+  }
 }
 
 function cancelTeamEdit() {
@@ -1684,9 +1779,25 @@ async function deleteTeam(id, name) {
   } catch(e) { showToast(e.message,'error'); }
 }
 
+async function autoGenerateTeams() {
+  const selectedTournamentId = getSelectedTeamsTournamentId();
+  if (!selectedTournamentId) {
+    showToast('Velg en turnering først', 'error');
+    return;
+  }
+
+  try {
+    const result = await api('/api/admin/tournament/' + selectedTournamentId + '/teams/auto-generate', { method: 'POST' });
+    showToast(`Genererte ${result.createdTeams || 0} lag`);
+    await loadTeams();
+  } catch (e) {
+    showToast(e.message, 'error');
+  }
+}
+
 function generatePin() {
   const pinField = document.getElementById('newPin');
-  if (pinField) pinField.value = String(Math.floor(1000+Math.random()*9000));
+  if (pinField) pinField.value = generateRandomPin(new Set(teamsState.map((team) => String(team.pin_code || ''))));
 }
 
 // ── Bane og Hull ──────────────────────────────────────────────────────────────
