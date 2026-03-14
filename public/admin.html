@@ -1492,16 +1492,9 @@ function syncSelectedTeamsTournamentIdFromDom() {
 }
 
 function getSelectedTournamentFormatConfig(tournamentId = getSelectedTeamsTournamentId()) {
-  try {
-    const tournament = getTournamentByIdLocal(tournamentId) || teamsPageTournament;
-    if (!tournament) {
-      return TournamentFormats.getTournamentFormatConfig('strokeplay');
-    }
-    return TournamentFormats.getTournamentFormatConfig(tournament.format);
-  } catch (error) {
-    console.error('Failed resolving tournament format config', { tournamentId, error });
-    return null;
-  }
+  const tournament = getTournamentByIdLocal(tournamentId) || teamsPageTournament;
+  const format = tournament?.format ?? 'strokeplay';
+  return TournamentFormats.getTournamentFormatConfig(format);
 }
 
 function showTeamsFeedback(message, type = 'info') {
@@ -1536,6 +1529,26 @@ async function fetchTeamsAndPlayers(tournamentId) {
   return { teamsData, playersData };
 }
 
+async function loadTeamsTournament(tournamentId) {
+  const localTournament = getTournamentByIdLocal(tournamentId);
+  if (localTournament) {
+    return localTournament;
+  }
+
+  const tournamentsResponse = await api('/api/admin/tournaments');
+  const tournaments = Array.isArray(tournamentsResponse?.tournaments) ? tournamentsResponse.tournaments : [];
+  const resolvedTournament = tournaments.find((tournament) => Number(tournament.id) === Number(tournamentId)) || null;
+  if (resolvedTournament) {
+    const existingIdx = allTournaments.findIndex((tournament) => Number(tournament.id) === Number(resolvedTournament.id));
+    if (existingIdx >= 0) {
+      allTournaments[existingIdx] = { ...allTournaments[existingIdx], ...resolvedTournament };
+    } else {
+      allTournaments.push(resolvedTournament);
+    }
+  }
+  return resolvedTournament;
+}
+
 function getUnassignedPlayers() {
   return tournamentPlayersState.filter((player) => !player.assigned_team_id || Number(player.assigned_team_id) === Number(selectedTeamId));
 }
@@ -1548,11 +1561,6 @@ function renderTeamsTable() {
 
   if (!tid) {
     table.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted)">Velg en turnering ovenfor</td></tr>';
-    return;
-  }
-
-  if (!formatConfig) {
-    table.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--danger,#ff6b6b)">Kunne ikke lese turneringsformat.</td></tr>';
     return;
   }
 
@@ -1593,7 +1601,6 @@ function renderTeamDetails() {
   const formatConfig = getSelectedTournamentFormatConfig(tid);
 
   if (!tid) { wrap.innerHTML = 'Velg en turnering ovenfor'; return; }
-  if (!formatConfig) { wrap.innerHTML = 'Kunne ikke lese turneringsformat.'; return; }
   if (!formatConfig.isTeamFormat) { wrap.innerHTML = 'Denne spillformen bruker individuelle spillere, ikke lag'; return; }
 
   const team = teamsState.find((row) => Number(row.id) === Number(selectedTeamId));
@@ -1677,9 +1684,19 @@ async function loadTeams() {
   }
 
   try {
-    showTeamsFeedback('Laster lag og spillere …', 'info');
-    const { teamsData, playersData } = await fetchTeamsAndPlayers(selectedTournamentId);
-    teamsPageTournament = teamsData.tournament || teamsPageTournament;
+    showTeamsFeedback('Laster turnering, lag og spillere …', 'info');
+    const loadedTournament = await loadTeamsTournament(selectedTournamentId);
+    if (!loadedTournament) {
+      throw new Error('Turnering ikke funnet');
+    }
+    teamsPageTournament = loadedTournament;
+    console.log('Active tournament:', activeTournamentId);
+    console.log('Tournament:', teamsPageTournament);
+    console.log('Format:', teamsPageTournament?.format);
+
+    const format = teamsPageTournament?.format ?? 'strokeplay';
+    const { teamsData, playersData } = await fetchTeamsAndPlayers(teamsPageTournament.id);
+    teamsPageTournament = { ...teamsPageTournament, ...(teamsData.tournament || {}), format: teamsData?.tournament?.format ?? format };
     teamsState = Array.isArray(teamsData.teams) ? teamsData.teams : [];
     tournamentPlayersState = Array.isArray(playersData.players) ? playersData.players : [];
     console.log('Loaded teams:', teamsData.teams);
@@ -1689,8 +1706,8 @@ async function loadTeams() {
 
     document.getElementById('teamCount').textContent = `(${teamsState.length} lag)`;
     const formatConfig = getSelectedTournamentFormatConfig(selectedTournamentId);
-    if (!formatConfig) {
-      showTeamsFeedback('Kunne ikke lese turneringsformat.', 'error');
+    if (!teamsPageTournament?.format) {
+      showTeamsFeedback('Turneringsformat ikke funnet – bruker standard.', 'info');
     } else if (!formatConfig.isTeamFormat) {
       showTeamsFeedback('Denne spillformen bruker individuelle spillere, ikke lag', 'info');
     } else if (!teamsState.length) {
