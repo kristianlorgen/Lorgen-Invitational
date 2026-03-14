@@ -907,9 +907,38 @@ let allTournaments = [];
 const tournamentSelectIds = ['teamsTournamentSelect','playersTournamentSelect','holesTournamentSelect','scoresTournamentSelect',
   'awardsTournamentSelect','gamedayTournamentSelect','photosTournamentSelect','sponsorsTournamentSelect','stagesTournamentSelect'];
 const ADMIN_TOURNAMENT_STORAGE_KEY = 'admin:selectedTournamentId';
+const ACTIVE_TOURNAMENT_STORAGE_KEY = 'activeTournamentId';
 let tournamentSelectSyncBound = false;
+let activeTournamentId = null;
+
+function setActiveTournamentState(tournamentId, options = {}) {
+  const normalized = String(tournamentId || '').trim();
+  activeTournamentId = normalized || null;
+  if (activeTournamentId) {
+    localStorage.setItem(ACTIVE_TOURNAMENT_STORAGE_KEY, activeTournamentId);
+    if (options.persistAdminSelection !== false) {
+      localStorage.setItem(ADMIN_TOURNAMENT_STORAGE_KEY, activeTournamentId);
+    }
+    syncTournamentSelects(options.sourceId || '', activeTournamentId);
+  } else {
+    localStorage.removeItem(ACTIVE_TOURNAMENT_STORAGE_KEY);
+    if (options.persistAdminSelection !== false) {
+      localStorage.removeItem(ADMIN_TOURNAMENT_STORAGE_KEY);
+    }
+  }
+  console.log('Active tournament:', activeTournamentId);
+  return activeTournamentId;
+}
+
+function hydrateActiveTournamentState() {
+  const savedId = String(localStorage.getItem(ACTIVE_TOURNAMENT_STORAGE_KEY) || '').trim();
+  if (!savedId) return null;
+  return setActiveTournamentState(savedId, { sourceId: 'teamsTournamentSelect' });
+}
 
 function resolveDefaultTournamentId() {
+  const persistedActiveId = String(activeTournamentId || '').trim();
+  if (persistedActiveId && allTournaments.some((t) => String(t.id) === persistedActiveId)) return persistedActiveId;
   const persistedTournamentId = String(localStorage.getItem(ADMIN_TOURNAMENT_STORAGE_KEY) || '').trim();
   if (persistedTournamentId && allTournaments.some((t) => String(t.id) === persistedTournamentId)) return persistedTournamentId;
   const defaultT = allTournaments.find((t) => t.is_active)
@@ -951,6 +980,7 @@ function syncTournamentSelects(sourceId, tournamentId) {
 function bindTournamentSelectSync() {
   if (tournamentSelectSyncBound) return;
   tournamentSelectSyncBound = true;
+  hydrateActiveTournamentState();
   tournamentSelectIds.forEach((id) => {
     const sel = document.getElementById(id);
     if (!sel) return;
@@ -958,10 +988,10 @@ function bindTournamentSelectSync() {
       const selectedTournamentId = String(event.target.value || '').trim();
       syncTournamentSelects(id, selectedTournamentId);
       if (!selectedTournamentId) {
-        localStorage.removeItem(ADMIN_TOURNAMENT_STORAGE_KEY);
+        setActiveTournamentState(null);
         return;
       }
-      localStorage.setItem(ADMIN_TOURNAMENT_STORAGE_KEY, selectedTournamentId);
+      setActiveTournamentState(selectedTournamentId, { sourceId: id });
       applyFormatDrivenAdminLayout(selectedTournamentId);
       loadActivePanelData();
     });
@@ -1066,7 +1096,7 @@ function populateTournamentSelects() {
   });
 
   if (defaultTournamentId) {
-    localStorage.setItem(ADMIN_TOURNAMENT_STORAGE_KEY, String(defaultTournamentId));
+    setActiveTournamentState(defaultTournamentId, { sourceId: 'teamsTournamentSelect' });
     syncTournamentSelects('teamsTournamentSelect', defaultTournamentId);
     applyFormatDrivenAdminLayout(defaultTournamentId);
   }
@@ -1099,6 +1129,7 @@ function renderTournamentsTable() {
 async function setActiveTournament(id) {
   try {
     await api('/api/admin/active-tournament/' + id, { method: 'PUT' });
+    setActiveTournamentState(id, { sourceId: 'teamsTournamentSelect' });
     showToast('Aktiv turnering oppdatert');
     await loadTournaments();
     await loadDashboard();
@@ -1112,7 +1143,9 @@ async function createTournament() {
   const year = parseInt(document.getElementById('tYear').value,10) || (date ? new Date(date).getFullYear() : null);
   if (!year||!date) { showToast('Dato og klokkeslett er påkrevd','error'); return; }
   try {
-    await api('/api/admin/tournament',{method:'POST',body:JSON.stringify({year,name,startDate:date,endDate,course,description,format,status,slope_rating,tournamentMode})});
+    const createdTournament = await api('/api/admin/tournament',{method:'POST',body:JSON.stringify({year,name,startDate:date,endDate,course,description,format,status,slope_rating,tournamentMode})});
+    const createdId = String(createdTournament?.id || '').trim();
+    if (createdId) setActiveTournamentState(createdId, { sourceId: 'teamsTournamentSelect' });
     showToast('Turnering opprettet!');
     ['tDate','tEndDate','tCourse','tDesc','tYear'].forEach(id=>document.getElementById(id).value='');
     document.getElementById('tNameInput').value='Lorgen Invitational';
@@ -1441,15 +1474,19 @@ let teamsPageTournament = null;
 let selectedTeamsTournamentId = null;
 
 function getSelectedTeamsTournamentId() {
-  return Number.isFinite(Number(selectedTeamsTournamentId)) && Number(selectedTeamsTournamentId) > 0
-    ? Number(selectedTeamsTournamentId)
+  const resolvedValue = selectedTeamsTournamentId || activeTournamentId;
+  return Number.isFinite(Number(resolvedValue)) && Number(resolvedValue) > 0
+    ? Number(resolvedValue)
     : null;
 }
 
 function syncSelectedTeamsTournamentIdFromDom() {
   const value = document.getElementById('teamsTournamentSelect')?.value;
   const tid = Number(value);
-  selectedTeamsTournamentId = Number.isFinite(tid) && tid > 0 ? tid : null;
+  selectedTeamsTournamentId = Number.isFinite(tid) && tid > 0 ? tid : activeTournamentId;
+  if (selectedTeamsTournamentId) {
+    setActiveTournamentState(selectedTeamsTournamentId, { sourceId: 'teamsTournamentSelect' });
+  }
   console.log('Teams dropdown selectedTournamentId', { selectedTournamentId: selectedTeamsTournamentId });
   return selectedTeamsTournamentId;
 }
@@ -1645,6 +1682,7 @@ async function loadTeams() {
     teamsPageTournament = teamsData.tournament || teamsPageTournament;
     teamsState = Array.isArray(teamsData.teams) ? teamsData.teams : [];
     tournamentPlayersState = Array.isArray(playersData.players) ? playersData.players : [];
+    console.log('Loaded teams:', teamsData.teams);
     if (!teamsState.some((team) => Number(team.id) === Number(selectedTeamId))) {
       selectedTeamId = teamsState[0]?.id || null;
     }
