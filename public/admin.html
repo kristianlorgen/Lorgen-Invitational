@@ -328,7 +328,10 @@
             <button id="addTeamBtn" onclick="addTeam()" class="btn btn--gold btn--sm"><i class="fas fa-plus"></i> Legg til lag</button>
             <button id="randomPinBtn" onclick="generatePinForSelectedTeam()" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-dice"></i> Generer tilfeldig PIN</button>
             <button id="autoGenerateTeamsBtn" onclick="autoGenerateTeams()" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-wand-magic-sparkles"></i> Generer lag automatisk</button>
-            <button onclick="loadTeams()" class="btn btn--outline btn--sm" style="color:var(--text-muted)"><i class="fas fa-rotate"></i> Oppdater</button>
+            <button id="refreshTeamsBtn" onclick="loadTeams()" class="btn btn--outline btn--sm" style="color:var(--text-muted)"><i class="fas fa-rotate"></i> Oppdater</button>
+          </div>
+          <div class="card-body" style="padding-top:0">
+            <div id="teamsActionsHelper" style="display:none;color:var(--text-muted);font-size:.85rem">Velg turnering for å aktivere lagverktøy</div>
           </div>
         </div>
 
@@ -1472,6 +1475,7 @@ let selectedTeamId = null;
 let tournamentPlayersState = [];
 let teamsPageTournament = null;
 let selectedTeamsTournamentId = null;
+let activeTeamsTournament = null;
 
 function getSelectedTeamsTournamentId() {
   const resolvedValue = selectedTeamsTournamentId || activeTournamentId;
@@ -1480,10 +1484,29 @@ function getSelectedTeamsTournamentId() {
     : null;
 }
 
+function getMostRecentTournamentId(tournaments = []) {
+  const sorted = [...tournaments].sort((a, b) => {
+    const da = new Date(a?.start_date || a?.date || a?.created_at || 0).getTime() || 0;
+    const db = new Date(b?.start_date || b?.date || b?.created_at || 0).getTime() || 0;
+    return db - da;
+  });
+  return sorted[0]?.id ? Number(sorted[0].id) : null;
+}
+
+function resolveActiveTeamsTournamentId() {
+  const selected = getSelectedTeamsTournamentId();
+  if (selected) return selected;
+  const persisted = String(localStorage.getItem(ACTIVE_TOURNAMENT_STORAGE_KEY) || '').trim();
+  if (persisted && allTournaments.some((tournament) => String(tournament.id) === persisted)) {
+    return Number(persisted);
+  }
+  return getMostRecentTournamentId(allTournaments);
+}
+
 function syncSelectedTeamsTournamentIdFromDom() {
   const value = document.getElementById('teamsTournamentSelect')?.value;
   const tid = Number(value);
-  selectedTeamsTournamentId = Number.isFinite(tid) && tid > 0 ? tid : activeTournamentId;
+  selectedTeamsTournamentId = Number.isFinite(tid) && tid > 0 ? tid : resolveActiveTeamsTournamentId();
   if (selectedTeamsTournamentId) {
     setActiveTournamentState(selectedTeamsTournamentId, { sourceId: 'teamsTournamentSelect' });
   }
@@ -1649,10 +1672,12 @@ function updateTeamsActionsState() {
   const tid = getSelectedTeamsTournamentId();
   const formatConfig = getSelectedTournamentFormatConfig(tid);
   const invalid = !tid || !formatConfig || !formatConfig.isTeamFormat;
-  ['addTeamBtn', 'randomPinBtn', 'autoGenerateTeamsBtn'].forEach((id) => {
+  ['addTeamBtn', 'randomPinBtn', 'autoGenerateTeamsBtn', 'refreshTeamsBtn'].forEach((id) => {
     const btn = document.getElementById(id);
     if (btn) btn.disabled = invalid;
   });
+  const helper = document.getElementById('teamsActionsHelper');
+  if (helper) helper.style.display = invalid ? 'block' : 'none';
 }
 
 function selectTeam(id) {
@@ -1668,10 +1693,27 @@ async function onTeamsTournamentChanged() {
 
 async function loadTeams() {
   syncSelectedTeamsTournamentIdFromDom();
-  const selectedTournamentId = getSelectedTeamsTournamentId();
+  let selectedTournamentId = resolveActiveTeamsTournamentId();
   teamsState = [];
   tournamentPlayersState = [];
   teamsPageTournament = selectedTournamentId ? getTournamentByIdLocal(selectedTournamentId) : null;
+  activeTeamsTournament = teamsPageTournament;
+
+  if (!allTournaments.length) {
+    document.getElementById('teamCount').textContent = '(0 lag)';
+    selectedTeamId = null;
+    showTeamsFeedback('Ingen turneringer funnet. Opprett en turnering først.', 'info');
+    renderTeamsTable();
+    renderTeamDetails();
+    updateTeamsActionsState();
+    return;
+  }
+
+  if (selectedTournamentId) {
+    selectedTeamsTournamentId = Number(selectedTournamentId);
+    setActiveTournamentState(selectedTournamentId, { sourceId: 'teamsTournamentSelect' });
+    syncTournamentSelects('teamsTournamentSelect', selectedTournamentId);
+  }
 
   if (!selectedTournamentId) {
     selectedTeamId = null;
@@ -1684,22 +1726,23 @@ async function loadTeams() {
   }
 
   try {
-    showTeamsFeedback('Laster turnering, lag og spillere …', 'info');
     const loadedTournament = await loadTeamsTournament(selectedTournamentId);
     if (!loadedTournament) {
       throw new Error('Turnering ikke funnet');
     }
     teamsPageTournament = loadedTournament;
-    console.log('Active tournament:', activeTournamentId);
-    console.log('Tournament:', teamsPageTournament);
-    console.log('Format:', teamsPageTournament?.format);
+    activeTeamsTournament = loadedTournament;
+    console.log('Available tournaments:', allTournaments);
+    console.log('Active tournament ID:', selectedTournamentId);
+    console.log('Active tournament:', activeTeamsTournament);
 
     const format = teamsPageTournament?.format ?? 'strokeplay';
     const { teamsData, playersData } = await fetchTeamsAndPlayers(teamsPageTournament.id);
     teamsPageTournament = { ...teamsPageTournament, ...(teamsData.tournament || {}), format: teamsData?.tournament?.format ?? format };
+    activeTeamsTournament = teamsPageTournament;
     teamsState = Array.isArray(teamsData.teams) ? teamsData.teams : [];
     tournamentPlayersState = Array.isArray(playersData.players) ? playersData.players : [];
-    console.log('Loaded teams:', teamsData.teams);
+    console.log('Teams loaded:', teamsState);
     if (!teamsState.some((team) => Number(team.id) === Number(selectedTeamId))) {
       selectedTeamId = teamsState[0]?.id || null;
     }
@@ -1728,19 +1771,28 @@ async function loadTeams() {
 
 async function addTeam() {
   const selectedTournamentId = getSelectedTeamsTournamentId();
-  console.log('Create team selectedTournamentId', { selectedTournamentId });
-  if (!selectedTournamentId) return showToast('Velg en turnering først', 'error');
+  console.log('Creating team for tournament:', selectedTournamentId);
+  if (!selectedTournamentId) {
+    showTeamsFeedback('Velg en turnering før du legger til lag', 'error');
+    return;
+  }
   const formatConfig = getSelectedTournamentFormatConfig(selectedTournamentId);
   if (!formatConfig) return showToast('Kunne ikke lese turneringsformat.', 'error');
   if (!formatConfig.isTeamFormat) return showToast('Denne spillformen bruker ikke lag', 'error');
 
+  const nextTeamNumber = teamsState.length + 1;
+  const nextDefaultTeamName = `Lag ${nextTeamNumber}`;
+  const generatedPin = String(Math.floor(1000 + Math.random() * 9000));
+
   try {
-    const payload = { tournament_id: selectedTournamentId, team_name: '', pin_code: '' };
+    const payload = { tournament_id: selectedTournamentId, team_name: nextDefaultTeamName, pin_code: generatedPin };
     const result = await api('/api/admin/team', { method: 'POST', body: JSON.stringify(payload) });
     await loadTeams();
-    if (result?.team?.id) selectedTeamId = Number(result.team.id);
-    renderTeamsTable();
-    renderTeamDetails();
+    if (result?.team?.id) {
+      selectedTeamId = Number(result.team.id);
+      renderTeamDetails();
+    }
+    showTeamsFeedback('Lag opprettet', 'success');
     showToast('Lag opprettet', 'success');
   } catch (error) {
     console.error('Create team failed', { selectedTournamentId, error });
