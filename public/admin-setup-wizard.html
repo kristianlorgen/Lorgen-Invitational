@@ -131,6 +131,18 @@ const state = {
   teamPool: [],
   teamSetupMode: 'players'
 };
+const ACTIVE_TOURNAMENT_STORAGE_KEY = 'activeTournamentId';
+
+function setActiveTournamentState(tournamentId) {
+  const normalized = String(tournamentId || '').trim();
+  if (!normalized) {
+    localStorage.removeItem(ACTIVE_TOURNAMENT_STORAGE_KEY);
+    return null;
+  }
+  localStorage.setItem(ACTIVE_TOURNAMENT_STORAGE_KEY, normalized);
+  console.log('Active tournament:', normalized);
+  return normalized;
+}
 
 const pinSanitize = (v) => String(v || '').replace(/\D/g, '').slice(0, 4);
 const pinValid = (v) => /^\d{4}$/.test(String(v || ''));
@@ -683,6 +695,7 @@ async function submitWizard() {
     const payload = buildPayload(document.getElementById('publishAction').value);
     console.log('Wizard submit payload', payload);
     const response = await api('/api/admin/tournament-wizard', { method: 'POST', body: JSON.stringify(payload) });
+    if (response?.id) setActiveTournamentState(response.id);
     alert('Turneringsoppsettet ble lagret.');
     window.location.href = '/admin.html#dashboard';
   } catch (e) {
@@ -724,6 +737,7 @@ async function boot() {
   const params = new URLSearchParams(window.location.search);
   const tournamentId = Number(params.get('tournamentId'));
   if (Number.isFinite(tournamentId) && tournamentId > 0) {
+    setActiveTournamentState(tournamentId);
     document.getElementById('wizardLoading').style.display = 'block';
     try {
       const existing = await api(`/api/admin/tournament-wizard/${tournamentId}`);
