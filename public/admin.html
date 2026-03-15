@@ -1513,22 +1513,44 @@ function showTeamsFeedback(message, type = 'info') {
 
 async function fetchTeamsAndPlayers(tournamentId) {
   console.log('Loading teams for tournamentId:', tournamentId);
-  const [teamsData, playersData] = await Promise.all([
-    api('/api/admin/tournament/' + tournamentId + '/teams'),
-    api('/api/admin/tournament/' + tournamentId + '/teams/available-players')
-  ]);
+  const teamsPromise = api('/api/admin/tournament/' + tournamentId + '/teams')
+    .then((result) => {
+      console.log('Teams query result:', result);
+      return result;
+    })
+    .catch((error) => {
+      console.error('Teams query failed:', error);
+      throw error;
+    });
+
+  const playersPromise = api('/api/admin/tournament/' + tournamentId + '/teams/available-players')
+    .then((result) => {
+      console.log('Teams available players result:', result);
+      return result;
+    })
+    .catch((error) => {
+      console.error('Teams available players failed:', error);
+      throw error;
+    });
+
+  const [teamsData, playersData] = await Promise.all([teamsPromise, playersPromise]);
   return { teamsData, playersData };
 }
 
 async function loadTeamsTournament(tournamentId) {
   const localTournament = getTournamentByIdLocal(tournamentId);
   if (localTournament) {
+    console.log('Tournament query result:', { data: localTournament, error: null, source: 'local-cache' });
     return localTournament;
   }
 
   const tournamentsResponse = await api('/api/admin/tournaments');
   const tournaments = Array.isArray(tournamentsResponse?.tournaments) ? tournamentsResponse.tournaments : [];
   const resolvedTournament = tournaments.find((tournament) => Number(tournament.id) === Number(tournamentId)) || null;
+  console.log('Tournament query result:', {
+    data: resolvedTournament,
+    error: resolvedTournament ? null : `Turnering ${tournamentId} ikke funnet i /api/admin/tournaments`
+  });
   if (resolvedTournament) {
     const existingIdx = allTournaments.findIndex((tournament) => Number(tournament.id) === Number(resolvedTournament.id));
     if (existingIdx >= 0) {
@@ -1556,7 +1578,7 @@ function renderTeamsTable() {
   }
 
   if (teamsLoadError) {
-    table.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--danger,#ff6b6b)">Kunne ikke laste lag. Prøv igjen.</td></tr>';
+    table.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--danger,#ff6b6b)">${escapeHtml(teamsLoadError)}</td></tr>`;
     return;
   }
 
@@ -1597,7 +1619,7 @@ function renderTeamDetails() {
   const formatConfig = getSelectedTournamentFormatConfig(tid);
 
   if (!tid) { wrap.innerHTML = 'Velg en turnering ovenfor'; return; }
-  if (teamsLoadError) { wrap.innerHTML = 'Kunne ikke laste lag. Prøv igjen.'; return; }
+  if (teamsLoadError) { wrap.innerHTML = escapeHtml(teamsLoadError); return; }
   if (!formatConfig.isTeamFormat) { wrap.innerHTML = 'Denne spillformen bruker individuelle spillere, ikke lag'; return; }
 
   const team = teamsState.find((row) => Number(row.id) === Number(selectedTeamId));
@@ -1697,6 +1719,11 @@ async function loadTeams() {
   }
 
   try {
+    const minimalTeamsProbe = await api('/api/admin/tournament/' + activeId + '/teams');
+    console.log('Teams minimal probe result:', {
+      ids: Array.isArray(minimalTeamsProbe?.teams) ? minimalTeamsProbe.teams.map((row) => row.id) : [],
+      error: null
+    });
     const loadedTournament = await loadTeamsTournament(activeId);
     if (!loadedTournament) {
       throw new Error('Turnering ikke funnet');
@@ -1727,9 +1754,11 @@ async function loadTeams() {
     }
   } catch (error) {
     console.error('loadTeams failed', { activeTournamentId: activeId, error });
-    teamsLoadError = 'Kunne ikke laste lag. Prøv igjen.';
+    teamsLoadError = error?.message
+      ? `Kunne ikke laste lag: ${error.message}`
+      : 'Kunne ikke laste lag. Prøv igjen.';
     document.getElementById('teamCount').textContent = '(0 lag)';
-    showTeamsFeedback('Kunne ikke laste lag. Prøv igjen.', 'error');
+    showTeamsFeedback(teamsLoadError, 'error');
   }
 
   updateTeamsActionsState();
@@ -1751,10 +1780,16 @@ async function addTeam() {
   const nextTeamNumber = teamsState.length + 1;
   const nextDefaultTeamName = `Lag ${nextTeamNumber}`;
   const generatedPin = String(Math.floor(1000 + Math.random() * 9000));
+  console.log('Attempting to create team', {
+    activeTournamentId: activeId,
+    nextName: nextDefaultTeamName,
+    generatedPin
+  });
 
   try {
     const payload = { tournament_id: activeId, team_name: nextDefaultTeamName, pin_code: generatedPin };
     const result = await api('/api/admin/team', { method: 'POST', body: JSON.stringify(payload) });
+    console.log('Create team result:', { payload, result, error: null });
     await loadTeams();
     if (result?.team?.id) {
       selectedTeamId = Number(result.team.id);
@@ -1764,7 +1799,9 @@ async function addTeam() {
     showToast('Lag opprettet', 'success');
   } catch (error) {
     console.error('Create team failed', { activeTournamentId: activeId, error });
-    showToast(error.message, 'error');
+    const msg = error?.message ? `Kunne ikke opprette lag: ${error.message}` : 'Kunne ikke opprette lag. Prøv igjen.';
+    showTeamsFeedback(msg, 'error');
+    showToast(msg, 'error');
   }
 }
 
