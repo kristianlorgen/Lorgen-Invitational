@@ -1604,11 +1604,14 @@ function renderAddTeamForm() {
 
   notice.style.display = 'none';
   const teamSize = Number(formatConfig.teamSize || 2);
-  const available = tournamentPlayersState.filter((player) => !player.assigned_team_id);
   const playerInputs = Array.from({ length: teamSize }, (_, idx) => {
-    const options = ['<option value="">— Velg spiller —</option>']
-      .concat(available.map((player) => `<option value="${player.id}">${escapeHtml(player.name)} (${Number(player.handicap || 0).toFixed(1)})</option>`));
-    return `<div class="form-group" style="margin:0"><label class="form-label">Spiller ${idx + 1}</label><select class="form-select" id="newTeamPlayer${idx + 1}">${options.join('')}</select></div>`;
+    return `<div class="form-group" style="margin:0">
+      <label class="form-label">Spiller ${idx + 1}</label>
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px">
+        <input class="form-input" id="newTeamPlayerName${idx + 1}" placeholder="Navn">
+        <input class="form-input" id="newTeamPlayerHandicap${idx + 1}" type="number" min="0" max="54" step="0.1" placeholder="HCP">
+      </div>
+    </div>`;
   }).join('');
 
   wrap.innerHTML = `
@@ -1684,17 +1687,16 @@ function renderTeamDetails() {
   if (!team) { wrap.innerHTML = teamsState.length ? 'Velg et lag for å redigere detaljer.' : 'Ingen lag opprettet ennå'; return; }
 
   const teamSize = Number(formatConfig.teamSize || 2);
-  const assignedIds = new Set((team.players || []).map((player) => Number(player.player_id)).filter(Boolean));
-  const unassigned = getUnassignedPlayers().filter((player) => !assignedIds.has(Number(player.id)));
 
   const playerRows = Array.from({ length: teamSize }, (_, idx) => {
-    const selected = team.players?.[idx]?.player_id ? Number(team.players[idx].player_id) : null;
-    const options = [`<option value="">— Velg spiller —</option>`]
-      .concat((selected ? tournamentPlayersState.filter((p) => Number(p.id) === selected) : []).concat(unassigned).map((player) => {
-        const isSel = Number(player.id) === Number(selected) ? 'selected' : '';
-        return `<option value="${player.id}" ${isSel}>${escapeHtml(player.name)} (${Number(player.handicap || 0).toFixed(1)})</option>`;
-      }));
-    return `<div class="form-group"><label class="form-label">Spiller ${idx + 1}</label><select class="form-select" id="teamPlayerSlot${idx + 1}">${options.join('')}</select></div>`;
+    const player = team.players?.[idx] || null;
+    return `<div class="form-group"><label class="form-label">Spiller ${idx + 1}</label>
+      <input type="hidden" id="teamPlayerSlotId${idx + 1}" value="${Number(player?.player_id || 0) || ''}">
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px">
+        <input class="form-input" id="teamPlayerSlotName${idx + 1}" placeholder="Navn" value="${escapeHtml(player?.player_name || '')}">
+        <input class="form-input" id="teamPlayerSlotHandicap${idx + 1}" type="number" min="0" max="54" step="0.1" placeholder="HCP" value="${Number.isFinite(Number(player?.player_handicap)) ? Number(player.player_handicap).toFixed(1) : ''}">
+      </div>
+    </div>`;
   }).join('');
 
   wrap.innerHTML = `
@@ -1871,10 +1873,8 @@ async function addTeam() {
   const generatedPin = String(pinInput?.value || '').trim() || String(Math.floor(1000 + Math.random() * 9000));
   if (!/^\d{4}$/.test(generatedPin)) return showToast('PIN må være 4 siffer', 'error');
   const teamSize = Number(formatConfig.teamSize || 2);
-  const selectedPlayerIds = Array.from({ length: teamSize }, (_, idx) => Number(document.getElementById('newTeamPlayer' + (idx + 1))?.value || 0))
-    .filter((id) => Number.isFinite(id) && id > 0);
-  const uniquePlayerIds = [...new Set(selectedPlayerIds)];
-  if (uniquePlayerIds.length !== selectedPlayerIds.length) return showToast('En spiller kan ikke velges flere ganger', 'error');
+  const playerEntries = readTeamPlayerEntries('newTeamPlayer', teamSize, { requireAll: true });
+  if (!playerEntries.ok) return showToast(playerEntries.message, 'error');
   console.log('Attempting to create team', {
     activeTournamentId: activeId,
     nextName: teamName,
@@ -1885,8 +1885,9 @@ async function addTeam() {
     const payload = { tournament_id: activeId, team_name: teamName, pin_code: generatedPin };
     const result = await api('/api/admin/team', { method: 'POST', body: JSON.stringify(payload) });
     const createdId = Number(result?.team?.id || 0);
-    if (createdId && uniquePlayerIds.length) {
-      await api('/api/admin/team/' + createdId + '/players', { method: 'PUT', body: JSON.stringify({ playerIds: uniquePlayerIds }) });
+    if (createdId && playerEntries.players.length) {
+      const playerIds = await upsertTeamPlayers(activeId, playerEntries.players);
+      await api('/api/admin/team/' + createdId + '/players', { method: 'PUT', body: JSON.stringify({ playerIds }) });
     }
     console.log('Create team result:', { payload, result, error: null });
     await loadTeams();
@@ -1896,7 +1897,12 @@ async function addTeam() {
     }
     if (nameInput) nameInput.value = '';
     if (pinInput) pinInput.value = '';
-    Array.from({ length: teamSize }, (_, idx) => document.getElementById('newTeamPlayer' + (idx + 1))).forEach((el) => { if (el) el.value = ''; });
+    Array.from({ length: teamSize }, (_, idx) => {
+      const nameEl = document.getElementById('newTeamPlayerName' + (idx + 1));
+      const handicapEl = document.getElementById('newTeamPlayerHandicap' + (idx + 1));
+      if (nameEl) nameEl.value = '';
+      if (handicapEl) handicapEl.value = '';
+    });
     showTeamsFeedback('Lag opprettet', 'success');
     showToast('Lag opprettet', 'success');
   } catch (error) {
@@ -1916,16 +1922,14 @@ async function saveTeamEdit() {
   const name = document.getElementById('editTeamName')?.value?.trim() || '';
   const pin = document.getElementById('editTeamPin')?.value?.trim() || '';
   const teamSize = Number(formatConfig.teamSize || 2);
-  const playerIds = Array.from({ length: teamSize }, (_, idx) => Number(document.getElementById('teamPlayerSlot' + (idx + 1))?.value || 0))
-    .filter((id) => Number.isFinite(id) && id > 0);
-  const unique = [...new Set(playerIds)];
-  if (unique.length !== playerIds.length) return showToast('En spiller kan ikke tildeles flere plasser i samme lag', 'error');
-  if (formatConfig.isTeamFormat && unique.length > teamSize) return showToast(`Formatet tillater maks ${teamSize} spillere per lag`, 'error');
+  const playerEntries = readTeamPlayerEntries('teamPlayerSlot', teamSize, { requireAll: true });
+  if (!playerEntries.ok) return showToast(playerEntries.message, 'error');
 
   try {
     const payload = { team_name: name, pin_code: pin, players: [] };
     await api('/api/admin/team/' + teamId, { method: 'PUT', body: JSON.stringify(payload) });
-    await api('/api/admin/team/' + teamId + '/players', { method: 'PUT', body: JSON.stringify({ playerIds: unique }) });
+    const playerIds = await upsertTeamPlayers(tid, playerEntries.players);
+    await api('/api/admin/team/' + teamId + '/players', { method: 'PUT', body: JSON.stringify({ playerIds }) });
     await loadTeams();
     selectedTeamId = teamId;
     renderTeamsTable();
@@ -1935,6 +1939,50 @@ async function saveTeamEdit() {
     console.error('saveTeamEdit failed', { teamId, tid, error });
     showToast(error.message, 'error');
   }
+}
+
+function readTeamPlayerEntries(prefix, teamSize, { requireAll = false } = {}) {
+  const players = [];
+  for (let idx = 1; idx <= teamSize; idx += 1) {
+    const id = Number(document.getElementById(prefix + 'Id' + idx)?.value || 0);
+    const name = String(document.getElementById(prefix + 'Name' + idx)?.value || '').trim();
+    const handicapRaw = String(document.getElementById(prefix + 'Handicap' + idx)?.value || '').trim();
+    const hasData = Boolean(name || handicapRaw);
+    if (!hasData) {
+      if (requireAll) return { ok: false, message: `Fyll ut navn og handicap for Spiller ${idx}` };
+      continue;
+    }
+    const handicap = Number(handicapRaw);
+    if (!name) return { ok: false, message: `Skriv inn navn for Spiller ${idx}` };
+    if (!Number.isFinite(handicap)) return { ok: false, message: `Handicap må være et tall for Spiller ${idx}` };
+    players.push({ id: id > 0 ? id : null, name, handicap });
+  }
+  if (requireAll && players.length !== teamSize) return { ok: false, message: `Laget må ha nøyaktig ${teamSize} spillere` };
+  return { ok: true, players };
+}
+
+async function upsertTeamPlayers(tournamentId, players) {
+  const ids = [];
+  for (const player of players) {
+    if (player.id) {
+      await api('/api/admin/player/' + player.id, {
+        method: 'PUT',
+        body: JSON.stringify({ name: player.name, handicap: player.handicap, active: 1 })
+      });
+      ids.push(player.id);
+      continue;
+    }
+    const createResult = await api('/api/admin/tournament/' + tournamentId + '/players', {
+      method: 'POST',
+      body: JSON.stringify({ name: player.name, handicap: player.handicap })
+    });
+    const createdId = Number(createResult?.id || 0);
+    if (!createdId) throw new Error('Kunne ikke opprette spiller');
+    ids.push(createdId);
+  }
+  const unique = [...new Set(ids)].filter((id) => Number.isFinite(id) && id > 0);
+  if (unique.length !== ids.length) throw new Error('En spiller kan ikke tildeles flere plasser i samme lag');
+  return unique;
 }
 
 async function generatePinForTeam(teamId) {
