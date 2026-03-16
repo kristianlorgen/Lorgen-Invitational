@@ -176,7 +176,7 @@
           <div class="card-header"><strong><i class="fas fa-circle" style="color:var(--gold)"></i> &nbsp;Myntlogo — bakside</strong></div>
           <div class="card-body">
             <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:16px">
-              Last opp et bilde som vises på baksiden av den roterende myntlogoen på forsiden.
+              Last opp ett eller flere bilder som vises på baksiden av den roterende myntlogoen på forsiden.
             </p>
             <div style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
               <div id="coinBackPreviewWrap" style="display:none;flex-shrink:0">
@@ -191,6 +191,12 @@
                   <i class="fas fa-crosshairs"></i> Velg fokuspunkt
                 </button>
               </div>
+            </div>
+            <div style="margin-top:12px">
+              <table class="data-table" style="font-size:.82rem">
+                <thead><tr><th>Bilde</th><th>Status</th><th>Handlinger</th></tr></thead>
+                <tbody id="coinBackTable"><tr><td colspan="3" style="text-align:center;color:var(--text-muted);padding:12px">Ingen bilder lastet opp</td></tr></tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -1566,19 +1572,84 @@ async function deleteGalleryPhoto(id) {
 
 // ── Myntlogo bakside ───────────────────────────────────────────────────────────
 let _coinBackData = {};
+let _coinBackSelectedId = null;
+
+function renderCoinBackTable() {
+  const rows = Array.isArray(_coinBackData.photos) ? _coinBackData.photos : [];
+  const tbody = document.getElementById('coinBackTable');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--text-muted);padding:12px">Ingen bilder lastet opp</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(p => {
+    const isSelected = _coinBackSelectedId === p.id;
+    return `
+      <tr>
+        <td style="display:flex;align-items:center;gap:8px">
+          <img src="${p.photo_path}" alt="Bakside" style="height:36px;width:36px;border-radius:8px;object-fit:cover;border:1px solid var(--gold-border)">
+          <span>${p.photo_path.split('/').pop()}</span>
+        </td>
+        <td>
+          <span style="padding:2px 8px;border-radius:999px;background:${p.is_active ? 'rgba(34,197,94,.15)' : 'rgba(148,163,184,.15)'};color:${p.is_active ? '#166534' : '#64748b'};font-weight:600">
+            ${p.is_active ? 'Aktiv' : 'Inaktiv'}
+          </span>
+        </td>
+        <td style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn--outline btn--sm" onclick="selectCoinBack('${p.id}')" style="color:var(--gold-dark);border-color:var(--gold-border)">${isSelected ? 'Valgt' : 'Velg'}</button>
+          <button class="btn btn--outline btn--sm" onclick="setCoinBackActive('${p.id}', ${p.is_active ? 'false' : 'true'})" style="color:var(--gold-dark);border-color:var(--gold-border)">
+            ${p.is_active ? 'Sett inaktiv' : 'Sett aktiv'}
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
 
 async function loadCoinBack() {
   try {
     const d = await fetch('/api/coin-back').then(r => r.json());
     _coinBackData = d;
-    if (d.photo_path) {
+    const photos = Array.isArray(d.photos) ? d.photos : [];
+    if (!_coinBackSelectedId || !photos.find(p => p.id === _coinBackSelectedId)) {
+      _coinBackSelectedId = photos[0]?.id || null;
+    }
+    const selected = photos.find(p => p.id === _coinBackSelectedId);
+    if (selected?.photo_path || d.photo_path) {
       const img = document.getElementById('coinBackPreview');
-      img.src = d.photo_path;
-      img.style.objectPosition = d.focal_point || '50% 50%';
+      img.src = selected?.photo_path || d.photo_path;
+      img.style.objectPosition = selected?.focal_point || d.focal_point || '50% 50%';
       document.getElementById('coinBackPreviewWrap').style.display = 'block';
       document.getElementById('coinFocusBtn').style.display = 'inline-flex';
+    } else {
+      document.getElementById('coinBackPreviewWrap').style.display = 'none';
+      document.getElementById('coinFocusBtn').style.display = 'none';
     }
+    renderCoinBackTable();
   } catch(_) {}
+}
+
+function selectCoinBack(id) {
+  _coinBackSelectedId = id;
+  const selected = (_coinBackData.photos || []).find(p => p.id === id);
+  if (selected) {
+    const img = document.getElementById('coinBackPreview');
+    img.src = selected.photo_path;
+    img.style.objectPosition = selected.focal_point || '50% 50%';
+  }
+  renderCoinBackTable();
+}
+
+async function setCoinBackActive(id, isActive) {
+  try {
+    await api('/api/admin/coin-back/' + id + '/active', {
+      method: 'PUT',
+      body: JSON.stringify({ is_active: isActive })
+    });
+    showToast(isActive ? 'Bakside-bilde satt aktivt' : 'Bakside-bilde satt inaktivt');
+    await loadCoinBack();
+  } catch(e) {
+    showToast(e.message, 'error');
+  }
 }
 
 async function uploadCoinBack() {
@@ -1591,11 +1662,8 @@ async function uploadCoinBack() {
     const d = await r.json();
     if (d.success) {
       showToast('Bakside-bilde oppdatert!');
-      _coinBackData.photo_path = d.photo_path;
-      const img = document.getElementById('coinBackPreview');
-      img.src = d.photo_path + '?t=' + Date.now();
-      document.getElementById('coinBackPreviewWrap').style.display = 'block';
-      document.getElementById('coinFocusBtn').style.display = 'inline-flex';
+      _coinBackSelectedId = d.image?.id || _coinBackSelectedId;
+      await loadCoinBack();
     } else {
       showToast(d.error || 'Opplasting mislyktes', 'error');
     }
@@ -1604,7 +1672,9 @@ async function uploadCoinBack() {
 }
 
 function openCoinFocusPicker() {
-  openFocusPicker(_coinBackData.photo_path, 'coin', _coinBackData.focal_point || '50% 50%');
+  const selected = (_coinBackData.photos || []).find(p => p.id === _coinBackSelectedId);
+  if (!selected) return showToast('Velg et bilde først', 'error');
+  openFocusPicker(selected.photo_path, 'coin:' + selected.id, selected.focal_point || '50% 50%');
 }
 
 // ── Utmerkelser ───────────────────────────────────────────────────────────────
@@ -1780,7 +1850,7 @@ async function deleteLegacy(id, year) {
 }
 
 // ── Fokuspunkt-velger ──────────────────────────────────────────────────────────
-let _focusTarget = null; // 'coin' | legacy_id
+let _focusTarget = null; // 'coin:<id>' | legacy_id
 let _focusPendingX = 50, _focusPendingY = 50;
 
 function openFocusPicker(imgSrc, target, currentFocus) {
@@ -1816,9 +1886,11 @@ function closeFocusPicker() {
 async function saveFocusPicker() {
   const focalPoint = _focusPendingX + '% ' + _focusPendingY + '%';
   try {
-    if (_focusTarget === 'coin') {
-      await api('/api/admin/coin-back/focus', { method: 'PUT', body: JSON.stringify({ focal_point: focalPoint }) });
-      _coinBackData.focal_point = focalPoint;
+    if (typeof _focusTarget === 'string' && _focusTarget.startsWith('coin:')) {
+      const coinId = _focusTarget.split(':')[1];
+      await api('/api/admin/coin-back/focus', { method: 'PUT', body: JSON.stringify({ focal_point: focalPoint, image_id: coinId }) });
+      const coin = (_coinBackData.photos || []).find(p => p.id === coinId);
+      if (coin) coin.focal_point = focalPoint;
       document.getElementById('coinBackPreview').style.objectPosition = focalPoint;
       showToast('Fokuspunkt lagret for myntlogo!');
     } else if (_focusTarget) {
