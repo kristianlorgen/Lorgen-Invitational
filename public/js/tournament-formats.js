@@ -69,7 +69,12 @@
     ryder_cup: { key: 'ryder_cup', label: 'Ryder Cup', teamBased: true, participantMode: 'cup', teamSize: 2, scoreEntryLabel: 'Matchpoeng', scoreDisplay: 'Cup-score', leaderboardColumns: ['Lag', 'Poeng'], handicap: { method: 'percentage', handicapPercentage: 100 }, sorter: (a,b)=>(b.points||0)-(a.points||0) }
   };
 
-  const LEGACY_MAP = { '2-mann scramble': 'scramble2', '2-man scramble': 'scramble2', 'texas scramble': 'scramble4', 'scramble': 'scramble2', 'slagspill': 'strokeplay', 'four-ball': 'fourball',
+  const LEGACY_MAP = { '2-manns scramble': 'scramble2', '2-mann scramble': 'scramble2', '2-man scramble': 'scramble2',
+  '3-manns scramble': 'scramble3', '3-mann scramble': 'scramble3', '3 man scramble': 'scramble3', '3-man scramble': 'scramble3',
+  '4-manns scramble': 'scramble4', '4-mann scramble': 'scramble4', '4 man scramble': 'scramble4', '4-man scramble': 'scramble4',
+  '2-ball bestball': 'bestball2', '2 ball bestball': 'bestball2',
+  'texas scramble': 'scramble4', 'scramble': 'scramble2', 'slagspill': 'strokeplay', 'four-ball': 'fourball',
+  'enkeltformat': 'strokeplay', 'single_format': 'strokeplay',
   'scramble2': 'scramble2',
   'scramble3': 'scramble3',
   'scramble4': 'scramble4',

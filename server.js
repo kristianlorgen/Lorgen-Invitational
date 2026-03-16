@@ -1757,10 +1757,11 @@ app.post('/api/admin/tournament', requireAdmin, (req, res) => {
       for (let i = 1; i <= 18; i++) insertHole.run(tid, i);
     });
     insertAllHoles();
+    const normalizedFormat = normalizeTournamentFormat(format);
     const stageResult = db.prepare(
       `INSERT INTO tournament_stages (tournament_id, name, stage_order, date, format, status, is_published, is_active, leaderboard_type, updated_at)
        VALUES (?, ?, 1, ?, ?, 'published', 1, 1, ?, CURRENT_TIMESTAMP)`
-    ).run(tid, 'Dag 1', resolvedStartDate, normalizeTournamentFormat(format), (tournamentMode === 'ryder_cup' ? 'cup' : 'individual'));
+    ).run(tid, 'Dag 1', resolvedStartDate, normalizedFormat, (tournamentMode === 'ryder_cup' ? 'cup' : getFormatDefinition(normalizedFormat).leaderboardMode));
     db.prepare('UPDATE tournaments SET active_stage_id=? WHERE id=?').run(stageResult.lastInsertRowid, tid);
     res.json({ success: true, id: tid });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -2149,10 +2150,11 @@ app.put('/api/admin/tournament/:id', requireAdmin, (req, res) => {
     ).run(parsedYear, resolvedName, resolvedStartDate, resolvedStartDate, endDate || resolvedStartDate, normalizeTournamentFormat(format), course||'', description||'', gameday_info||'', normalizeTournamentStatus(status), slope_rating||113, tournamentMode || 'single_format', Number.isFinite(Number(handicapPercentage)) ? Number(handicapPercentage) : null, formatSettings ? JSON.stringify(formatSettings) : null, req.params.id);
     const existingStage = db.prepare('SELECT id FROM tournament_stages WHERE tournament_id=? LIMIT 1').get(req.params.id);
     if (!existingStage) {
+      const normalizedFormat = normalizeTournamentFormat(format);
       const stageResult = db.prepare(
         `INSERT INTO tournament_stages (tournament_id, name, stage_order, date, format, status, is_published, is_active, leaderboard_type, updated_at)
          VALUES (?, ?, 1, ?, ?, 'published', 1, 1, ?, CURRENT_TIMESTAMP)`
-      ).run(req.params.id, 'Dag 1', resolvedStartDate, normalizeTournamentFormat(format), (tournamentMode === 'ryder_cup' ? 'cup' : 'individual'));
+      ).run(req.params.id, 'Dag 1', resolvedStartDate, normalizedFormat, (tournamentMode === 'ryder_cup' ? 'cup' : getFormatDefinition(normalizedFormat).leaderboardMode));
       db.prepare('UPDATE tournaments SET active_stage_id=? WHERE id=?').run(stageResult.lastInsertRowid, req.params.id);
     }
     res.json({ success: true });
@@ -2223,10 +2225,11 @@ app.post('/api/admin/tournament/:id/stages', requireAdmin, (req, res) => {
   try {
     const tournamentId = parseInt(req.params.id, 10);
     const { name, order, date, format, status, leaderboardType, settings, handicapPercentage } = req.body || {};
+    const normalizedFormat = normalizeTournamentFormat(format);
     const row = db.prepare(
       `INSERT INTO tournament_stages (tournament_id, name, stage_order, date, format, status, is_published, leaderboard_type, handicap_percentage, settings, updated_at)
        VALUES (?,?,?,?,?,?,?, ?, ?, ?, CURRENT_TIMESTAMP)`
-    ).run(tournamentId, name || 'Ny stage', parseInt(order, 10) || 1, date || null, normalizeTournamentFormat(format), normalizeTournamentStatus(status), status === 'published' ? 1 : 0, leaderboardType || 'individual', Number.isFinite(Number(handicapPercentage)) ? Number(handicapPercentage) : null, settings ? JSON.stringify(settings) : null);
+    ).run(tournamentId, name || 'Ny stage', parseInt(order, 10) || 1, date || null, normalizedFormat, normalizeTournamentStatus(status), status === 'published' ? 1 : 0, leaderboardType || getFormatDefinition(normalizedFormat).leaderboardMode, Number.isFinite(Number(handicapPercentage)) ? Number(handicapPercentage) : null, settings ? JSON.stringify(settings) : null);
     const tournament = db.prepare('SELECT active_stage_id FROM tournaments WHERE id=?').get(tournamentId);
     if (!tournament?.active_stage_id) db.prepare('UPDATE tournaments SET active_stage_id=? WHERE id=?').run(row.lastInsertRowid, tournamentId);
     res.json({ success: true, id: row.lastInsertRowid });
@@ -2236,11 +2239,12 @@ app.post('/api/admin/tournament/:id/stages', requireAdmin, (req, res) => {
 app.put('/api/admin/stage/:id', requireAdmin, (req, res) => {
   try {
     const { name, order, date, format, status, leaderboardType, settings, handicapPercentage } = req.body || {};
+    const normalizedFormat = normalizeTournamentFormat(format);
     db.prepare(
       `UPDATE tournament_stages
        SET name=?, stage_order=?, date=?, format=?, status=?, is_published=?, leaderboard_type=?, handicap_percentage=?, settings=?, updated_at=CURRENT_TIMESTAMP
        WHERE id=?`
-    ).run(name || 'Stage', parseInt(order, 10) || 1, date || null, normalizeTournamentFormat(format), normalizeTournamentStatus(status), status === 'published' ? 1 : 0, leaderboardType || 'individual', Number.isFinite(Number(handicapPercentage)) ? Number(handicapPercentage) : null, settings ? JSON.stringify(settings) : null, req.params.id);
+    ).run(name || 'Stage', parseInt(order, 10) || 1, date || null, normalizedFormat, normalizeTournamentStatus(status), status === 'published' ? 1 : 0, leaderboardType || getFormatDefinition(normalizedFormat).leaderboardMode, Number.isFinite(Number(handicapPercentage)) ? Number(handicapPercentage) : null, settings ? JSON.stringify(settings) : null, req.params.id);
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
