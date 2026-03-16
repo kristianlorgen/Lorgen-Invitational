@@ -861,6 +861,36 @@ input, select, textarea { font-family: inherit; }
 .hole-photo-btn.uploaded { background: #f0fdf4; border-color: var(--success); color: var(--success); }
 
 /* ── Admin Panel ─────────────────────────────────────────────────────────────── */
+
+.admin-topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--nav-height);
+  background: var(--dark);
+  border-bottom: 1px solid rgba(201,168,76,.2);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  gap: 16px;
+}
+.admin-topbar-logo { height: 40px; }
+.admin-topbar-title {
+  font-family: var(--font-heading);
+  font-size: 1rem;
+  color: var(--gold-light);
+  flex: 1;
+}
+.admin-topbar-link { white-space: nowrap; }
+.admin-topbar-logout {
+  background: rgba(255,255,255,.08);
+  color: rgba(255,255,255,.6);
+  border: 1px solid rgba(255,255,255,.12);
+  white-space: nowrap;
+}
+.admin-layout-offset { margin-top: var(--nav-height); }
 .admin-layout {
   display: grid;
   grid-template-columns: 260px 1fr;
@@ -1028,6 +1058,23 @@ input, select, textarea { font-family: inherit; }
   .admin-layout {
     grid-template-columns: 1fr;
   }
+  .admin-topbar {
+    padding: 8px 12px;
+    gap: 8px;
+    flex-wrap: wrap;
+    height: auto;
+    min-height: var(--nav-height);
+  }
+  .admin-topbar-logo { height: 32px; }
+  .admin-topbar-title {
+    font-size: 0.82rem;
+    min-width: 0;
+  }
+  .admin-topbar-link,
+  .admin-topbar-logout {
+    padding: 8px 10px;
+    font-size: 0.72rem;
+  }
   .admin-sidebar {
     position: static;
     height: auto;
@@ -1048,7 +1095,24 @@ input, select, textarea { font-family: inherit; }
   .trophy-card { padding: 24px 14px 18px; }
 }
 
+
 @media (max-width: 480px) {
+  .admin-topbar-title {
+    order: 3;
+    flex: 0 0 100%;
+    font-size: 0.95rem;
+  }
+
+  .admin-topbar-link,
+  .admin-topbar-logout {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .admin-layout-offset {
+    margin-top: calc(var(--nav-height) + 40px);
+  }
+
   .pin-digit { width: 52px; height: 60px; font-size: 1.6rem; }
   .score-entry-grid { grid-template-columns: 1fr 1fr; }
   .feature-grid { grid-template-columns: 1fr; }
