@@ -1485,7 +1485,22 @@ function getActiveTeamsTournamentId() {
 function getSelectedTournamentFormatConfig(tournamentId = getActiveTeamsTournamentId()) {
   const tournament = getTournamentByIdLocal(tournamentId);
   const format = tournament?.format ?? 'strokeplay';
-  return TournamentFormats.getTournamentFormatConfig(format);
+  if (typeof TournamentFormats?.getTournamentFormatConfig === 'function') {
+    return TournamentFormats.getTournamentFormatConfig(format);
+  }
+
+  const definition = typeof TournamentFormats?.getFormatDefinition === 'function'
+    ? TournamentFormats.getFormatDefinition(format)
+    : { key: 'strokeplay', label: 'Slagspill', teamSize: 1 };
+  const teamSize = Number(definition?.teamSize || 1);
+
+  return {
+    key: definition?.key || 'strokeplay',
+    label: definition?.label || 'Slagspill',
+    teamSize,
+    isTeamFormat: teamSize > 1,
+    definition
+  };
 }
 
 function showTeamsFeedback(message, type = 'info') {
