@@ -1841,6 +1841,7 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
   const rules = payload.rules || {};
   const structure = payload.structure || {};
   const participants = payload.participants || {};
+  const live = payload.live || {};
   const publishAction = String(payload.publishAction || 'draft');
 
   const name = String(basics.name || '').trim();
@@ -1848,6 +1849,10 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
   const endDate = basics.endDate || basics.startDate;
   const year = parseInt(basics.year, 10) || (startDate ? new Date(startDate).getFullYear() : NaN);
   const course = String(structure.course || basics.course || '').trim();
+  const gamedayInfo = String(basics.gamedayInfo || '').trim();
+  const rulesText = String(basics.rulesText || '').trim();
+  const leaderboardVisibility = String(live.leaderboardVisibility || 'visible');
+  const combinedGamedayInfo = [gamedayInfo, rulesText ? `Regler:\n${rulesText}` : ''].filter(Boolean).join('\n\n');
   const mode = String(basics.mode || 'single_format');
   const format = normalizeTournamentFormat(mode === 'ryder_cup' ? 'ryder_cup' : basics.format);
   const editTournamentId = Number.isFinite(Number(basics.tournamentId)) ? Number(basics.tournamentId) : null;
@@ -1883,7 +1888,8 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
     },
     wizard: {
       createdByWizard: true,
-      participantMode: mode === 'ryder_cup' ? 'cup' : getFormatDefinition(format).participantMode
+      participantMode: mode === 'ryder_cup' ? 'cup' : getFormatDefinition(format).participantMode,
+      rulesText
     }
   };
 
@@ -1894,6 +1900,7 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
   }
 
   const isLive = ['create_and_open_scoring', 'create_and_publish_leaderboard'].includes(publishAction);
+  const shouldPublishLeaderboard = publishAction === 'create_and_publish_leaderboard' || (isLive && leaderboardVisibility === 'visible');
   const requestedStatus = normalizeTournamentStatus(basics.status || 'draft');
   const status = publishAction === 'draft' ? 'draft' : (publishAction === 'update' ? requestedStatus : (isLive ? 'live' : 'published'));
 
@@ -1917,13 +1924,13 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
       format,
       course,
       String(basics.description || ''),
-      '',
+      combinedGamedayInfo,
       status,
       Number.isFinite(Number(structure.slopeRating)) ? Number(structure.slopeRating) : 113,
       mode,
       useHandicap ? handicapPercentage : null,
       JSON.stringify(formatSettings),
-      publishAction === 'create_and_publish_leaderboard' ? 1 : 0,
+      shouldPublishLeaderboard ? 1 : 0,
       (publishAction === 'create_and_set_active' || isLive || publishAction === 'create_and_publish_leaderboard') ? 1 : 0
     ];
     let tournamentId = null;
@@ -2133,7 +2140,7 @@ app.post('/api/admin/tournament-wizard', requireAdmin, (req, res) => {
       setControlSettings({ scoringOpen: true, scoringLocked: false, tournamentStatus: 'live' });
       trace('control settings updated for open scoring');
     }
-    if (publishAction === 'create_and_publish_leaderboard') {
+    if (publishAction === 'create_and_publish_leaderboard' || (isLive && leaderboardVisibility === 'visible')) {
       setControlSettings({ leaderboardVisible: true, tournamentStatus: 'live' });
       trace('control settings updated for published leaderboard');
     }
