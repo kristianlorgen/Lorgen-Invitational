@@ -311,7 +311,7 @@
       <!-- ── LAG ───────────────────────────────────────────────────────────── -->
       <div class="admin-panel" id="panel-teams">
         <div class="admin-panel-title">Lag</div>
-        <div class="admin-panel-sub">Profesjonell lagadministrasjon med felles datakilde for hele appen</div>
+        <div class="admin-panel-sub">Legg til og administrer deltagende lag og PIN-koder</div>
 
         <div class="card" style="margin-bottom:16px">
           <div class="card-header"><strong>Velg turnering</strong></div>
@@ -322,26 +322,27 @@
           </div>
         </div>
 
-        <div class="card" style="margin-bottom:16px">
-          <div class="card-header"><strong>Hurtighandlinger</strong></div>
-          <div class="card-body" style="display:flex;gap:10px;flex-wrap:wrap">
-            <button id="addTeamBtn" onclick="addTeam()" class="btn btn--gold btn--sm"><i class="fas fa-plus"></i> Legg til lag</button>
-            <button id="randomPinBtn" onclick="generatePinForSelectedTeam()" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-dice"></i> Generer tilfeldig PIN</button>
-            <button id="autoGenerateTeamsBtn" onclick="autoGenerateTeams()" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-wand-magic-sparkles"></i> Generer lag automatisk</button>
-            <button id="refreshTeamsBtn" onclick="loadTeams()" class="btn btn--outline btn--sm" style="color:var(--text-muted)"><i class="fas fa-rotate"></i> Oppdater</button>
-          </div>
-          <div class="card-body" style="padding-top:0">
-            <div id="teamsActionsHelper" style="display:none;color:var(--text-muted);font-size:.85rem">Velg turnering for å aktivere lagverktøy</div>
+        <div class="card" style="margin-bottom:16px" id="addTeamCard">
+          <div class="card-header"><strong>Legg til lag</strong></div>
+          <div class="card-body">
+            <div id="teamFormNotice" style="display:none;margin-bottom:12px;padding:12px;border:1px solid var(--gold-border);border-radius:var(--radius);background:var(--gold-pale);color:var(--gold-dark)"></div>
+            <div id="addTeamFormGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px"></div>
+            <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
+              <button id="addTeamBtn" onclick="addTeam()" class="btn btn--gold btn--sm"><i class="fas fa-plus"></i> Legg til lag</button>
+              <button id="generatePinBtn" onclick="generatePin()" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-dice"></i> Tilfeldig PIN</button>
+              <button id="autoGenerateTeamsBtn" onclick="autoGenerateTeams()" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-wand-magic-sparkles"></i> Generer lag automatisk</button>
+              <button id="refreshTeamsBtn" onclick="loadTeams()" class="btn btn--outline btn--sm" style="color:var(--text-muted)"><i class="fas fa-rotate"></i> Oppdater</button>
+            </div>
           </div>
         </div>
 
         <div class="card" style="margin-bottom:16px">
-          <div class="card-header"><strong>Lagoversikt</strong> <span id="teamCount" style="color:var(--text-muted);font-size:.82rem"></span></div>
+          <div class="card-header"><strong>Lag</strong> <span id="teamCount" style="color:var(--text-muted);font-size:.82rem"></span></div>
           <div class="card-body" id="teamsPageMessage" style="display:none"></div>
           <div style="overflow-x:auto">
             <table class="data-table">
-              <thead><tr><th>#</th><th>Lagnavn</th><th>PIN</th><th>Spillere</th><th>Total hcp</th><th>Justert hcp</th><th>Handlinger</th></tr></thead>
-              <tbody id="teamsTable"><tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted)">Velg en turnering ovenfor</td></tr></tbody>
+              <thead><tr><th>#</th><th>Lagnavn</th><th>Spiller 1</th><th>Spiller 2</th><th>PIN</th><th>Handlinger</th></tr></thead>
+              <tbody id="teamsTable"><tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Velg en turnering ovenfor</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -1581,6 +1582,47 @@ function getUnassignedPlayers() {
   return tournamentPlayersState.filter((player) => !player.assigned_team_id || Number(player.assigned_team_id) === Number(selectedTeamId));
 }
 
+function renderAddTeamForm() {
+  const wrap = document.getElementById('addTeamFormGrid');
+  const notice = document.getElementById('teamFormNotice');
+  if (!wrap || !notice) return;
+
+  const tid = getActiveTeamsTournamentId();
+  const formatConfig = getSelectedTournamentFormatConfig(tid);
+  if (!tid) {
+    wrap.innerHTML = '';
+    notice.style.display = 'block';
+    notice.textContent = 'Velg en turnering for å opprette lag.';
+    return;
+  }
+  if (!formatConfig.isTeamFormat) {
+    wrap.innerHTML = '';
+    notice.style.display = 'block';
+    notice.textContent = 'Denne spillformen bruker individuelle spillere, ikke lag.';
+    return;
+  }
+
+  notice.style.display = 'none';
+  const teamSize = Number(formatConfig.teamSize || 2);
+  const available = tournamentPlayersState.filter((player) => !player.assigned_team_id);
+  const playerInputs = Array.from({ length: teamSize }, (_, idx) => {
+    const options = ['<option value="">— Velg spiller —</option>']
+      .concat(available.map((player) => `<option value="${player.id}">${escapeHtml(player.name)} (${Number(player.handicap || 0).toFixed(1)})</option>`));
+    return `<div class="form-group" style="margin:0"><label class="form-label">Spiller ${idx + 1}</label><select class="form-select" id="newTeamPlayer${idx + 1}">${options.join('')}</select></div>`;
+  }).join('');
+
+  wrap.innerHTML = `
+    <div class="form-group" style="margin:0"><label class="form-label">Lagnavn</label><input id="newTeamName" class="form-input" placeholder="F.eks. Lag ${teamsState.length + 1}"></div>
+    <div class="form-group" style="margin:0"><label class="form-label">PIN</label><input id="newTeamPin" class="form-input" maxlength="4" placeholder="1234"></div>
+    ${playerInputs}`;
+}
+
+function generatePin() {
+  const input = document.getElementById('newTeamPin');
+  if (!input) return;
+  input.value = String(Math.floor(1000 + Math.random() * 9000));
+}
+
 function renderTeamsTable() {
   const table = document.getElementById('teamsTable');
   if (!table) return;
@@ -1588,40 +1630,41 @@ function renderTeamsTable() {
   const formatConfig = getSelectedTournamentFormatConfig(tid);
 
   if (!tid) {
-    table.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted)">Velg en turnering ovenfor</td></tr>';
+    table.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Velg en turnering ovenfor</td></tr>';
     return;
   }
 
   if (teamsLoadError) {
-    table.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--danger,#ff6b6b)">${escapeHtml(teamsLoadError)}</td></tr>`;
+    table.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--danger,#ff6b6b)">${escapeHtml(teamsLoadError)}</td></tr>`;
     return;
   }
 
   if (!formatConfig.isTeamFormat) {
-    table.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted)">Denne spillformen bruker individuelle spillere, ikke lag</td></tr>';
+    table.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Denne spillformen bruker individuelle spillere, ikke lag</td></tr>';
     return;
   }
 
   if (!teamsState.length) {
-    table.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen lag opprettet ennå</td></tr>';
+    table.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen lag opprettet ennå</td></tr>';
     return;
   }
 
   table.innerHTML = teamsState.map((team, idx) => {
-    const players = (team.players || []).map((player) => player.player_name).filter(Boolean).join(', ') || 'Ingen spillere tildelt';
+    const players = (team.players || []).map((player) => player.player_name).filter(Boolean);
+    const player1 = players[0] || '—';
+    const restPlayers = players.slice(1).join(', ');
+    const player2 = Number(formatConfig.teamSize || 2) === 2 ? (players[1] || '—') : (restPlayers || '—');
     const activeClass = Number(team.id) === Number(selectedTeamId) ? ' style="background:rgba(201,161,79,.16)"' : '';
     const safeName = escapeHtml(team.team_name || team.name || '');
     const safePin = escapeHtml(team.pin_code || team.pin || '');
     return `<tr${activeClass}>
       <td>${idx + 1}</td>
       <td>${safeName || '—'}</td>
-      <td>${safePin || '—'}</td>
-      <td>${escapeHtml(players)}</td>
-      <td>${Number(team.handicap_total || 0).toFixed(1)}</td>
-      <td>${Number(team.handicap_adjusted || 0).toFixed(1)}</td>
+      <td>${escapeHtml(player1)}</td>
+      <td>${escapeHtml(player2)}</td>
+      <td><code style="background:var(--gold-pale);padding:2px 8px;border-radius:4px;font-weight:700;color:var(--gold-dark)">${safePin || '—'}</code></td>
       <td style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn btn--outline btn--sm" onclick="selectTeam(${team.id})">Rediger</button>
-        <button class="btn btn--outline btn--sm" onclick="generatePinForTeam(${team.id})">Ny PIN</button>
         <button class="btn btn--outline btn--sm" onclick="deleteTeam(${team.id}, '${escapeHtml((team.team_name || '').replace(/'/g, "&#39;"))}')">Slett</button>
       </td>
     </tr>`;
@@ -1654,46 +1697,13 @@ function renderTeamDetails() {
     return `<div class="form-group"><label class="form-label">Spiller ${idx + 1}</label><select class="form-select" id="teamPlayerSlot${idx + 1}">${options.join('')}</select></div>`;
   }).join('');
 
-  const unassignedList = tournamentPlayersState
-    .filter((player) => !player.assigned_team_id)
-    .map((player) => `<span style="display:inline-block;background:rgba(255,255,255,.05);padding:4px 8px;border-radius:999px;margin:2px 4px 2px 0">${escapeHtml(player.name)}</span>`)
-    .join('') || '<span style="color:var(--text-muted)">Ingen</span>';
-
-  const existingSlots = (team.players || []).map((player, idx) => {
-    const safeName = escapeHtml(player.player_name || `Spiller ${idx + 1}`);
-    const handicap = Number(player.handicap || 0).toFixed(1);
-    return `<div style="display:flex;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--gold-border);border-radius:10px;background:rgba(255,255,255,.02)">
-      <span>${safeName}</span>
-      <strong style="font-variant-numeric:tabular-nums">HCP ${handicap}</strong>
-    </div>`;
-  }).join('');
-
   wrap.innerHTML = `
     <input type="hidden" id="editTeamId" value="${team.id}">
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;align-items:end">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;align-items:end;margin-bottom:12px">
       <div class="form-group"><label class="form-label">Lagnavn</label><input id="editTeamName" class="form-input" value="${escapeHtml(team.team_name || '')}"></div>
       <div class="form-group"><label class="form-label">PIN</label><input id="editTeamPin" class="form-input" maxlength="4" value="${escapeHtml(team.pin_code || '')}"></div>
       <div class="form-group"><label class="form-label">Total handicap</label><input class="form-input" disabled value="${Number(team.handicap_total || 0).toFixed(1)}"></div>
       <div class="form-group"><label class="form-label">Justert handicap</label><input class="form-input" disabled value="${Number(team.handicap_adjusted || 0).toFixed(1)}"></div>
-    </div>
-    <div style="margin:12px 0;padding:10px;border:1px solid var(--gold-border);border-radius:10px;background:rgba(255,255,255,.02)">
-      <div style="font-size:.8rem;color:var(--text-muted);margin-bottom:8px">Ufordelte spillere</div>
-      ${unassignedList}
-    </div>
-    <div style="margin:0 0 12px;padding:10px;border:1px solid var(--gold-border);border-radius:10px;background:rgba(255,255,255,.02)">
-      <div style="font-size:.8rem;color:var(--text-muted);margin-bottom:8px">Legg til ny spiller i laget (med handicap)</div>
-      <div style="display:grid;grid-template-columns:2fr minmax(120px,1fr) auto;gap:8px;align-items:end">
-        <div class="form-group" style="margin:0"><label class="form-label">Spillernavn</label><input id="newTeamPlayerName" class="form-input" placeholder="F.eks. Ola Nordmann"></div>
-        <div class="form-group" style="margin:0"><label class="form-label">Handicap</label><input id="newTeamPlayerHandicap" class="form-input" type="number" step="0.1" placeholder="0.0"></div>
-        <button onclick="addPlayerToSelectedTeam()" class="btn btn--outline btn--sm">Legg til spiller</button>
-      </div>
-      <div style="font-size:.75rem;color:var(--text-muted);margin-top:8px">Spilleren opprettes i turneringen og kan velges direkte i laget.</div>
-    </div>
-    <div style="margin-bottom:12px">
-      <div style="font-size:.8rem;color:var(--text-muted);margin-bottom:8px">Nåværende spillere i laget</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px">
-        ${existingSlots || '<span style="color:var(--text-muted)">Ingen spillere tildelt</span>'}
-      </div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">${playerRows}</div>
     <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
@@ -1745,12 +1755,10 @@ function updateTeamsActionsState() {
   const tid = getActiveTeamsTournamentId();
   const formatConfig = getSelectedTournamentFormatConfig(tid);
   const invalid = !tid || !formatConfig || !formatConfig.isTeamFormat;
-  ['addTeamBtn', 'randomPinBtn', 'autoGenerateTeamsBtn', 'refreshTeamsBtn'].forEach((id) => {
+  ['addTeamBtn', 'generatePinBtn', 'autoGenerateTeamsBtn', 'refreshTeamsBtn'].forEach((id) => {
     const btn = document.getElementById(id);
     if (btn) btn.disabled = invalid;
   });
-  const helper = document.getElementById('teamsActionsHelper');
-  if (helper) helper.style.display = invalid ? 'block' : 'none';
 }
 
 function selectTeam(id) {
@@ -1839,6 +1847,7 @@ async function loadTeams() {
   }
 
   updateTeamsActionsState();
+  renderAddTeamForm();
   renderTeamsTable();
   renderTeamDetails();
 }
@@ -1856,22 +1865,38 @@ async function addTeam() {
 
   const nextTeamNumber = teamsState.length + 1;
   const nextDefaultTeamName = `Lag ${nextTeamNumber}`;
-  const generatedPin = String(Math.floor(1000 + Math.random() * 9000));
+  const nameInput = document.getElementById('newTeamName');
+  const pinInput = document.getElementById('newTeamPin');
+  const teamName = String(nameInput?.value || '').trim() || nextDefaultTeamName;
+  const generatedPin = String(pinInput?.value || '').trim() || String(Math.floor(1000 + Math.random() * 9000));
+  if (!/^\d{4}$/.test(generatedPin)) return showToast('PIN må være 4 siffer', 'error');
+  const teamSize = Number(formatConfig.teamSize || 2);
+  const selectedPlayerIds = Array.from({ length: teamSize }, (_, idx) => Number(document.getElementById('newTeamPlayer' + (idx + 1))?.value || 0))
+    .filter((id) => Number.isFinite(id) && id > 0);
+  const uniquePlayerIds = [...new Set(selectedPlayerIds)];
+  if (uniquePlayerIds.length !== selectedPlayerIds.length) return showToast('En spiller kan ikke velges flere ganger', 'error');
   console.log('Attempting to create team', {
     activeTournamentId: activeId,
-    nextName: nextDefaultTeamName,
+    nextName: teamName,
     generatedPin
   });
 
   try {
-    const payload = { tournament_id: activeId, team_name: nextDefaultTeamName, pin_code: generatedPin };
+    const payload = { tournament_id: activeId, team_name: teamName, pin_code: generatedPin };
     const result = await api('/api/admin/team', { method: 'POST', body: JSON.stringify(payload) });
+    const createdId = Number(result?.team?.id || 0);
+    if (createdId && uniquePlayerIds.length) {
+      await api('/api/admin/team/' + createdId + '/players', { method: 'PUT', body: JSON.stringify({ playerIds: uniquePlayerIds }) });
+    }
     console.log('Create team result:', { payload, result, error: null });
     await loadTeams();
-    if (result?.team?.id) {
-      selectedTeamId = Number(result.team.id);
+    if (createdId) {
+      selectedTeamId = createdId;
       renderTeamDetails();
     }
+    if (nameInput) nameInput.value = '';
+    if (pinInput) pinInput.value = '';
+    Array.from({ length: teamSize }, (_, idx) => document.getElementById('newTeamPlayer' + (idx + 1))).forEach((el) => { if (el) el.value = ''; });
     showTeamsFeedback('Lag opprettet', 'success');
     showToast('Lag opprettet', 'success');
   } catch (error) {
