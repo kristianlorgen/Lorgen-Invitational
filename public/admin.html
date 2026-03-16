@@ -89,16 +89,16 @@
 <div id="adminPanel" class="d-none">
 
   <!-- Topplinje -->
-  <div style="position:fixed;top:0;left:0;right:0;height:var(--nav-height);background:var(--dark);border-bottom:1px solid rgba(201,168,76,.2);z-index:1000;display:flex;align-items:center;padding:0 24px;gap:16px">
-    <img src="/images/logo.png" style="height:40px">
-    <span style="font-family:var(--font-heading);font-size:1rem;color:var(--gold-light);flex:1">Administrasjonspanel</span>
-    <a href="/" class="btn btn--outline btn--sm">← Nettsted</a>
-    <button onclick="doAdminLogout()" class="btn btn--sm" style="background:rgba(255,255,255,.08);color:rgba(255,255,255,.6);border:1px solid rgba(255,255,255,.12)">
+  <div class="admin-topbar">
+    <img src="/images/logo.png" class="admin-topbar-logo" alt="Lorgen Invitational logo">
+    <span class="admin-topbar-title">Administrasjonspanel</span>
+    <a href="/" class="btn btn--outline btn--sm admin-topbar-link">← Nettsted</a>
+    <button onclick="doAdminLogout()" class="btn btn--sm admin-topbar-logout">
       <i class="fas fa-arrow-right-from-bracket"></i> Logg ut
     </button>
   </div>
 
-  <div class="admin-layout" style="margin-top:var(--nav-height)">
+  <div class="admin-layout admin-layout-offset">
 
     <!-- Sidemeny -->
     <div class="admin-sidebar">
