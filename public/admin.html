@@ -327,7 +327,7 @@
           <div class="card-body">
             <div id="teamFormNotice" style="display:none;margin-bottom:12px;padding:12px;border:1px solid var(--gold-border);border-radius:var(--radius);background:var(--gold-pale);color:var(--gold-dark)"></div>
             <div id="addTeamFormGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px"></div>
-            <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
+            <div id="teamFormActions" style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
               <button id="addTeamBtn" onclick="addTeam()" class="btn btn--gold btn--sm"><i class="fas fa-plus"></i> Legg til lag</button>
               <button id="generatePinBtn" onclick="generatePin()" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-dice"></i> Tilfeldig PIN</button>
               <button id="autoGenerateTeamsBtn" onclick="autoGenerateTeams()" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-wand-magic-sparkles"></i> Generer lag automatisk</button>
@@ -1756,11 +1756,19 @@ async function addPlayerToSelectedTeam() {
 function updateTeamsActionsState() {
   const tid = getActiveTeamsTournamentId();
   const formatConfig = getSelectedTournamentFormatConfig(tid);
-  const invalid = !tid || !formatConfig || !formatConfig.isTeamFormat;
-  ['addTeamBtn', 'generatePinBtn', 'autoGenerateTeamsBtn', 'refreshTeamsBtn'].forEach((id) => {
+  const hasTournament = Boolean(tid);
+  const isTeamFormat = Boolean(hasTournament && formatConfig?.isTeamFormat);
+  const teamActionWrap = document.getElementById('teamFormActions');
+  if (teamActionWrap) teamActionWrap.style.display = isTeamFormat ? 'flex' : 'none';
+
+  const invalid = !hasTournament || !isTeamFormat;
+  ['addTeamBtn', 'generatePinBtn', 'autoGenerateTeamsBtn'].forEach((id) => {
     const btn = document.getElementById(id);
     if (btn) btn.disabled = invalid;
   });
+
+  const refreshBtn = document.getElementById('refreshTeamsBtn');
+  if (refreshBtn) refreshBtn.disabled = !hasTournament;
 }
 
 function selectTeam(id) {
