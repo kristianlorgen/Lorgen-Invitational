@@ -28,6 +28,22 @@
     .dash-card-label { font-size:.72rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--gold-dark);margin-bottom:12px; }
     .dash-card-main { font-family:var(--font-heading);font-size:1.3rem;color:var(--dark);margin-bottom:4px;line-height:1.3; }
     .dash-card-sub { font-size:.82rem;color:var(--text-muted); }
+    .sponsor-row { display:grid;grid-template-columns:120px 1fr 1fr 220px 140px;gap:12px;align-items:start;margin-bottom:12px;padding:14px;border:1px solid var(--gold-border);border-radius:12px;background:var(--off-white); }
+    .sponsor-row-title { font-weight:700;color:var(--dark);padding-top:8px; }
+    .sponsor-row .form-input,
+    .sponsor-row .form-textarea { min-height:46px; }
+    .sponsor-row .form-textarea { resize:vertical;min-height:80px; }
+    .sponsor-row .form-group { margin:0; }
+    .sponsor-row--single { grid-template-columns:1fr 1fr 260px 140px; }
+    .sponsor-section-header { display:flex;flex-wrap:wrap;gap:12px;align-items:end;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--gold-border); }
+    @media(max-width:1024px){
+      .sponsor-row,
+      .sponsor-row--single { grid-template-columns:1fr 1fr; }
+    }
+    @media(max-width:680px){
+      .sponsor-row,
+      .sponsor-row--single { grid-template-columns:1fr; }
+    }
   </style>
 </head>
 <body>
@@ -575,7 +591,15 @@
 
         <div class="card" style="margin-bottom:20px">
           <div class="card-header"><strong>Forside — 5 sponsorplasser</strong></div>
-          <div class="card-body" id="homeSponsorRows"></div>
+          <div class="card-body">
+            <div class="sponsor-section-header">
+              <div class="form-group" style="margin:0;max-width:260px">
+                <label class="form-label">Velg sponsorplass</label>
+                <select class="form-select" id="homeSponsorSpotSelect" onchange="changeHomeSponsorSpot()"></select>
+              </div>
+            </div>
+            <div id="homeSponsorRows"></div>
+          </div>
         </div>
 
         <div class="card">
@@ -1812,39 +1836,77 @@ function openLegacyFocusPicker(id, imgSrc, currentFocus) {
 
 
 let sponsorsCache = { home: [], hole: [] };
+let selectedHomeSponsorSpot = 1;
+
+function homeSponsorDefault(spotNumber) {
+  return { placement: 'home', spot_number: spotNumber, is_enabled: 0, sponsor_name: '', description: '', logo_path: '' };
+}
+
+function ensureHomeSponsorSelect() {
+  const select = document.getElementById('homeSponsorSpotSelect');
+  if (!select) return;
+  if (!select.options.length) {
+    select.innerHTML = [1,2,3,4,5].map(n => `<option value="${n}">Sponsorplass ${n}</option>`).join('');
+  }
+  select.value = String(selectedHomeSponsorSpot);
+}
+
+function renderSelectedHomeSponsorRow() {
+  const homeMap = {};
+  (sponsorsCache.home || []).forEach(r => { homeMap[r.spot_number] = r; });
+  const selectedRow = homeMap[selectedHomeSponsorSpot] || homeSponsorDefault(selectedHomeSponsorSpot);
+  document.getElementById('homeSponsorRows').innerHTML = sponsorRowHtml(selectedRow, 'home', selectedHomeSponsorSpot);
+}
+
+function changeHomeSponsorSpot() {
+  const select = document.getElementById('homeSponsorSpotSelect');
+  if (!select) return;
+  selectedHomeSponsorSpot = Number(select.value) || 1;
+  renderSelectedHomeSponsorRow();
+}
 
 function sponsorRowHtml(item, type, indexKey) {
   const rowId = `${type}-${indexKey}`;
+  const rowClass = type === 'home' ? 'sponsor-row sponsor-row--single' : 'sponsor-row';
   return `
-    <div data-row="${rowId}" style="display:grid;grid-template-columns:120px 1fr 1fr 170px 170px;gap:10px;align-items:center;margin-bottom:10px;padding:10px;border:1px solid var(--gold-border);border-radius:10px;background:var(--off-white)">
-      <div style="font-weight:700;color:var(--dark)">${type === 'home' ? `Spot ${indexKey}` : `Hull ${indexKey}`}</div>
-      <input class="form-input" data-field="sponsor_name" value="${item.sponsor_name || ''}" placeholder="Sponsornavn">
-      <input class="form-input" data-field="description" value="${item.description || ''}" placeholder="Kort beskrivelse">
-      <div>
+    <div data-row="${rowId}" class="${rowClass}">
+      ${type === 'home' ? '' : `<div class="sponsor-row-title">Hull ${indexKey}</div>`}
+      <div class="form-group">
+        <label class="form-label">Sponsornavn</label>
+        <input class="form-input" data-field="sponsor_name" value="${item.sponsor_name || ''}" placeholder="Sponsornavn">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Beskrivelse</label>
+        <textarea class="form-input form-textarea" data-field="description" placeholder="Kort beskrivelse">${item.description || ''}</textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Logo</label>
         <input class="form-input" data-field="logo_path" value="${item.logo_path || ''}" placeholder="Logo URL eller last opp">
         <input type="file" data-field="logo_file" accept="image/*" style="margin-top:6px;font-size:.75rem" onchange="uploadSponsorLogo(this, '${rowId}')">
       </div>
-      <label style="display:flex;align-items:center;gap:8px;font-size:.84rem;color:var(--text-muted)">
-        <input type="checkbox" data-field="is_enabled" ${item.is_enabled ? 'checked' : ''} style="accent-color:var(--gold)"> Vis sponsor
-      </label>
+      <div class="form-group" style="display:flex;align-items:center;height:100%">
+        <label style="display:flex;align-items:center;gap:8px;font-size:.84rem;color:var(--text-muted)">
+          <input type="checkbox" data-field="is_enabled" ${item.is_enabled ? 'checked' : ''} style="accent-color:var(--gold)"> Vis sponsor
+        </label>
+      </div>
     </div>`;
 }
 
 async function loadSponsorsAdmin() {
   const tid = document.getElementById('sponsorsTournamentSelect').value;
   if (!tid) {
+    ensureHomeSponsorSelect();
     document.getElementById('homeSponsorRows').innerHTML = '<div style="color:var(--text-muted)">Velg turnering først.</div>';
     document.getElementById('holeSponsorRows').innerHTML = '';
     return;
   }
   const d = await api('/api/admin/tournament/' + tid + '/sponsors');
   sponsorsCache = d;
-  const homeMap = {};
-  (d.home || []).forEach(r => { homeMap[r.spot_number] = r; });
+  ensureHomeSponsorSelect();
+  renderSelectedHomeSponsorRow();
   const holeMap = {};
   (d.hole || []).forEach(r => { holeMap[r.hole_number] = r; });
 
-  document.getElementById('homeSponsorRows').innerHTML = [1,2,3,4,5].map(n => sponsorRowHtml(homeMap[n] || { spot_number:n, is_enabled:0 }, 'home', n)).join('');
   document.getElementById('holeSponsorRows').innerHTML = Array.from({ length: 18 }, (_, i) => i + 1)
     .map(n => sponsorRowHtml(holeMap[n] || { hole_number:n, is_enabled:0 }, 'hole', n)).join('');
 }
@@ -1881,6 +1943,11 @@ async function saveSponsorsAdmin() {
       is_enabled: row.querySelector('[data-field="is_enabled"]').checked
     };
   });
+  for (let n = 1; n <= 5; n++) {
+    if (!sponsors.some(s => s.placement === 'home' && s.spot_number === n)) {
+      sponsors.push(homeSponsorDefault(n));
+    }
+  }
   await api('/api/admin/tournament/' + tid + '/sponsors', {
     method: 'POST',
     body: JSON.stringify({ sponsors })
