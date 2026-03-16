@@ -223,8 +223,8 @@
               <div class="form-group"><label class="form-label">Spillform</label><select class="form-select" id="tFormat">
                 <option value="stableford">Stableford</option>
                 <option value="strokeplay" selected>Slagspill</option>
-                <option value="texas_scramble">2-manns Scramble</option>
-                <option value="texas_scramble_4">Texas Scramble (4-manns)</option>
+                <option value="scramble2">2-manns Scramble</option>
+                <option value="scramble4">Texas Scramble (4-manns)</option>
                 <option value="greensome">Greensome</option>
                 <option value="foursome">Foursome</option>
                 <option value="fourball">Bestball / Four-ball</option>
@@ -266,8 +266,8 @@
               <div class="form-group"><label class="form-label">Spillform</label><select class="form-select" id="editTFormat">
                 <option value="stableford">Stableford</option>
                 <option value="strokeplay">Slagspill</option>
-                <option value="texas_scramble">2-manns Scramble</option>
-                <option value="texas_scramble_4">Texas Scramble (4-manns)</option>
+                <option value="scramble2">2-manns Scramble</option>
+                <option value="scramble4">Texas Scramble (4-manns)</option>
                 <option value="greensome">Greensome</option>
                 <option value="foursome">Foursome</option>
                 <option value="fourball">Bestball / Four-ball</option>
@@ -295,7 +295,7 @@
             <div class="form-group" style="margin:0"><label class="form-label">Velg turnering</label><select class="form-select" id="stagesTournamentSelect" onchange="loadStagesPanel()"><option value="">— Velg turnering —</option></select></div>
             <div class="form-group" style="margin:0"><label class="form-label">Stages</label><input id="stageName" class="form-input" placeholder="Dag 1 – Foursome"></div>
             <div class="form-group" style="margin:0"><label class="form-label">Dato</label><input id="stageDate" class="form-input" type="datetime-local"></div>
-            <div class="form-group" style="margin:0"><label class="form-label">Spillform</label><select class="form-select" id="stageFormat"><option value="strokeplay">Slagspill</option><option value="stableford">Stableford</option><option value="texas_scramble">2-manns Scramble</option><option value="texas_scramble_4">Texas Scramble (4-manns)</option><option value="foursome">Foursome</option><option value="fourball">Four-ball</option><option value="greensome">Greensome</option><option value="matchplay">Matchplay</option></select></div>
+            <div class="form-group" style="margin:0"><label class="form-label">Spillform</label><select class="form-select" id="stageFormat"><option value="strokeplay">Slagspill</option><option value="stableford">Stableford</option><option value="scramble2">2-manns Scramble</option><option value="scramble4">Texas Scramble (4-manns)</option><option value="foursome">Foursome</option><option value="fourball">Four-ball</option><option value="greensome">Greensome</option><option value="matchplay">Matchplay</option></select></div>
             <div class="form-group" style="margin:0"><label class="form-label">Handicap-prosent</label><input id="stageHandicapPercentage" class="form-input" type="number" min="0" max="100" placeholder="Default"></div>
             <div class="form-group" style="margin:0"><label class="form-label">Rekkefølge</label><input id="stageOrder" class="form-input" type="number" value="1"></div>
           </div>
@@ -1277,7 +1277,7 @@ async function loadStagesPanel() {
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:10px">
           <div><label class="form-label">Pairing A</label><select id="matchPairA" class="form-select">${pairingOptions}</select></div>
           <div><label class="form-label">Pairing B</label><select id="matchPairB" class="form-select"><option value="">— Tom —</option>${pairingOptions}</select></div>
-          <div><label class="form-label">Format</label><select id="matchFormat" class="form-select"><option value="matchplay">Matchplay</option><option value="fourball">Four-ball</option><option value="foursome">Foursome</option><option value="strokeplay">Strokeplay</option><option value="texas_scramble">Scramble</option></select></div>
+          <div><label class="form-label">Format</label><select id="matchFormat" class="form-select"><option value="matchplay">Matchplay</option><option value="fourball">Four-ball</option><option value="foursome">Foursome</option><option value="strokeplay">Strokeplay</option><option value="scramble2">Scramble</option></select></div>
           <div><label class="form-label">Rekkefølge</label><input id="matchOrder" class="form-input" type="number" value="1"></div>
           <div><label class="form-label">Tee time</label><input id="matchTee" class="form-input" type="datetime-local"></div>
         </div>
