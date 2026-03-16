@@ -472,8 +472,13 @@ async function loadSponsors() {
 async function loadCoinBack() {
   try {
     const d = await fetch('/api/coin-back').then(r => r.json());
-    if (d.photo_path) {
-      document.getElementById('coinBackImg').src = d.photo_path;
+    const photos = Array.isArray(d.photos) ? d.photos : [];
+    const active = photos.filter(p => p && p.is_active && p.photo_path);
+    const chosen = active.length ? active[Math.floor(Math.random() * active.length)] : null;
+    if (chosen?.photo_path || d.photo_path) {
+      const img = document.getElementById('coinBackImg');
+      img.src = chosen?.photo_path || d.photo_path;
+      img.style.objectPosition = chosen?.focal_point || d.focal_point || '50% 50%';
     }
   } catch(_) {}
 }

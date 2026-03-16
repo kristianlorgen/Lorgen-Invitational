@@ -1498,25 +1498,82 @@ app.put('/api/admin/photo/:id/publish', requireAdmin, (req, res) => {
 });
 
 // ── Coin back image ───────────────────────────────────────────────────────────
-app.get('/api/coin-back', (req, res) => {
+function readCoinBackConfig() {
   const configPath = path.join(__dirname, 'uploads', 'coin-back.json');
+  let data = {};
   if (fs.existsSync(configPath)) {
     try {
-      const data = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-      return res.json({ photo_path: data.photo_path || null, focal_point: data.focal_point || null });
-    } catch(_) {}
+      data = JSON.parse(fs.readFileSync(configPath, 'utf8')) || {};
+    } catch(_) {
+      data = {};
+    }
   }
-  res.json({ photo_path: null, focal_point: null });
+
+  let photos = Array.isArray(data.photos) ? data.photos : [];
+
+  // Backward compatibility for older single-image format.
+  if (!photos.length && data.photo_path) {
+    photos = [{
+      id: 'legacy',
+      photo_path: data.photo_path,
+      focal_point: data.focal_point || '50% 50%',
+      is_active: true
+    }];
+  }
+
+  photos = photos
+    .filter(p => p && p.photo_path)
+    .map(p => ({
+      id: p.id || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      photo_path: p.photo_path,
+      focal_point: p.focal_point || '50% 50%',
+      is_active: p.is_active !== false
+    }));
+
+  const activePhotos = photos.filter(p => p.is_active);
+  const selectedPhoto = activePhotos[0] || photos[0] || null;
+
+  return { configPath, photos, selectedPhoto };
+}
+
+function writeCoinBackConfig(configPath, photos) {
+  fs.writeFileSync(configPath, JSON.stringify({ photos }, null, 2));
+}
+
+app.get('/api/coin-back', (req, res) => {
+  const { photos, selectedPhoto } = readCoinBackConfig();
+  res.json({
+    photo_path: selectedPhoto?.photo_path || null,
+    focal_point: selectedPhoto?.focal_point || null,
+    photos
+  });
 });
 
 app.put('/api/admin/coin-back/focus', requireAdmin, (req, res) => {
-  const configPath = path.join(__dirname, 'uploads', 'coin-back.json');
   try {
-    let data = {};
-    if (fs.existsSync(configPath)) data = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    data.focal_point = req.body.focal_point || '50% 50%';
-    fs.writeFileSync(configPath, JSON.stringify(data));
+    const { configPath, photos } = readCoinBackConfig();
+    const focalPoint = req.body.focal_point || '50% 50%';
+    const imageId = req.body.image_id;
+    if (imageId) {
+      const idx = photos.findIndex(p => p.id === imageId);
+      if (idx === -1) return res.status(404).json({ error: 'Fant ikke bildet' });
+      photos[idx].focal_point = focalPoint;
+    } else if (photos[0]) {
+      photos[0].focal_point = focalPoint;
+    }
+    writeCoinBackConfig(configPath, photos);
     res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/admin/coin-back/:id/active', requireAdmin, (req, res) => {
+  try {
+    const { configPath, photos } = readCoinBackConfig();
+    const idx = photos.findIndex(p => p.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'Fant ikke bildet' });
+    photos[idx].is_active = !!req.body.is_active;
+    writeCoinBackConfig(configPath, photos);
+    res.json({ success: true, is_active: photos[idx].is_active });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1526,7 +1583,7 @@ app.post('/api/admin/coin-back', requireAdmin, (req, res) => {
   const coinUpload = multer({
     storage: multer.diskStorage({
       destination: dir,
-      filename: (req, file, cb) => cb(null, `back${path.extname(file.originalname)}`)
+      filename: (req, file, cb) => cb(null, `back-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${path.extname(file.originalname)}`)
     }),
     limits: { fileSize: 10 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
@@ -1538,8 +1595,16 @@ app.post('/api/admin/coin-back', requireAdmin, (req, res) => {
     if (err) return res.status(400).json({ error: err.message });
     if (!req.file) return res.status(400).json({ error: 'Ingen fil lastet opp' });
     const photoPath = `/uploads/coin/${req.file.filename}`;
-    fs.writeFileSync(path.join(__dirname, 'uploads', 'coin-back.json'), JSON.stringify({ photo_path: photoPath }));
-    res.json({ success: true, photo_path: photoPath });
+    const { configPath, photos } = readCoinBackConfig();
+    const newPhoto = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      photo_path: photoPath,
+      focal_point: '50% 50%',
+      is_active: true
+    };
+    photos.push(newPhoto);
+    writeCoinBackConfig(configPath, photos);
+    res.json({ success: true, photo_path: photoPath, image: newPhoto, photos });
   });
 });
 
