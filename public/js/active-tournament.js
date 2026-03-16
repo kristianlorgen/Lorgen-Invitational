@@ -1,7 +1,7 @@
 (function (global) {
   async function getActiveTournamentContext() {
     try {
-      const response = await fetch('/api/active-tournament-stage', { cache: 'no-store' });
+      const response = await fetch('/api/active-tournament-stage');
       if (!response.ok) return { tournament: null, stage: null, stages: [] };
       const data = await response.json();
       return {

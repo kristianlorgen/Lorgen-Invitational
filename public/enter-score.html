@@ -437,22 +437,26 @@
   <div class="chat-upload-meta" id="chatUploadMeta"></div>
 </section>
 
-<!-- ── PIN-ADGANGSSKJERM ───────────────────────────────────────────────────── -->
+<!-- ── INNLOGGINGSSKJERM ───────────────────────────────────────────────────── -->
 <div id="loginScreen" style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;padding-top:calc(var(--nav-height)+40px);background:linear-gradient(160deg,var(--dark),var(--dark-mid))">
   <div style="max-width:440px;width:100%;text-align:center">
     <img src="/images/logo.png" alt="Lorgen Invitational" style="height:80px;margin:0 auto 24px;filter:drop-shadow(0 0 16px rgba(201,168,76,.5))">
-    <h1 style="font-family:var(--font-heading);font-size:1.8rem;color:var(--white);margin-bottom:6px">Åpne scorekort</h1>
-    <p style="color:rgba(255,255,255,.65);font-size:.9rem;margin-bottom:28px">Tast inn lagets 4-sifrede PIN for å åpne riktig scorekort</p>
+    <h1 style="font-family:var(--font-heading);font-size:1.8rem;color:var(--white);margin-bottom:6px">Scorekort</h1>
+    <p style="color:rgba(255,255,255,.5);font-size:.9rem;margin-bottom:36px">Skriv inn din lag-PIN for å få tilgang til resultatkortet</p>
 
-    <div style="background:rgba(255,255,255,.05);border:1px solid rgba(201,168,76,.2);border-radius:var(--radius-xl);padding:28px">
-      <label for="pinInput" style="display:block;font-size:.7rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin-bottom:12px">PIN</label>
-      <input id="pinInput" type="password" class="form-input" style="text-align:center;font-size:2rem;letter-spacing:.35em;padding:16px 12px;font-weight:700" inputmode="numeric" maxlength="4" autocomplete="one-time-code" placeholder="••••">
-      <div id="loginError" style="color:#f87171;font-size:.82rem;margin:12px 0;min-height:20px"></div>
-      <div id="loginSuccess" style="color:#4ade80;font-size:.82rem;margin:0 0 12px;min-height:20px"></div>
-      <button onclick="doLogin()" class="btn btn--gold" style="width:100%;justify-content:center;padding:14px" id="loginBtn">
-        <i class="fas fa-arrow-right-to-bracket"></i> Gå til scorekort
+    <div style="background:rgba(255,255,255,.05);border:1px solid rgba(201,168,76,.2);border-radius:var(--radius-xl);padding:36px">
+      <div style="font-size:.7rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin-bottom:16px">Lag-PIN</div>
+      <div class="pin-input-wrap" id="pinWrap">
+        <input class="pin-digit" type="tel" maxlength="1" data-index="0" inputmode="numeric" autocomplete="one-time-code">
+        <input class="pin-digit" type="tel" maxlength="1" data-index="1" inputmode="numeric">
+        <input class="pin-digit" type="tel" maxlength="1" data-index="2" inputmode="numeric">
+        <input class="pin-digit" type="tel" maxlength="1" data-index="3" inputmode="numeric">
+      </div>
+      <div id="loginError" style="color:#f87171;font-size:.82rem;margin-bottom:16px;min-height:20px"></div>
+      <button onclick="doLogin()" class="btn btn--gold" style="width:100%;justify-content:center" id="loginBtn">
+        <i class="fas fa-arrow-right-to-bracket"></i> Logg inn
       </button>
-      <p style="font-size:.75rem;color:rgba(255,255,255,.25);margin-top:14px">PIN-koden ble tildelt av turneringsadministrator</p>
+      <p style="font-size:.75rem;color:rgba(255,255,255,.25);margin-top:16px">PIN-koden ble tildelt av turneringsadministrator</p>
     </div>
   </div>
 </div>
@@ -474,7 +478,7 @@
             <div style="font-size:.7rem;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.1em">Hull fullført</div>
             <div style="font-family:var(--font-heading);font-size:1.4rem;color:var(--gold-light)" id="scProgress">0 / 18</div>
           </div>
-          <button onclick="doLogout()" class="btn btn--outline btn--sm">Logg ut av scorekort</button>
+          <button onclick="doLogout()" class="btn btn--outline btn--sm">Logg ut</button>
         </div>
       </div>
     </div>
@@ -623,23 +627,21 @@ document.addEventListener('click', e => {
   }
 });
 
-const pinInput = document.getElementById('pinInput');
-if (pinInput) {
-  pinInput.addEventListener('input', (e) => {
-    const sanitized = (e.target.value || '').replace(/\D/g, '').slice(0, 4);
-    e.target.value = sanitized;
-    const err = document.getElementById('loginError');
-    const ok = document.getElementById('loginSuccess');
-    if (err) err.textContent = '';
-    if (ok) ok.textContent = '';
+const digits = document.querySelectorAll('.pin-digit');
+digits.forEach((d, i) => {
+  d.addEventListener('input', e => {
+    const val = e.target.value.replace(/\D/g, '');
+    e.target.value = val;
+    if (val && i < digits.length - 1) digits[i + 1].focus();
+    if (getPin().length === 4) doLogin();
   });
-  pinInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') doLogin();
+  d.addEventListener('keydown', e => {
+    if (e.key === 'Backspace' && !d.value && i > 0) digits[i - 1].focus();
   });
-}
+});
 
 function getPin() {
-  return String(pinInput?.value || '').replace(/\D/g, '').slice(0, 4);
+  return Array.from(digits).map(d => d.value).join('');
 }
 
 function showToast(msg, type = 'success') {
@@ -908,32 +910,15 @@ function renderScoreStatus(kind) {
 
 
 async function ensureActiveTournamentForScorecard() {
+  const tournament = await ActiveTournament.getActiveTournament();
+  if (tournament) return true;
+
   const error = document.getElementById('loginError');
   const loginBtn = document.getElementById('loginBtn');
-  if (error) error.innerHTML = '';
-  if (document.getElementById('loginSuccess')) document.getElementById('loginSuccess').textContent = '';
-  if (loginBtn) {
-    loginBtn.disabled = false;
-    loginBtn.innerHTML = '<i class="fas fa-arrow-right-to-bracket"></i> Gå til scorekort';
-  }
-
-  const tournament = await ActiveTournament.getActiveTournament();
-  if (tournament) {
-    try {
-      const r = await fetch('/api/scorecard/access-status', { credentials: 'same-origin' });
-      const d = await r.json();
-      if (d.hasActiveTournament && d.hasTeams) return true;
-      if (error) error.innerHTML = `${d.message || 'Det finnes ingen aktiv turnering akkurat nå'} <a href="/admin.html#teams" style="color:var(--gold-light);font-weight:700">Legg til lag</a>`;
-    } catch (_) {
-      if (error) error.textContent = 'Kunne ikke verifisere aktiv turnering akkurat nå';
-    }
-  } else if (error) {
-    error.textContent = 'Det finnes ingen aktiv turnering akkurat nå';
-  }
-
+  if (error) error.textContent = 'Ingen aktiv turnering valgt ennå. Kom tilbake senere for live resultater og turneringsinformasjon.';
   if (loginBtn) {
     loginBtn.disabled = true;
-    loginBtn.innerHTML = '<i class="fas fa-circle-info"></i> Ikke tilgjengelig';
+    loginBtn.innerHTML = '<i class="fas fa-circle-info"></i> Ingen aktiv turnering';
   }
   return false;
 }
@@ -941,11 +926,10 @@ async function ensureActiveTournamentForScorecard() {
 async function doLogin() {
   if (!(await ensureActiveTournamentForScorecard())) return;
   const pin = getPin();
-  if (!/^\d{4}$/.test(pin)) { document.getElementById('loginError').textContent = 'PIN må være nøyaktig 4 siffer'; return; }
+  if (pin.length < 4) { document.getElementById('loginError').textContent = 'Vennligst skriv inn din 4-sifrede PIN'; return; }
   const btn = document.getElementById('loginBtn');
   btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Bekrefter...';
   document.getElementById('loginError').textContent = '';
-  document.getElementById('loginSuccess').textContent = '';
   try {
     const r = await apiFetch('/api/auth/team-login', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin })
@@ -954,40 +938,30 @@ async function doLogin() {
     if (d.success) {
       persistTeamPin(pin);
       teamData = d.team;
-      document.getElementById('loginSuccess').textContent = `Du scorer nå for: ${d.team?.team_name || 'Lag'}`;
       updateNotificationBanner();
       document.getElementById('loginScreen').classList.add('d-none');
       document.getElementById('scorecardScreen').classList.remove('d-none');
       renderScoreStatus('idle');
       await loadScorecard();
     } else {
-      document.getElementById('loginError').textContent = d.error || 'Ugyldig PIN. Prøv igjen.';
-      if (pinInput) { pinInput.value = ''; pinInput.focus(); }
+      document.getElementById('loginError').textContent = d.error || 'Ugyldig PIN';
+      digits.forEach(d => d.value = ''); digits[0].focus();
     }
   } catch (e) { document.getElementById('loginError').textContent = 'Tilkoblingsfeil, prøv igjen'; }
-  btn.disabled = false; btn.innerHTML = '<i class="fas fa-arrow-right-to-bracket"></i> Gå til scorekort';
+  btn.disabled = false; btn.innerHTML = '<i class="fas fa-arrow-right-to-bracket"></i> Logg inn';
 }
 
 async function doLogout() {
-  try {
-    await apiFetch('/api/auth/logout', { method: 'POST' });
-  } catch (_) {}
-  clearScorecardSession();
-  document.getElementById('scorecardScreen').classList.add('d-none');
-  document.getElementById('loginScreen').classList.remove('d-none');
-  if (pinInput) pinInput.focus();
-}
-
-function switchTeam() {
-  doLogout();
-}
-
-function clearScorecardSession() {
+  if (!allHolesCompleted()) {
+    showToast('Du må fylle ut alle hull før du kan lukke scorekortet.', 'error');
+    return;
+  }
+  await apiFetch('/api/auth/logout', { method: 'POST' });
   sessionStorage.removeItem('team_pin');
   localStorage.removeItem('team_pin');
   teamPin = '';
-  teamData = null;
-  tournamentData = null;
+  document.getElementById('scorecardScreen').classList.add('d-none');
+  document.getElementById('loginScreen').classList.remove('d-none');
 }
 
 function scrollToScoreInput() {
@@ -1011,13 +985,8 @@ async function loadScorecard() {
   const d = await r.json();
   if (!r.ok) {
     console.warn('[scorecard-mobile] loadScorecard failed', { status: r.status, error: d.error || 'unknown', hasTeamPin: !!teamPin });
-    if (r.status === 401) {
-      showUploadWarning('Sesjonen er utløpt. Logg inn med PIN på nytt.');
-      clearScorecardSession();
-      document.getElementById('scorecardScreen').classList.add('d-none');
-      document.getElementById('loginScreen').classList.remove('d-none');
-      if (pinInput) pinInput.focus();
-      return;
+    if (r.status === 401 && teamPin) {
+      showUploadWarning('Appen mistet sesjonen. Vi prøver å holde deg innlogget automatisk.');
     }
     showToast(d.error || 'Kunne ikke laste scorekort akkurat nå.', 'error');
     renderScoreStatus('idle');
@@ -1758,16 +1727,14 @@ async function checkSession() {
       await loadScorecard();
       return;
     }
-    clearScorecardSession();
-    document.getElementById('scorecardScreen').classList.add('d-none');
-    document.getElementById('loginScreen').classList.remove('d-none');
-    if (!hasActiveTournament) return;
-    if (pinInput) pinInput.focus();
-  } catch (_) {
-    clearScorecardSession();
-    document.getElementById('scorecardScreen').classList.add('d-none');
-    document.getElementById('loginScreen').classList.remove('d-none');
-  }
+    if (teamPin && hasActiveTournament) {
+      console.warn('[scorecard-mobile] auth status missing session; attempting soft restore', { hasTeamPin: true });
+      document.getElementById('loginScreen').classList.add('d-none');
+      document.getElementById('scorecardScreen').classList.remove('d-none');
+      renderScoreStatus('idle');
+      await loadScorecard();
+    }
+  } catch (_) {}
 }
 
 // Oppdater posisjon hvert minutt

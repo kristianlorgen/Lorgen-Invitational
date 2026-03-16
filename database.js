@@ -28,7 +28,6 @@ db.exec(`
     results_published INTEGER NOT NULL DEFAULT 0,
     scoring_locked INTEGER NOT NULL DEFAULT 0,
     archived_at DATETIME,
-    active INTEGER NOT NULL DEFAULT 0,
     tournament_mode TEXT DEFAULT 'single_format',
     active_stage_id INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -168,21 +167,7 @@ db.exec(`
     player2_handicap REAL DEFAULT 0,
     player3_handicap REAL DEFAULT 0,
     player4_handicap REAL DEFAULT 0,
-    active INTEGER NOT NULL DEFAULT 1,
     FOREIGN KEY (tournament_id) REFERENCES tournaments(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS team_players (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    team_id INTEGER NOT NULL,
-    player_id INTEGER,
-    player_name TEXT NOT NULL,
-    handicap REAL DEFAULT 0,
-    sort_order INTEGER NOT NULL DEFAULT 1,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
-    FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE SET NULL
   );
 
   CREATE TABLE IF NOT EXISTS scores (
@@ -336,7 +321,6 @@ try { db.exec(`ALTER TABLE tournaments ADD COLUMN handicap_percentage REAL`); } 
 try { db.exec(`ALTER TABLE tournaments ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP`); } catch(_) {}
 try { db.exec(`ALTER TABLE tournaments ADD COLUMN tournament_mode TEXT DEFAULT 'single_format'`); } catch(_) {}
 try { db.exec(`ALTER TABLE tournaments ADD COLUMN active_stage_id INTEGER`); } catch(_) {}
-try { db.exec(`ALTER TABLE tournaments ADD COLUMN active INTEGER NOT NULL DEFAULT 0`); } catch(_) {}
 
 try { db.exec(`ALTER TABLE tournaments ADD COLUMN results_published INTEGER NOT NULL DEFAULT 0`); } catch(_) {}
 try { db.exec(`ALTER TABLE tournaments ADD COLUMN scoring_locked INTEGER NOT NULL DEFAULT 0`); } catch(_) {}
@@ -350,26 +334,6 @@ try { db.exec(`ALTER TABLE teams ADD COLUMN player3 TEXT DEFAULT ''`); } catch(_
 try { db.exec(`ALTER TABLE teams ADD COLUMN player4 TEXT DEFAULT ''`); } catch(_) {}
 try { db.exec(`ALTER TABLE teams ADD COLUMN player3_handicap REAL DEFAULT 0`); } catch(_) {}
 try { db.exec(`ALTER TABLE teams ADD COLUMN player4_handicap REAL DEFAULT 0`); } catch(_) {}
-try { db.exec(`ALTER TABLE teams ADD COLUMN active INTEGER NOT NULL DEFAULT 1`); } catch(_) {}
-
-try { db.exec(`ALTER TABLE teams ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP`); } catch(_) {}
-try { db.exec(`ALTER TABLE teams ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP`); } catch(_) {}
-try { db.exec(`ALTER TABLE teams ADD COLUMN handicap_total REAL`); } catch(_) {}
-try { db.exec(`ALTER TABLE teams ADD COLUMN handicap_adjusted REAL`); } catch(_) {}
-try { db.exec(`ALTER TABLE scores ADD COLUMN tournament_id INTEGER`); } catch(_) {}
-try { db.exec(`ALTER TABLE scores ADD COLUMN player_id INTEGER`); } catch(_) {}
-try { db.exec(`ALTER TABLE scores ADD COLUMN gross_score INTEGER`); } catch(_) {}
-try { db.exec(`ALTER TABLE scores ADD COLUMN points INTEGER`); } catch(_) {}
-try { db.exec(`ALTER TABLE scores ADD COLUMN relative_to_par INTEGER`); } catch(_) {}
-try { db.exec(`ALTER TABLE scores ADD COLUMN image_url TEXT`); } catch(_) {}
-try { db.exec(`ALTER TABLE scores ADD COLUMN locked INTEGER NOT NULL DEFAULT 0`); } catch(_) {}
-try { db.exec(`ALTER TABLE scores ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP`); } catch(_) {}
-try { db.exec(`ALTER TABLE scores ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP`); } catch(_) {}
-try { db.exec(`UPDATE scores SET tournament_id=(SELECT tournament_id FROM teams WHERE teams.id=scores.team_id) WHERE tournament_id IS NULL`); } catch(_) {}
-try { db.exec(`UPDATE scores SET gross_score=score WHERE gross_score IS NULL`); } catch(_) {}
-try { db.exec(`ALTER TABLE team_players ADD COLUMN player_id INTEGER`); } catch(_) {}
-try { db.exec(`ALTER TABLE team_players ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 1`); } catch(_) {}
-try { db.exec(`ALTER TABLE players ADD COLUMN ryder_cup_side TEXT`); } catch(_) {}
 try { db.exec(`ALTER TABLE holes ADD COLUMN stroke_index INTEGER DEFAULT 0`); } catch(_) {}
 try { db.exec(`ALTER TABLE course_holes ADD COLUMN stroke_index INTEGER DEFAULT 0`); } catch(_) {}
 try { db.exec(`ALTER TABLE scores ADD COLUMN is_published INTEGER NOT NULL DEFAULT 1`); } catch(_) {}
