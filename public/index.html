@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Lorgen Invitational — Golfturnering</title>
-  <meta name="description" content="Lorgen Invitational — årlig golfturnering med live leaderboard, bilder og resultater. Power. Precision. Party.">
+  <meta name="description" content="Lorgen Invitational — en årlig 2-mann scramble golfturnering. Power. Precision. Party.">
   <meta property="og:title" content="Lorgen Invitational" />
   <meta property="og:description" content="Power • Precision • Party — Live leaderboard, bilder og resultater." />
   <meta property="og:url" content="https://www.lorgen-invitational.no" />
@@ -137,7 +137,7 @@
       <div class="hero-divider"></div>
       <div class="hero-meta-item">
         <div class="label">Format</div>
-        <div class="value" id="heroFormatLabel">Turneringsformat</div>
+        <div class="value">2-Mann Scramble</div>
       </div>
     </div>
 
@@ -159,9 +159,40 @@
     <div class="section-header">
       <span class="section-tag">Turneringen</span>
       <h2 class="section-title">Alt du trenger å <span>vite</span></h2>
-      <p class="section-subtitle" id="homepageInfoSubtitle">Lorgen Invitational er mer enn en turnering. Det er en årlig samling av golfentusiaster – en dag der konkurranseinstinktet er skjerpet, skuldrene er lave og minnene skapes mellom slagene.</p>
+      <p class="section-subtitle">Lorgen Invitational er mer enn en turnering. Det er en årlig samling av sexy mennesker som er entusiatisk for golf – en dag der konkurranseinstinktet er skjerpet, skuldrene er lave og minnene skapes mellom slagene.</p>
     </div>
-    <div class="feature-grid" id="homepageCardsGrid"></div>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <div class="feature-icon"><i class="fas fa-users"></i></div>
+        <h3>2-Mann Scramble</h3>
+        <p>Begge spillere slår ut. Det beste slaget velges. Derfra handler det om samarbeid, taktikk og presisjon – fra første tee til siste putt. Ingen gjemmer seg. Ingen spiller alene.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon"><i class="fas fa-trophy"></i></div>
+        <h3>Flere Utmerkelser</h3>
+        <p>Kampen om Lorgen-tittelen står i sentrum – men æren stopper ikke der. Vi kårer også vinner av Lengste Drive og Nærmest Flagget på utvalgte hull. Presisjon, kraft og is i magen blir belønnet.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon"><i class="fas fa-camera"></i></div>
+        <h3>Fotoutfordringer</h3>
+        <p>På utvalgte hull venter obligatoriske fotoutfordringer. Dokumenter øyeblikket før scoren registreres. For i Lorgen handler det ikke bare om tall – men om historiene bak dem.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon"><i class="fas fa-chart-line"></i></div>
+        <h3>Live Resultater</h3>
+        <p>Følg stillingen i sanntid gjennom hele turneringen. Scorekortene oppdateres fortløpende, og dramaet bygger seg opp hull for hull.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon"><i class="fas fa-calendar-alt"></i></div>
+        <h3>Årlig Tradisjon</h3>
+        <p>Lorgen Invitational arrangeres én gang i året – og kun én gang. Her samles de beste spillerne for en dag med intens konkurranse, godt samhold og den helt spesielle Lorgen-stemningen.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon"><i class="fas fa-crown"></i></div>
+        <h3>Æresgalleri</h3>
+        <p>Tidligere mestere er samlet i vårt æresgalleri. En permanent oversikt over dem som har løftet Lorgen-tittelen – og skrevet seg inn i turneringens historie.</p>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -303,7 +334,6 @@
 
 <script src="/js/active-tournament.js"></script>
 <script src="/js/tournament-formats.js"></script>
-<script src="/js/tournament-format-content.js"></script>
 <script>
 document.getElementById('footerYear').textContent = new Date().getFullYear();
 window.addEventListener('scroll', () => {
@@ -335,66 +365,22 @@ function formatTournamentDate(dateValue, includeWeekday = false) {
 
 let currentTournamentId = null;
 
-const HOMEPAGE_ICON_MAP = {
-  users: 'fa-users',
-  trophy: 'fa-trophy',
-  camera: 'fa-camera',
-  chart: 'fa-chart-line',
-  calendar: 'fa-calendar-alt',
-  crown: 'fa-crown',
-  flag: 'fa-flag',
-  star: 'fa-star',
-  chess: 'fa-chess-knight',
-  info: 'fa-circle-info'
-};
-
-function getHomepageCardIcon(iconKey) {
-  return HOMEPAGE_ICON_MAP[iconKey] || 'fa-circle-info';
-}
-
-function renderHomepageCards(formatContent) {
-  const cards = TournamentFormatContent.getHomepageCards(formatContent?.key);
-  const cardsGrid = document.getElementById('homepageCardsGrid');
-  cardsGrid.innerHTML = cards.map(card => `
-    <div class="feature-card">
-      <div class="feature-icon"><i class="fas ${getHomepageCardIcon(card.icon)}"></i></div>
-      <h3>${card.title}</h3>
-      <p>${card.text}</p>
-    </div>`).join('');
-
-  const subtitle = formatContent?.shortDescription
-    ? `${formatContent.shortDescription} Lorgen Invitational er mer enn en turnering – her møtes konkurranse, samhold og minner som varer.`
-    : 'Lorgen Invitational er mer enn en turnering. Det er en årlig samling av golfentusiaster – en dag der konkurranseinstinktet er skjerpet, skuldrene er lave og minnene skapes mellom slagene.';
-  document.getElementById('homepageInfoSubtitle').textContent = subtitle;
-}
-
 async function loadTournament() {
   try {
-    const { tournament, activeStage } = await ActiveTournament.getActiveTournamentAndStage();
+    const tournament = await ActiveTournament.getActiveTournament();
     currentTournamentId = tournament?.id || null;
-    const effectiveFormat = activeStage?.format || tournament?.format;
-    const formatContent = TournamentFormatContent.getFormatContent(effectiveFormat);
-    const formatLabel = formatContent.formatLabel || 'Turneringsformat';
-
-    renderHomepageCards(formatContent);
-    document.getElementById('heroFormatLabel').textContent = formatLabel;
-    document.getElementById('heroFormatBadge').textContent = `Spillform: ${formatLabel}`;
-
     if (tournament) {
       document.getElementById('heroTournamentName').textContent = tournament.name;
       document.getElementById('heroDate').textContent = formatTournamentDate(tournament.date);
       document.getElementById('heroCourse').textContent = tournament.course || 'TBA';
+      document.getElementById('heroFormatBadge').textContent = `Spillform: ${TournamentFormats.getFormatDefinition(tournament.format).label}`;
       startCountdown(tournament.date);
       document.getElementById('countdownDate').textContent = formatTournamentDate(tournament.date, true);
-      return;
+    } else {
+      document.getElementById('noTournament').classList.remove('d-none');
+      document.getElementById('countdown').classList.add('d-none');
     }
-
-    document.getElementById('noTournament').classList.remove('d-none');
-    document.getElementById('countdown').classList.add('d-none');
   } catch(e) {
-    renderHomepageCards(TournamentFormatContent.FALLBACK_CONTENT);
-    document.getElementById('heroFormatLabel').textContent = 'Turneringsformat';
-    document.getElementById('heroFormatBadge').textContent = 'Spillform: Turneringsformat';
     document.getElementById('noTournament').classList.remove('d-none');
     document.getElementById('countdown').classList.add('d-none');
   }
