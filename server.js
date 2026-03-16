@@ -469,7 +469,32 @@ function extractWizardParticipantRows(format, participants = {}) {
   if (def.teamSize === 1 || def.participantMode === 'individual') {
     return rows.map((row) => normalizeWizardPlayerRow(row));
   }
-  return rows.map((row, idx) => normalizeWizardTeamRow(row, idx, def.teamSize));
+
+  const normalizedTeams = rows.map((row, idx) => normalizeWizardTeamRow(row, idx, def.teamSize));
+  const hasStructuredTeams = normalizedTeams.some((row) => Array.isArray(row.players) && row.players.length);
+  if (hasStructuredTeams) return normalizedTeams;
+
+  const fallbackPlayersSource = Array.isArray(participants?.participants) && participants.participants.length
+    ? participants.participants
+    : rows;
+  const fallbackPlayers = fallbackPlayersSource
+    .map((row) => normalizeWizardPlayerRow(row))
+    .filter((player) => String(player?.name || '').trim());
+
+  if (!fallbackPlayers.length || fallbackPlayers.length % def.teamSize !== 0) {
+    return normalizedTeams;
+  }
+
+  return Array.from({ length: fallbackPlayers.length / def.teamSize }, (_, teamIdx) => {
+    const start = teamIdx * def.teamSize;
+    const teamPlayers = fallbackPlayers.slice(start, start + def.teamSize);
+    return {
+      id: null,
+      teamName: `Lag ${teamIdx + 1}`,
+      pin: String(1000 + teamIdx).slice(-4).padStart(4, '0'),
+      players: teamPlayers
+    };
+  });
 }
 
 function validateTeamPayloadForFormat({ payload, meta, format }) {
