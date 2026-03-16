@@ -1512,14 +1512,25 @@ app.get('/api/team/scorecard', requireTeam, (req, res) => {
     let control = getControlSettings();
     if (!control.scorecardsOpen) return res.status(403).json({ error: 'Scorekort er ikke åpne akkurat nå.' });
     if (control.scoringLocked) return res.status(403).json({ error: 'Scoring er låst av administrator.' });
-    const team       = db.prepare('SELECT * FROM teams WHERE id=?').get(req.session.teamId);
-    const tournament = db.prepare('SELECT id,name,slope_rating FROM tournaments WHERE id=?').get(req.session.tournamentId);
+    const team = db.prepare('SELECT * FROM teams WHERE id=?').get(req.session.teamId);
+    const tournamentRow = db.prepare('SELECT * FROM tournaments WHERE id=?').get(req.session.tournamentId);
+    const activeStage = tournamentRow ? getActiveStage(tournamentRow.id, tournamentRow) : null;
+    const effectiveFormat = normalizeTournamentFormat(activeStage?.format || tournamentRow?.format);
+    const tournament = tournamentRow ? {
+      id: tournamentRow.id,
+      name: tournamentRow.name,
+      slope_rating: tournamentRow.slope_rating,
+      format: effectiveFormat,
+      format_label: getFormatDefinition(effectiveFormat).label,
+      active_stage_id: activeStage?.id || null,
+      active_stage_name: activeStage?.name || null
+    } : null;
     const holes      = db.prepare('SELECT * FROM holes WHERE tournament_id=? ORDER BY hole_number').all(req.session.tournamentId);
     const scoresRaw  = db.prepare('SELECT * FROM scores WHERE team_id=?').all(req.session.teamId);
     const scores     = scoresRaw.map(s => ({ ...s, photo_path: normalizePhotoPath(s.photo_path) }));
     const claims     = db.prepare('SELECT * FROM award_claims WHERE tournament_id=? AND team_id=?').all(req.session.tournamentId, req.session.teamId);
     const holeSponsors = getSponsorsForTournament(req.session.tournamentId, 'hole').filter(s => s.is_enabled);
-    res.json({ team: { ...team, locked: team.locked || 0 }, tournament, holes, scores, claims, hole_sponsors: holeSponsors, control });
+    res.json({ team: { ...team, locked: team.locked || 0 }, tournament, activeStage, holes, scores, claims, hole_sponsors: holeSponsors, control });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
