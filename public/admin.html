@@ -5,12 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Administrasjonspanel — Lorgen Invitational</title>
   <link rel="icon" type="image/png" href="/images/logo.png">
-  <meta name="theme-color" content="#0D1B2A">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Lorgen">
-  <link rel="apple-touch-icon" href="/images/logo.png">
-  <link rel="manifest" href="/manifest.webmanifest">
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <style>
@@ -34,21 +28,6 @@
     .dash-card-label { font-size:.72rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--gold-dark);margin-bottom:12px; }
     .dash-card-main { font-family:var(--font-heading);font-size:1.3rem;color:var(--dark);margin-bottom:4px;line-height:1.3; }
     .dash-card-sub { font-size:.82rem;color:var(--text-muted); }
-
-    .sponsor-accordion { display:flex;flex-direction:column;gap:12px; }
-    .sponsor-accordion-item { border:1px solid var(--gold-border);border-radius:16px;background:var(--white);overflow:hidden; }
-    .sponsor-accordion-trigger { width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;background:rgba(201,168,76,.08);border:none;color:var(--dark);font-weight:700;font-size:1rem;cursor:pointer; }
-    .sponsor-accordion-trigger i { color:var(--gold-dark);transition:transform .2s ease; }
-    .sponsor-accordion-item.is-open .sponsor-accordion-trigger i { transform:rotate(180deg); }
-    .sponsor-accordion-body { display:none;padding:16px; }
-    .sponsor-accordion-item.is-open .sponsor-accordion-body { display:block; }
-    .sponsor-mobile-grid { display:grid;grid-template-columns:1fr;gap:14px; }
-    .sponsor-mobile-grid .form-input, .sponsor-mobile-grid .form-select { min-height:48px;font-size:1rem;padding:12px 14px; }
-    .sponsor-file-input { min-height:48px;width:100%;font-size:.95rem;padding:10px;border:1.5px dashed var(--gold-border);border-radius:var(--radius);background:var(--off-white); }
-    .sponsor-preview-box { min-height:88px;border:1px dashed var(--gold-border);border-radius:12px;background:var(--off-white);display:flex;align-items:center;justify-content:center;padding:10px;text-align:center; }
-    .sponsor-preview-box img { max-width:100%;max-height:90px;object-fit:contain; }
-    .sponsor-save-row { display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:8px; }
-    .sponsor-save-status { font-size:.8rem;color:var(--text-muted); }
   </style>
 </head>
 <body>
@@ -115,13 +94,10 @@
         <div class="sidebar-label">Turnering</div>
         <div class="sidebar-link" onclick="showPanel('tournament')"><i class="fas fa-calendar-star"></i> Turneringer</div>
         <div class="sidebar-link" onclick="showPanel('teams')"><i class="fas fa-users"></i> Lag</div>
-        <div class="sidebar-link" onclick="showPanel('players')"><i class="fas fa-user-group"></i> Spillere</div>
-          <div class="sidebar-link" onclick="showPanel('stages')"><i class="fas fa-layer-group"></i> Stages</div>
         <div class="sidebar-link" onclick="showPanel('holes')"><i class="fas fa-golf-ball-tee"></i> Bane og Hull</div>
         <div class="sidebar-link" onclick="showPanel('courses')"><i class="fas fa-map-location-dot"></i> Baner</div>
         <div class="sidebar-link" onclick="showPanel('gameday')"><i class="fas fa-calendar-day"></i> Spilleregler & Informasjon</div>
         <div class="sidebar-link" onclick="showPanel('sponsors')"><i class="fas fa-handshake"></i> Sponsorer</div>
-        <a class="sidebar-link" href="/admin/control-panel" style="text-decoration:none"><i class="fas fa-sliders"></i> Tournament Control Panel</a>
       </div>
       <div class="sidebar-section">
         <div class="sidebar-label">Aktiv Dag</div>
@@ -169,7 +145,7 @@
         <div class="card">
           <div class="card-header"><strong>Aktiv Turnering</strong></div>
           <div class="card-body" id="dashActiveTournament">
-            <p style="color:var(--text-muted)">Ingen aktiv turnering valgt ennå.</p>
+            <p style="color:var(--text-muted)">Ingen aktiv turnering. Opprett en under Turneringer og sett status til «aktiv».</p>
           </div>
         </div>
 
@@ -213,23 +189,9 @@
           <div class="card-header"><strong>Opprett ny turnering</strong></div>
           <div class="card-body">
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px">
-              <div class="form-group"><label class="form-label">Turneringsnavn</label><input class="form-input" id="tNameInput" type="text" value="Lorgen Invitational"></div>
-              <div class="form-group"><label class="form-label">År</label><input class="form-input" id="tYear" type="number" min="2000" max="2100"></div>
-              <div class="form-group"><label class="form-label">Startdato og klokkeslett</label><input class="form-input" id="tDate" type="datetime-local"></div>
-              <div class="form-group"><label class="form-label">Sluttdato og klokkeslett</label><input class="form-input" id="tEndDate" type="datetime-local"></div>
+              <div class="form-group"><label class="form-label">Turneringsnavn</label><input class="form-input" id="tName" type="text" value="Lorgen Invitational" readonly></div>
+              <div class="form-group"><label class="form-label">Dato og klokkeslett</label><input class="form-input" id="tDate" type="datetime-local"></div>
               <div class="form-group"><label class="form-label">Bane</label><input class="form-input" id="tCourse" type="text" placeholder="f.eks. Bogstad Golfklubb"></div>
-              <div class="form-group"><label class="form-label">Turneringsmodus</label><select class="form-select" id="tMode"><option value="single_format">Enkeltformat</option><option value="multi_stage">Flerdagers</option><option value="ryder_cup">Ryder Cup</option></select></div>
-              <div class="form-group"><label class="form-label">Spillform</label><select class="form-select" id="tFormat">
-                <option value="stableford">Stableford</option>
-                <option value="strokeplay" selected>Slagspill</option>
-                <option value="texas_scramble">2-manns Scramble</option>
-                <option value="texas_scramble_4">Texas Scramble (4-manns)</option>
-                <option value="greensome">Greensome</option>
-                <option value="foursome">Foursome</option>
-                <option value="fourball">Bestball / Four-ball</option>
-                <option value="matchplay">Matchspill</option>
-              </select></div>
-              <div class="form-group"><label class="form-label">Status</label><select class="form-select" id="tStatus"><option value="draft">Utkast</option><option value="published">Publisert</option><option value="live">Live</option><option value="paused">Pauset</option><option value="completed">Fullført</option><option value="archived">Arkivert</option></select></div>
               <div class="form-group"><label class="form-label">Slope Rating</label><input class="form-input" id="tSlope" type="number" min="55" max="155" value="113" placeholder="113"></div>
               <div class="form-group" style="grid-column:1/-1"><label class="form-label">Beskrivelse</label><textarea class="form-input form-textarea" id="tDesc" placeholder="Kort beskrivelse til forsiden..." style="min-height:70px"></textarea></div>
             </div>
@@ -243,8 +205,8 @@
           <div class="card-header"><strong>Alle turneringer</strong></div>
           <div style="overflow-x:auto">
             <table class="data-table">
-              <thead><tr><th>År</th><th>Navn</th><th>Periode</th><th>Format</th><th>Status</th><th>Aktiv</th><th>Handlinger</th></tr></thead>
-              <tbody id="tournamentsTable"><tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted)">Laster...</td></tr></tbody>
+              <thead><tr><th>År</th><th>Navn</th><th>Dato</th><th>Bane</th><th>Status</th><th>Handlinger</th></tr></thead>
+              <tbody id="tournamentsTable"><tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Laster...</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -253,25 +215,11 @@
           <div class="card-header"><strong>Rediger turnering</strong></div>
           <div class="card-body">
             <input type="hidden" id="editTId">
-            
+            <input type="hidden" id="editTStatus">
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px">
-              <div class="form-group"><label class="form-label">Navn</label><input class="form-input" id="editTName"></div>
-              <div class="form-group"><label class="form-label">År</label><input class="form-input" id="editTYear" type="number" min="2000" max="2100"></div>
-              <div class="form-group"><label class="form-label">Startdato og klokkeslett</label><input class="form-input" id="editTDate" type="datetime-local"></div>
-              <div class="form-group"><label class="form-label">Sluttdato og klokkeslett</label><input class="form-input" id="editTEndDate" type="datetime-local"></div>
+              <div class="form-group"><label class="form-label">Navn</label><input class="form-input" id="editTName" value="Lorgen Invitational" readonly></div>
+              <div class="form-group"><label class="form-label">Dato og klokkeslett</label><input class="form-input" id="editTDate" type="datetime-local"></div>
               <div class="form-group"><label class="form-label">Bane</label><input class="form-input" id="editTCourse"></div>
-              <div class="form-group"><label class="form-label">Turneringsmodus</label><select class="form-select" id="editTMode"><option value="single_format">Enkeltformat</option><option value="multi_stage">Flerdagers</option><option value="ryder_cup">Ryder Cup</option></select></div>
-              <div class="form-group"><label class="form-label">Spillform</label><select class="form-select" id="editTFormat">
-                <option value="stableford">Stableford</option>
-                <option value="strokeplay">Slagspill</option>
-                <option value="texas_scramble">2-manns Scramble</option>
-                <option value="texas_scramble_4">Texas Scramble (4-manns)</option>
-                <option value="greensome">Greensome</option>
-                <option value="foursome">Foursome</option>
-                <option value="fourball">Bestball / Four-ball</option>
-                <option value="matchplay">Matchspill</option>
-              </select></div>
-              <div class="form-group"><label class="form-label">Status</label><select class="form-select" id="editTStatus"><option value="draft">Utkast</option><option value="published">Publisert</option><option value="live">Live</option><option value="paused">Pauset</option><option value="completed">Fullført</option><option value="archived">Arkivert</option></select></div>
               <div class="form-group"><label class="form-label">Slope Rating</label><input class="form-input" id="editTSlope" type="number" min="55" max="155" value="113"></div>
               <div class="form-group" style="grid-column:1/-1"><label class="form-label">Beskrivelse</label><textarea class="form-input form-textarea" id="editTDesc" style="min-height:60px"></textarea></div>
             </div>
@@ -281,28 +229,6 @@
             </div>
           </div>
         </div>
-      </div>
-
-      <div class="admin-panel" id="panel-stages">
-        <div class="admin-panel-title">Stages</div>
-        <div class="admin-panel-sub">Turneringsdager</div>
-
-        <div class="card" style="margin-bottom:16px">
-          <div class="card-body" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px">
-            <div class="form-group" style="margin:0"><label class="form-label">Velg turnering</label><select class="form-select" id="stagesTournamentSelect" onchange="loadStagesPanel()"><option value="">— Velg turnering —</option></select></div>
-            <div class="form-group" style="margin:0"><label class="form-label">Stages</label><input id="stageName" class="form-input" placeholder="Dag 1 – Foursome"></div>
-            <div class="form-group" style="margin:0"><label class="form-label">Dato</label><input id="stageDate" class="form-input" type="datetime-local"></div>
-            <div class="form-group" style="margin:0"><label class="form-label">Spillform</label><select class="form-select" id="stageFormat"><option value="strokeplay">Slagspill</option><option value="stableford">Stableford</option><option value="texas_scramble">2-manns Scramble</option><option value="texas_scramble_4">Texas Scramble (4-manns)</option><option value="foursome">Foursome</option><option value="fourball">Four-ball</option><option value="greensome">Greensome</option><option value="matchplay">Matchplay</option></select></div>
-            <div class="form-group" style="margin:0"><label class="form-label">Handicap-prosent</label><input id="stageHandicapPercentage" class="form-input" type="number" min="0" max="100" placeholder="Default"></div>
-            <div class="form-group" style="margin:0"><label class="form-label">Rekkefølge</label><input id="stageOrder" class="form-input" type="number" value="1"></div>
-          </div>
-          <div class="card-body" style="padding-top:0"><button onclick="addStage()" class="btn btn--gold btn--sm">Legg til stage</button></div>
-        </div>
-
-        <div class="card" style="margin-bottom:16px"><div class="card-header"><strong>Turneringsdager</strong></div><div class="card-body" id="stagesList">Velg turnering for å se stages.</div></div>
-        <div class="card"><div class="card-header"><strong>Ryder Cup-oppsett</strong></div><div class="card-body" id="cupSetup">Velg en turnering med modus Ryder Cup.</div></div>
-        <div class="card" style="margin-top:16px"><div class="card-header"><strong>Pairings</strong></div><div class="card-body" id="pairingsSetup">Velg en stage.</div></div>
-        <div class="card" style="margin-top:16px"><div class="card-header"><strong>Matcher</strong></div><div class="card-body" id="pairingMatchesSetup">Velg en stage.</div></div>
       </div>
 
       <!-- ── LAG ───────────────────────────────────────────────────────────── -->
@@ -328,8 +254,6 @@
               <div class="form-group"><label class="form-label">Lagnavn</label><input class="form-input" id="newTeamName" placeholder="Team Eagles"></div>
               <div class="form-group"><label class="form-label">Spiller 1</label><input class="form-input" id="newPlayer1" placeholder="Fornavn"></div>
               <div class="form-group"><label class="form-label">Spiller 2</label><input class="form-input" id="newPlayer2" placeholder="Fornavn"></div>
-              <div class="form-group"><label class="form-label">Spiller 3</label><input class="form-input" id="newPlayer3" placeholder="Valgfri"></div>
-              <div class="form-group"><label class="form-label">Spiller 4</label><input class="form-input" id="newPlayer4" placeholder="Valgfri"></div>
               <div class="form-group">
                 <label class="form-label">PIN (4 siffer)</label>
                 <input class="form-input" id="newPin" type="text" maxlength="4" pattern="[0-9]{4}" placeholder="1234" inputmode="numeric">
@@ -337,8 +261,6 @@
               </div>
               <div class="form-group"><label class="form-label">Hcp Spiller 1</label><input class="form-input" id="newHcp1" type="number" step="0.1" min="0" max="54" placeholder="0.0"></div>
               <div class="form-group"><label class="form-label">Hcp Spiller 2</label><input class="form-input" id="newHcp2" type="number" step="0.1" min="0" max="54" placeholder="0.0"></div>
-              <div class="form-group"><label class="form-label">Hcp Spiller 3</label><input class="form-input" id="newHcp3" type="number" step="0.1" min="0" max="54" placeholder="0.0"></div>
-              <div class="form-group"><label class="form-label">Hcp Spiller 4</label><input class="form-input" id="newHcp4" type="number" step="0.1" min="0" max="54" placeholder="0.0"></div>
             </div>
             <div style="margin-top:16px;display:flex;gap:10px">
               <button onclick="addTeam()" class="btn btn--gold btn--sm"><i class="fas fa-plus"></i> Legg til lag</button>
@@ -365,13 +287,9 @@
               <div class="form-group"><label class="form-label">Lagnavn</label><input class="form-input" id="editTeamName"></div>
               <div class="form-group"><label class="form-label">Spiller 1</label><input class="form-input" id="editTeamP1"></div>
               <div class="form-group"><label class="form-label">Spiller 2</label><input class="form-input" id="editTeamP2"></div>
-              <div class="form-group"><label class="form-label">Spiller 3</label><input class="form-input" id="editTeamP3"></div>
-              <div class="form-group"><label class="form-label">Spiller 4</label><input class="form-input" id="editTeamP4"></div>
               <div class="form-group"><label class="form-label">PIN (4 siffer)</label><input class="form-input" id="editTeamPin" type="text" maxlength="4" inputmode="numeric"></div>
               <div class="form-group"><label class="form-label">Hcp Spiller 1</label><input class="form-input" id="editTeamHcp1" type="number" step="0.1" min="0" max="54" placeholder="0.0"></div>
               <div class="form-group"><label class="form-label">Hcp Spiller 2</label><input class="form-input" id="editTeamHcp2" type="number" step="0.1" min="0" max="54" placeholder="0.0"></div>
-              <div class="form-group"><label class="form-label">Hcp Spiller 3</label><input class="form-input" id="editTeamHcp3" type="number" step="0.1" min="0" max="54" placeholder="0.0"></div>
-              <div class="form-group"><label class="form-label">Hcp Spiller 4</label><input class="form-input" id="editTeamHcp4" type="number" step="0.1" min="0" max="54" placeholder="0.0"></div>
             </div>
             <div style="margin-top:16px;display:flex;gap:10px">
               <button onclick="saveTeamEdit()" class="btn btn--gold btn--sm"><i class="fas fa-floppy-disk"></i> Lagre</button>
@@ -379,22 +297,6 @@
             </div>
           </div>
         </div>
-      </div>
-
-      <div class="admin-panel" id="panel-players">
-        <div class="admin-panel-title">Spillere</div>
-        <div class="admin-panel-sub">Opprett enkeltspillere, knytt handicap og Ryder Cup-side</div>
-        <div class="card" style="margin-bottom:16px">
-          <div class="card-body" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px">
-            <div class="form-group" style="margin:0"><label class="form-label">Velg turnering</label><select class="form-select" id="playersTournamentSelect" onchange="loadPlayersPanel()"><option value="">— Velg turnering —</option></select></div>
-            <div class="form-group" style="margin:0"><label class="form-label">Navn</label><input id="playerName" class="form-input" placeholder="Spillernavn"></div>
-            <div class="form-group" style="margin:0"><label class="form-label">Handicap</label><input id="playerHcp" class="form-input" type="number" step="0.1" min="0" max="54" placeholder="Valgfri"></div>
-            <div class="form-group" style="margin:0"><label class="form-label">Lag / side (Ryder Cup)</label><select class="form-select" id="playerSide"><option value="">— Ingen —</option></select></div>
-            <div class="form-group" style="margin:0"><label class="form-label">Aktiv</label><select class="form-select" id="playerActive"><option value="1">Ja</option><option value="0">Nei</option></select></div>
-          </div>
-          <div class="card-body" style="padding-top:0"><button onclick="addPlayer()" class="btn btn--gold btn--sm">Legg til spiller</button></div>
-        </div>
-        <div class="card"><div class="card-header"><strong>Spillere</strong></div><div class="card-body" id="playersList">Velg turnering.</div></div>
       </div>
 
       <!-- ── BANE OG HULL ───────────────────────────────────────────────────── -->
@@ -673,16 +575,16 @@
 
         <div class="card" style="margin-bottom:20px">
           <div class="card-header"><strong>Forside — 5 sponsorplasser</strong></div>
-          <div class="card-body"><div id="homeSponsorRows" class="sponsor-accordion"></div></div>
+          <div class="card-body" id="homeSponsorRows"></div>
         </div>
 
         <div class="card">
           <div class="card-header"><strong>Scorekort — sponsor per hull</strong></div>
-          <div class="card-body"><div id="holeSponsorRows" class="sponsor-accordion"></div></div>
+          <div class="card-body" id="holeSponsorRows"></div>
         </div>
 
         <div style="margin-top:16px">
-          <button class="btn btn--gold btn--sm" onclick="saveSponsorsAdmin()"><i class="fas fa-floppy-disk"></i> Lagre alle sponsorer</button>
+          <button class="btn btn--gold btn--sm" onclick="saveSponsorsAdmin()"><i class="fas fa-floppy-disk"></i> Lagre sponsorer</button>
         </div>
       </div>
 
@@ -821,7 +723,6 @@
   </div>
 </div>
 
-<script src="/js/tournament-formats.js"></script>
 <script>
 // ── Hjelpefunksjoner ──────────────────────────────────────────────────────────
 function showToast(msg, type='success') {
@@ -919,9 +820,9 @@ function showPanel(id) {
     if (l.getAttribute('onclick') && l.getAttribute('onclick').includes("'"+id+"'")) l.classList.add('active');
   });
   // Auto-trigger data loading for panels with a tournament select
-  const loaders = { holes: loadHoles, teams: loadTeams, players: loadPlayersPanel, scores: loadScores,
+  const loaders = { holes: loadHoles, teams: loadTeams, scores: loadScores,
                     photos: loadPhotos, awards: loadAwards, gameday: loadGameday,
-                    courses: loadCourses, sponsors: loadSponsorsAdmin, stages: loadStagesPanel };
+                    courses: loadCourses, sponsors: loadSponsorsAdmin };
   if (loaders[id]) loaders[id]();
 }
 
@@ -945,46 +846,7 @@ async function loadTournaments() {
 }
 
 function statusLabel(s) {
-  return s==='draft'?'Utkast':s==='published'?'Publisert':s==='live'?'Live':s==='paused'?'Pauset':s==='completed'?'Fullført':s==='archived'?'Arkivert':s;
-}
-
-function formatLabel(format) {
-  return TournamentFormats.getFormatDefinition(format).label;
-}
-
-
-function getTournamentByIdLocal(tid) {
-  return allTournaments.find((t) => String(t.id) === String(tid));
-}
-
-function resolveAdminSectionsForTournament(format, tournamentMode) {
-  if (tournamentMode === 'ryder_cup') return TournamentFormats.resolveAdminSectionsForTournament('ryder_cup', { usesStages: true });
-  return TournamentFormats.resolveAdminSectionsForTournament(format, { usesStages: tournamentMode === 'multi_stage' });
-}
-
-function applyFormatDrivenAdminLayout(tid) {
-  const t = getTournamentByIdLocal(tid);
-  if (!t) return;
-  const sections = new Set(resolveAdminSectionsForTournament(t.format, t.tournament_mode));
-  const map = { tournament: 'tournament', teams: 'teams', players: 'players', holes: 'holes', gameday: 'gameday', sponsors: 'sponsors', stages: 'stages' };
-  Object.entries(map).forEach(([section, panel]) => {
-    const show = sections.has(section);
-    const link = Array.from(document.querySelectorAll('.sidebar-link[onclick^="showPanel"]')).find((n) => n.getAttribute('onclick').includes(`'${panel}'`));
-    const panelEl = document.getElementById('panel-' + panel);
-    if (link) link.style.display = show ? '' : 'none';
-    if (panelEl) panelEl.style.display = show ? '' : 'none';
-  });
-}
-
-
-
-function renderTeamRuleHint(tid) {
-  const t = getTournamentByIdLocal(tid);
-  if (!t) return;
-  const def = TournamentFormats.getFormatDefinition(t.format);
-  const hint = document.getElementById('teamCount');
-  const handicapRule = def?.handicap?.method === 'weighted' ? (def.handicap.label || 'weighted') : `${def?.handicap?.handicapPercentage || 100}%`;
-  if (hint) hint.textContent = `${hint.textContent || ''} · FORMAT: ${def.label} · HANDICAP: ${handicapRule}`;
+  return s==='upcoming'?'Kommende':s==='active'?'Aktiv':s==='completed'?'Fullført':s;
 }
 
 function formatTournamentDate(dateValue, includeWeekday = false) {
@@ -1002,12 +864,11 @@ function formatTournamentDate(dateValue, includeWeekday = false) {
 }
 
 function populateTournamentSelects() {
-  const ids = ['teamsTournamentSelect','playersTournamentSelect','holesTournamentSelect','scoresTournamentSelect',
-               'awardsTournamentSelect','gamedayTournamentSelect','photosTournamentSelect','sponsorsTournamentSelect','stagesTournamentSelect'];
+  const ids = ['teamsTournamentSelect','holesTournamentSelect','scoresTournamentSelect',
+               'awardsTournamentSelect','gamedayTournamentSelect','photosTournamentSelect','sponsorsTournamentSelect'];
   // Find the default (active > upcoming) tournament
-  const defaultT = allTournaments.find(t => t.is_active) ||
-                   allTournaments.find(t => t.status === 'published') ||
-                   allTournaments.find(t => t.status === 'live');
+  const defaultT = allTournaments.find(t => t.status === 'active') ||
+                   allTournaments.find(t => t.status === 'upcoming');
   ids.forEach(id => {
     const sel = document.getElementById(id);
     const cur = sel.value;
@@ -1016,23 +877,27 @@ function populateTournamentSelects() {
     if (cur) sel.value = cur;
     else if (defaultT && !cur) sel.value = String(defaultT.id);
   });
-  if (defaultT) applyFormatDrivenAdminLayout(defaultT.id);
 }
 
 function renderTournamentsTable() {
   const tbody = document.getElementById('tournamentsTable');
   if (!allTournaments.length) {
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen turneringer ennå</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen turneringer ennå</td></tr>';
     return;
   }
   tbody.innerHTML = allTournaments.map(t => `
     <tr>
       <td><strong>${t.year}</strong></td>
       <td>${t.name}</td>
-      <td>${formatTournamentDate(t.start_date || t.date)}${t.end_date ? ` – ${formatTournamentDate(t.end_date)}` : ''}</td>
-      <td><span class="badge" style="background:var(--gold-pale);color:var(--gold-dark)">${formatLabel(t.format)}</span></td>
-      <td><span class="badge">${statusLabel(t.status)}</span></td>
-      <td>${t.is_active ? '<span class="badge badge--active">Aktiv turnering</span>' : `<button onclick="setActiveTournament(${t.id})" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)">Sett som aktiv turnering</button>`}</td>
+      <td>${formatTournamentDate(t.date)}</td>
+      <td>${t.course||'—'}</td>
+      <td>
+        <select onchange="changeTournamentStatus(${t.id},this.value)" style="padding:4px 8px;border:1px solid var(--gold-border);border-radius:4px;font-size:.8rem">
+          <option value="upcoming" ${t.status==='upcoming'?'selected':''}>Kommende</option>
+          <option value="active"   ${t.status==='active'  ?'selected':''}>Aktiv</option>
+          <option value="completed"${t.status==='completed'?'selected':''}>Fullført</option>
+        </select>
+      </td>
       <td style="display:flex;gap:6px">
         <button onclick="editTournament(${t.id})" class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)" title="Rediger"><i class="fas fa-pen"></i></button>
         <button onclick="deleteTournament(${t.id},${JSON.stringify(t.name)})" class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
@@ -1040,29 +905,17 @@ function renderTournamentsTable() {
     </tr>`).join('');
 }
 
-async function setActiveTournament(id) {
-  try {
-    await api('/api/admin/active-tournament/' + id, { method: 'PUT' });
-    showToast('Aktiv turnering oppdatert');
-    await loadTournaments();
-    await loadDashboard();
-  } catch (e) { showToast(e.message, 'error'); }
-}
-
 async function createTournament() {
-  const name=document.getElementById('tNameInput').value || 'Lorgen Invitational', date=document.getElementById('tDate').value, endDate=document.getElementById('tEndDate').value || date, course=document.getElementById('tCourse').value,
-        description=document.getElementById('tDesc').value, tournamentMode=document.getElementById('tMode').value || 'single_format', format=document.getElementById('tFormat').value || 'strokeplay', status=document.getElementById('tStatus').value,
+  const name='Lorgen Invitational', date=document.getElementById('tDate').value, course=document.getElementById('tCourse').value,
+        description=document.getElementById('tDesc').value,
         slope_rating=document.getElementById('tSlope').value||113;
-  const year = parseInt(document.getElementById('tYear').value,10) || (date ? new Date(date).getFullYear() : null);
+  const year = date ? new Date(date).getFullYear() : null;
   if (!year||!date) { showToast('Dato og klokkeslett er påkrevd','error'); return; }
   try {
-    await api('/api/admin/tournament',{method:'POST',body:JSON.stringify({year,name,startDate:date,endDate,course,description,format,status,slope_rating,tournamentMode})});
+    await api('/api/admin/tournament',{method:'POST',body:JSON.stringify({year,name,date,course,description,slope_rating})});
     showToast('Turnering opprettet!');
-    ['tDate','tEndDate','tCourse','tDesc','tYear'].forEach(id=>document.getElementById(id).value='');
-    document.getElementById('tNameInput').value='Lorgen Invitational';
-    document.getElementById('tMode').value='single_format';
-    document.getElementById('tFormat').value='strokeplay';
-    document.getElementById('tStatus').value='draft';
+    ['tDate','tCourse','tDesc'].forEach(id=>document.getElementById(id).value='');
+    document.getElementById('tName').value='Lorgen Invitational';
     document.getElementById('tSlope').value='113';
     await loadTournaments(); await loadDashboard();
   } catch(e) { showToast(e.message,'error'); }
@@ -1082,15 +935,11 @@ function editTournament(id) {
   const t = allTournaments.find(x => x.id === id);
   if (!t) return;
   document.getElementById('editTId').value = t.id;
-  document.getElementById('editTStatus').value = t.status || 'draft';
-  document.getElementById('editTName').value = t.name || 'Lorgen Invitational';
-  document.getElementById('editTYear').value = t.year || '';
-  document.getElementById('editTDate').value = (t.start_date || t.date || '').slice(0,16);
-  document.getElementById('editTEndDate').value = (t.end_date || t.start_date || t.date || '').slice(0,16);
+  document.getElementById('editTStatus').value = t.status;
+  document.getElementById('editTName').value = 'Lorgen Invitational';
+  document.getElementById('editTDate').value = (t.date || '').slice(0,16);
   document.getElementById('editTCourse').value = t.course || '';
   document.getElementById('editTSlope').value = t.slope_rating || 113;
-  document.getElementById('editTMode').value = t.tournament_mode || 'single_format';
-  document.getElementById('editTFormat').value = TournamentFormats.normalizeFormat(t.format);
   document.getElementById('editTDesc').value = t.description || '';
   document.getElementById('editTournamentCard').classList.remove('d-none');
   document.getElementById('editTournamentCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1098,19 +947,16 @@ function editTournament(id) {
 
 async function saveTournamentEdit() {
   const id = document.getElementById('editTId').value;
-  const name = document.getElementById('editTName').value || 'Lorgen Invitational';
+  const name = 'Lorgen Invitational';
   const date = document.getElementById('editTDate').value;
-  const endDate = document.getElementById('editTEndDate').value || date;
-  const year = parseInt(document.getElementById('editTYear').value,10) || (date ? new Date(date).getFullYear() : null);
+  const year = date ? new Date(date).getFullYear() : null;
   const course = document.getElementById('editTCourse').value;
   const slope_rating = document.getElementById('editTSlope').value || 113;
   const description = document.getElementById('editTDesc').value;
-  const tournamentMode = document.getElementById('editTMode').value || 'single_format';
-  const format = document.getElementById('editTFormat').value || 'strokeplay';
   const status = document.getElementById('editTStatus').value;
   if (!year || !date) { showToast('Dato og klokkeslett er påkrevd', 'error'); return; }
   try {
-    await api('/api/admin/tournament/' + id, { method: 'PUT', body: JSON.stringify({ year, name, startDate: date, endDate, course, slope_rating, description, format, status, tournamentMode }) });
+    await api('/api/admin/tournament/' + id, { method: 'PUT', body: JSON.stringify({ year, name, date, course, slope_rating, description, status }) });
     showToast('Turnering oppdatert!');
     document.getElementById('editTournamentCard').classList.add('d-none');
     await loadTournaments(); await loadDashboard();
@@ -1130,200 +976,11 @@ async function deleteTournament(id, name) {
   } catch(e) { showToast(e.message,'error'); }
 }
 
-
-async function loadStagesPanel() {
-  const tid = document.getElementById('stagesTournamentSelect')?.value;
-  if (!tid) return;
-  try {
-    const [stagesData, tSides, playersData] = await Promise.all([
-      api('/api/admin/tournament/' + tid + '/stages'),
-      api('/api/admin/tournament/' + tid + '/sides'),
-      api('/api/admin/tournament/' + tid + '/players')
-    ]);
-    const list = document.getElementById('stagesList');
-    if (!stagesData.stages.length) {
-      list.innerHTML = '<div style="color:var(--text-muted)">Ingen stage ennå.</div>';
-      document.getElementById('pairingsSetup').innerHTML = 'Opprett en stage først.';
-      document.getElementById('pairingMatchesSetup').innerHTML = 'Opprett en stage først.';
-    } else {
-      list.innerHTML = stagesData.stages.map(st => `<div style="padding:10px;border:1px solid var(--gold-border);border-radius:12px;margin-bottom:8px;display:flex;justify-content:space-between;gap:8px;align-items:center"><div><strong>${st.name}</strong><div style="font-size:.75rem;color:var(--text-muted)">Dato: ${st.date || '—'} · Spillform: ${TournamentFormats.getFormatDefinition(st.format).label} · Handicap: ${(st.handicap_percentage ?? TournamentFormats.getFormatDefinition(st.format).handicap?.label ?? TournamentFormats.getFormatDefinition(st.format).handicap?.handicapPercentage + '%')} · Rekkefølge: ${st.stage_order}</div></div><div style="display:flex;gap:6px">${st.id===stagesData.activeStageId?'<span class="badge badge--active">Aktiv stage</span>':`<button class="btn btn--outline btn--sm" onclick="setActiveStage(${tid}, ${st.id})">Sett som aktiv stage</button>`}<button class="btn btn--danger btn--sm" onclick="deleteStage(${st.id})"><i class="fas fa-trash"></i></button></div></div>`).join('');
-
-      const activeStageId = stagesData.activeStageId || stagesData.stages[0].id;
-      const [pairingsData, pairingMatchesData] = await Promise.all([
-        api('/api/admin/stage/' + activeStageId + '/pairings'),
-        api('/api/admin/stage/' + activeStageId + '/pairing-matches')
-      ]);
-      const stageOptions = stagesData.stages.map((st) => `<option value="${st.id}" ${Number(st.id)===Number(activeStageId)?'selected':''}>${st.name}</option>`).join('');
-      const playerOptions = (playersData.players || []).map((p) => `<option value="${p.id}">${p.name}${p.side_name ? ' (' + p.side_name + ')' : ''}</option>`).join('');
-      const sideOptions = (tSides.sides || []).map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
-      const pairingOptions = (pairingsData.pairings || []).map((p) => `<option value="${p.id}">${p.label}</option>`).join('');
-
-      document.getElementById('pairingsSetup').innerHTML = `
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:10px">
-          <div><label class="form-label">Stage</label><select id="pairingStageSelect" class="form-select" onchange="loadStagesPanel()">${stageOptions}</select></div>
-          <div><label class="form-label">Lag/side</label><select id="pairingTeam" class="form-select"><option value="">— Ingen —</option>${sideOptions}</select></div>
-          <div><label class="form-label">Spillere (1/2/4)</label><select id="pairingPlayers" class="form-select" multiple size="4">${playerOptions}</select></div>
-          <div><label class="form-label">Rekkefølge</label><input id="pairingOrder" class="form-input" type="number" value="1"></div>
-          <div><label class="form-label">Tee time</label><input id="pairingTee" class="form-input" type="datetime-local"></div>
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-          <button class="btn btn--gold btn--sm" onclick="addPairing()">Legg til pairing</button>
-          <button class="btn btn--outline btn--sm" onclick="autoGeneratePairings(2)">Auto generer par</button>
-          <button class="btn btn--outline btn--sm" onclick="autoGeneratePairings(1)">Auto singler</button>
-          <button class="btn btn--outline btn--sm" onclick="autoGeneratePairings(4)">Auto scramble (4)</button>
-        </div>
-        ${(pairingsData.pairings||[]).map((p) => `<div style="padding:8px;border:1px solid var(--gold-border);border-radius:10px;margin-bottom:6px;display:flex;justify-content:space-between;gap:8px"><span><strong>${p.label}</strong>${p.side_name ? ' · ' + p.side_name : ''} · #${p.pairing_order}${p.tee_time ? ' · ' + p.tee_time : ''}</span><button class="btn btn--danger btn--sm" onclick="deletePairing(${p.id})"><i class="fas fa-trash"></i></button></div>`).join('') || '<div style="color:var(--text-muted)">Ingen pairings ennå.</div>'}
-      `;
-
-      document.getElementById('pairingMatchesSetup').innerHTML = `
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:10px">
-          <div><label class="form-label">Pairing A</label><select id="matchPairA" class="form-select">${pairingOptions}</select></div>
-          <div><label class="form-label">Pairing B</label><select id="matchPairB" class="form-select"><option value="">— Tom —</option>${pairingOptions}</select></div>
-          <div><label class="form-label">Format</label><select id="matchFormat" class="form-select"><option value="matchplay">Matchplay</option><option value="fourball">Four-ball</option><option value="foursome">Foursome</option><option value="strokeplay">Strokeplay</option><option value="texas_scramble">Scramble</option></select></div>
-          <div><label class="form-label">Rekkefølge</label><input id="matchOrder" class="form-input" type="number" value="1"></div>
-          <div><label class="form-label">Tee time</label><input id="matchTee" class="form-input" type="datetime-local"></div>
-        </div>
-        <button class="btn btn--gold btn--sm" onclick="addPairingMatch()">Legg til match</button>
-        <div style="margin-top:12px">${(pairingMatchesData.matches||[]).map((m) => `<div style="padding:8px;border:1px solid var(--gold-border);border-radius:10px;margin-bottom:6px;display:flex;justify-content:space-between;gap:8px"><span><strong>${m.pairing_a?.label || 'TBD'}</strong> vs <strong>${m.pairing_b?.label || 'TBD'}</strong> · ${TournamentFormats.getFormatDefinition(m.format).label} · #${m.match_order}</span><button class="btn btn--danger btn--sm" onclick="deletePairingMatch(${m.id})"><i class="fas fa-trash"></i></button></div>`).join('') || '<div style="color:var(--text-muted)">Ingen matcher ennå.</div>'}</div>
-      `;
-    }
-    const cupBox = document.getElementById('cupSetup');
-    const t = allTournaments.find(x => String(x.id) === String(tid));
-    if (!t || t.tournament_mode !== 'ryder_cup') {
-      cupBox.innerHTML = 'Velg en turnering med modus Ryder Cup.';
-      return;
-    }
-    cupBox.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><input id="cupSideName" class="form-input" style="max-width:220px" placeholder="Lag-navn"><button class="btn btn--gold btn--sm" onclick="addCupSide(${tid})">Legg til side/lag</button></div>` +
-      (tSides.sides || []).map(s => `<div style="padding:8px;border:1px solid var(--gold-border);border-radius:10px;margin-bottom:6px;display:flex;justify-content:space-between"><span>${s.name}</span><button class="btn btn--danger btn--sm" onclick="deleteCupSide(${s.id})"><i class="fas fa-trash"></i></button></div>`).join('');
-  } catch (e) { showToast(e.message, 'error'); }
-}
-
-async function addStage() {
-  const tid = document.getElementById('stagesTournamentSelect').value;
-  if (!tid) return;
-  await api('/api/admin/tournament/' + tid + '/stages', { method: 'POST', body: JSON.stringify({ name: document.getElementById('stageName').value || 'Ny stage', date: document.getElementById('stageDate').value || null, format: document.getElementById('stageFormat').value || 'strokeplay', order: parseInt(document.getElementById('stageOrder').value, 10) || 1, handicapPercentage: document.getElementById('stageHandicapPercentage').value || null, status: 'published' }) });
-  showToast('Stage opprettet');
-  loadStagesPanel();
-}
-
-async function setActiveStage(tid, stageId) {
-  await api('/api/admin/tournament/' + tid + '/active-stage/' + stageId, { method: 'PUT' });
-  showToast('Aktiv stage oppdatert');
-  loadStagesPanel();
-}
-
-async function deleteStage(stageId) {
-  await api('/api/admin/stage/' + stageId, { method: 'DELETE' });
-  showToast('Stage slettet');
-  loadStagesPanel();
-}
-
-async function addCupSide(tid) {
-  const name = document.getElementById('cupSideName').value;
-  if (!name) return;
-  await api('/api/admin/tournament/' + tid + '/sides', { method: 'POST', body: JSON.stringify({ name }) });
-  document.getElementById('cupSideName').value = '';
-  loadStagesPanel();
-}
-
-async function deleteCupSide(id) {
-  await api('/api/admin/side/' + id, { method: 'DELETE' });
-  loadStagesPanel();
-}
-
-
-async function loadPlayersPanel() {
-  const tid = document.getElementById('playersTournamentSelect')?.value;
-  if (!tid) return;
-  const [playersData, sidesData] = await Promise.all([
-    api('/api/admin/tournament/' + tid + '/players'),
-    api('/api/admin/tournament/' + tid + '/sides')
-  ]);
-  document.getElementById('playerSide').innerHTML = '<option value="">— Ingen —</option>' +
-    (sidesData.sides || []).map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
-  const rows = playersData.players || [];
-  document.getElementById('playersList').innerHTML = !rows.length ? '<div style="color:var(--text-muted)">Ingen spillere ennå.</div>' :
-    `<div style="overflow:auto"><table class="data-table"><thead><tr><th>Navn</th><th>Hcp</th><th>Lag</th><th>Aktiv</th><th>Handling</th></tr></thead><tbody>${rows.map((p) => `<tr><td>${p.name}</td><td>${p.handicap ?? '—'}</td><td>${p.side_name || '—'}</td><td>${p.active ? 'Ja' : 'Nei'}</td><td><button class="btn btn--danger btn--sm" onclick="deletePlayer(${p.id})"><i class="fas fa-trash"></i></button></td></tr>`).join('')}</tbody></table></div>`;
-}
-
-async function addPlayer() {
-  const tid = document.getElementById('playersTournamentSelect').value;
-  if (!tid) return;
-  const name = document.getElementById('playerName').value.trim();
-  if (!name) return showToast('Navn er påkrevd', 'error');
-  await api('/api/admin/tournament/' + tid + '/players', { method: 'POST', body: JSON.stringify({
-    name,
-    handicap: document.getElementById('playerHcp').value,
-    teamId: document.getElementById('playerSide').value || null,
-    active: parseInt(document.getElementById('playerActive').value, 10) || 1
-  })});
-  document.getElementById('playerName').value = '';
-  document.getElementById('playerHcp').value = '';
-  showToast('Spiller opprettet');
-  loadPlayersPanel();
-}
-
-async function deletePlayer(id) {
-  if (!confirm('Slette spiller?')) return;
-  await api('/api/admin/player/' + id, { method: 'DELETE' });
-  showToast('Spiller slettet');
-  loadPlayersPanel();
-}
-
-async function autoGeneratePairings(size) {
-  const st = document.getElementById('pairingStageSelect').value;
-  if (!st) return;
-  await api('/api/admin/stage/' + st + '/pairings/auto-generate', { method: 'POST', body: JSON.stringify({ size, randomize: true }) });
-  showToast('Pairings auto-generert');
-  loadStagesPanel();
-}
-
-async function addPairing() {
-  const stageId = document.getElementById('pairingStageSelect').value;
-  if (!stageId) return;
-  const playerIds = Array.from(document.getElementById('pairingPlayers').selectedOptions).map((o) => Number(o.value));
-  await api('/api/admin/stage/' + stageId + '/pairing', { method: 'POST', body: JSON.stringify({
-    teamId: document.getElementById('pairingTeam').value || null,
-    playerIds,
-    order: document.getElementById('pairingOrder').value || 1,
-    teeTime: document.getElementById('pairingTee').value || null
-  })});
-  showToast('Pairing lagt til');
-  loadStagesPanel();
-}
-
-async function deletePairing(id) {
-  await api('/api/admin/pairing/' + id, { method: 'DELETE' });
-  showToast('Pairing slettet');
-  loadStagesPanel();
-}
-
-async function addPairingMatch() {
-  const stageId = document.getElementById('pairingStageSelect').value;
-  if (!stageId) return;
-  await api('/api/admin/stage/' + stageId + '/pairing-match', { method: 'POST', body: JSON.stringify({
-    pairingAId: document.getElementById('matchPairA').value,
-    pairingBId: document.getElementById('matchPairB').value || null,
-    format: document.getElementById('matchFormat').value,
-    order: document.getElementById('matchOrder').value || 1,
-    teeTime: document.getElementById('matchTee').value || null,
-    status: 'scheduled'
-  })});
-  showToast('Match opprettet');
-  loadStagesPanel();
-}
-
-async function deletePairingMatch(id) {
-  await api('/api/admin/pairing-match/' + id, { method: 'DELETE' });
-  showToast('Match slettet');
-  loadStagesPanel();
-}
-
 // ── Oversikt (dashboard) ──────────────────────────────────────────────────────
 async function loadDashboard() {
   document.getElementById('statTournaments').textContent = allTournaments.length;
 
-  const upcoming = allTournaments.find(t=>t.status==='published') || allTournaments.find(t=>t.status==='live');
+  const upcoming = allTournaments.find(t=>t.status==='upcoming') || allTournaments.find(t=>t.status==='active');
   if (upcoming) {
     document.getElementById('dashNextName').textContent = upcoming.name;
     document.getElementById('dashNextDetails').textContent =
@@ -1345,7 +1002,7 @@ async function loadDashboard() {
     }
   } catch(_) {}
 
-  const active = allTournaments.find(t=>t.is_active);
+  const active = allTournaments.find(t=>t.status==='active');
   if (active) {
     try {
       const [teams, scores] = await Promise.all([
@@ -1360,12 +1017,11 @@ async function loadDashboard() {
           <div><div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em">Dato</div><strong>${formatTournamentDate(active.date)}</strong></div>
           <div><div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em">Bane</div><strong>${active.course||'—'}</strong></div>
           <div><div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em">Status</div><span class="badge badge--active">Aktiv</span></div>
-          <div><div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em">Spillform</div><strong>${formatLabel(active.format)}</strong></div>
         </div>`;
     } catch(_) {}
   } else {
     document.getElementById('dashActiveTournament').innerHTML =
-      '<p style="color:var(--text-muted)">Ingen aktiv turnering valgt ennå.</p>';
+      '<p style="color:var(--text-muted)">Ingen aktiv turnering. Opprett en under Turneringer og sett status til «aktiv».</p>';
     document.getElementById('statTeams').textContent = '—';
     document.getElementById('statScores').textContent = '—';
   }
@@ -1376,24 +1032,21 @@ async function loadTeams() {
   const tid = document.getElementById('teamsTournamentSelect').value;
   if (!tid) return;
   const d = await api('/api/admin/tournament/'+tid+'/teams');
-  applyFormatDrivenAdminLayout(tid);
   document.getElementById('teamCount').textContent = `(${d.teams.length} lag)`;
-  renderTeamRuleHint(tid);
   document.getElementById('teamsTable').innerHTML = !d.teams.length
     ? '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen lag ennå. Legg til ett ovenfor.</td></tr>'
     : d.teams.map((t,i) => {
-        const players = [t.player1, t.player2, t.player3, t.player4].filter(Boolean);
-        const handicaps = [t.player1_handicap || 0, t.player2_handicap || 0, t.player3_handicap || 0, t.player4_handicap || 0];
-        const hcpStr = handicaps.some(Boolean) ? ` <span style="font-size:.75rem;color:var(--text-muted)">(Hcp: ${handicaps.filter((_,i)=>players[i]).join('/')})</span>` : '';
+        const hcp1 = t.player1_handicap || 0, hcp2 = t.player2_handicap || 0;
+        const hcpStr = (hcp1||hcp2) ? ` <span style="font-size:.75rem;color:var(--text-muted)">(Hcp: ${hcp1}/${hcp2})</span>` : '';
         return `
         <tr>
           <td>${i+1}</td>
           <td><strong>${t.team_name}</strong></td>
-          <td>${players.join('<br>')}${hcpStr}</td>
+          <td>${t.player1}${hcpStr ? '<br>' + hcpStr.replace('Hcp: ','Hcp '+hcp1+'/') : ''}</td>
           <td>${t.player2}</td>
           <td><code style="background:var(--gold-pale);padding:2px 8px;border-radius:4px;font-weight:700;color:var(--gold-dark)">${t.pin_code}</code></td>
           <td style="display:flex;gap:6px">
-            <button onclick='editTeam(${t.id},${JSON.stringify(t.team_name)},${JSON.stringify(t.player1)},${JSON.stringify(t.player2)},${JSON.stringify(t.player3 || '')},${JSON.stringify(t.player4 || '')},${JSON.stringify(t.pin_code)},${handicaps[0]},${handicaps[1]},${handicaps[2]},${handicaps[3]})' class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)" title="Rediger"><i class="fas fa-pen"></i></button>
+            <button onclick='editTeam(${t.id},${JSON.stringify(t.team_name)},${JSON.stringify(t.player1)},${JSON.stringify(t.player2)},${JSON.stringify(t.pin_code)},${hcp1},${hcp2})' class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)" title="Rediger"><i class="fas fa-pen"></i></button>
             <button onclick='deleteTeam(${t.id},${JSON.stringify(t.team_name)})' class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
           </td>
         </tr>`;
@@ -1406,35 +1059,27 @@ async function addTeam() {
   const team_name=document.getElementById('newTeamName').value,
         player1=document.getElementById('newPlayer1').value,
         player2=document.getElementById('newPlayer2').value,
-        player3=document.getElementById('newPlayer3').value,
-        player4=document.getElementById('newPlayer4').value,
         pin_code=document.getElementById('newPin').value,
         player1_handicap=document.getElementById('newHcp1').value||0,
-        player2_handicap=document.getElementById('newHcp2').value||0,
-        player3_handicap=document.getElementById('newHcp3').value||0,
-        player4_handicap=document.getElementById('newHcp4').value||0;
+        player2_handicap=document.getElementById('newHcp2').value||0;
   if (!team_name||!player1||!player2||!pin_code) { showToast('Alle felt er påkrevd','error'); return; }
   if (!/^\d{4}$/.test(pin_code)) { showToast('PIN må være nøyaktig 4 siffer','error'); return; }
   try {
-    await api('/api/admin/team',{method:'POST',body:JSON.stringify({tournament_id:tid,team_name,player1,player2,player3,player4,pin_code,player1_handicap,player2_handicap,player3_handicap,player4_handicap})});
+    await api('/api/admin/team',{method:'POST',body:JSON.stringify({tournament_id:tid,team_name,player1,player2,pin_code,player1_handicap,player2_handicap})});
     showToast('Lag lagt til!');
-    ['newTeamName','newPlayer1','newPlayer2','newPlayer3','newPlayer4','newPin','newHcp1','newHcp2','newHcp3','newHcp4'].forEach(id=>document.getElementById(id).value='');
+    ['newTeamName','newPlayer1','newPlayer2','newPin','newHcp1','newHcp2'].forEach(id=>document.getElementById(id).value='');
     await loadTeams(); await loadDashboard(); loadAwardTeams();
   } catch(e) { showToast(e.message,'error'); }
 }
 
-function editTeam(id, team_name, player1, player2, player3, player4, pin_code, hcp1=0, hcp2=0, hcp3=0, hcp4=0) {
+function editTeam(id, team_name, player1, player2, pin_code, hcp1=0, hcp2=0) {
   document.getElementById('editTeamId').value = id;
   document.getElementById('editTeamName').value = team_name;
   document.getElementById('editTeamP1').value = player1;
   document.getElementById('editTeamP2').value = player2;
-  document.getElementById('editTeamP3').value = player3 || '';
-  document.getElementById('editTeamP4').value = player4 || '';
   document.getElementById('editTeamPin').value = pin_code;
   document.getElementById('editTeamHcp1').value = hcp1 || '';
   document.getElementById('editTeamHcp2').value = hcp2 || '';
-  document.getElementById('editTeamHcp3').value = hcp3 || '';
-  document.getElementById('editTeamHcp4').value = hcp4 || '';
   document.getElementById('editTeamCard').classList.remove('d-none');
   document.getElementById('editTeamCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
@@ -1444,17 +1089,13 @@ async function saveTeamEdit() {
   const team_name = document.getElementById('editTeamName').value;
   const player1 = document.getElementById('editTeamP1').value;
   const player2 = document.getElementById('editTeamP2').value;
-  const player3 = document.getElementById('editTeamP3').value;
-  const player4 = document.getElementById('editTeamP4').value;
   const pin_code = document.getElementById('editTeamPin').value;
   const player1_handicap = document.getElementById('editTeamHcp1').value || 0;
   const player2_handicap = document.getElementById('editTeamHcp2').value || 0;
-  const player3_handicap = document.getElementById('editTeamHcp3').value || 0;
-  const player4_handicap = document.getElementById('editTeamHcp4').value || 0;
   if (!team_name || !player1 || !player2 || !pin_code) { showToast('Alle felt er påkrevd', 'error'); return; }
   if (!/^\d{4}$/.test(pin_code)) { showToast('PIN må være nøyaktig 4 siffer', 'error'); return; }
   try {
-    await api('/api/admin/team/' + id, { method: 'PUT', body: JSON.stringify({ team_name, player1, player2, player3, player4, pin_code, player1_handicap, player2_handicap, player3_handicap, player4_handicap }) });
+    await api('/api/admin/team/' + id, { method: 'PUT', body: JSON.stringify({ team_name, player1, player2, pin_code, player1_handicap, player2_handicap }) });
     showToast('Lag oppdatert!');
     document.getElementById('editTeamCard').classList.add('d-none');
     await loadTeams();
@@ -1983,7 +1624,6 @@ async function loadAwardTeams() {
   if (!tid) return;
   try {
     const d = await api('/api/admin/tournament/'+tid+'/teams');
-  applyFormatDrivenAdminLayout(tid);
     awardTeamsCache = d.teams;
     document.getElementById('awardTeam').innerHTML =
       '<option value="">— Velg lag —</option>' +
@@ -2172,100 +1812,22 @@ function openLegacyFocusPicker(id, imgSrc, currentFocus) {
 
 
 let sponsorsCache = { home: [], hole: [] };
-let openSponsorRowId = null;
 
-function escapeSponsorValue(value) {
-  return String(value || '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
-}
-
-function sponsorFallbackPreview(item, fallbackTitle) {
-  if (item.logo_path) {
-    return `<img src="${escapeSponsorValue(item.logo_path)}" alt="${escapeSponsorValue(item.sponsor_name || fallbackTitle)}">`;
-  }
-  if (item.sponsor_name) {
-    return `<div style="font-weight:700;color:var(--dark)">${escapeSponsorValue(item.sponsor_name)}</div>`;
-  }
-  return '<div style="color:var(--text-muted);font-weight:600">Ingen sponsor valgt</div>';
-}
-
-function SponsorAccordionItem(item, type, indexKey) {
+function sponsorRowHtml(item, type, indexKey) {
   const rowId = `${type}-${indexKey}`;
-  const title = type === 'home' ? `Spot ${indexKey}` : `Hull ${indexKey}`;
-  const isOpen = openSponsorRowId ? openSponsorRowId === rowId : indexKey === 1;
   return `
-    <section class="sponsor-accordion-item ${isOpen ? 'is-open' : ''}" data-row="${rowId}">
-      <button type="button" class="sponsor-accordion-trigger" onclick="toggleSponsorAccordion('${rowId}')">
-        <span>${title}</span>
-        <i class="fas fa-chevron-down"></i>
-      </button>
-      <div class="sponsor-accordion-body">
-        <div class="sponsor-mobile-grid">
-          <div class="form-group" style="margin:0">
-            <label class="form-label">Sponsor navn</label>
-            <input class="form-input" data-field="sponsor_name" value="${escapeSponsorValue(item.sponsor_name)}" placeholder="Sponsornavn" oninput="updateSponsorPreview('${rowId}')">
-          </div>
-          <div class="form-group" style="margin:0">
-            <label class="form-label">Sponsor link/nettside</label>
-            <input class="form-input" data-field="sponsor_link" value="${escapeSponsorValue(item.sponsor_link)}" placeholder="https://...">
-          </div>
-          <div class="form-group" style="margin:0">
-            <label class="form-label">Sponsor logo URL</label>
-            <input class="form-input" data-field="logo_path" value="${escapeSponsorValue(item.logo_path)}" placeholder="/uploads/... eller https://..." oninput="updateSponsorPreview('${rowId}')">
-          </div>
-          <div class="form-group" style="margin:0">
-            <label class="form-label">Filopplasting for logo</label>
-            <input type="file" class="sponsor-file-input" data-field="logo_file" accept="image/*" onchange="uploadSponsorLogo(this, '${rowId}')">
-          </div>
-          <label style="display:flex;align-items:center;gap:10px;font-size:.95rem;color:var(--dark);font-weight:600">
-            <input type="checkbox" data-field="is_enabled" ${item.is_enabled ? 'checked' : ''} style="accent-color:var(--gold);width:20px;height:20px"> Aktiv / vis sponsor
-          </label>
-          <div class="form-group" style="margin:0">
-            <label class="form-label">Forhåndsvisning</label>
-            <div class="sponsor-preview-box" data-preview>${sponsorFallbackPreview(item, title)}</div>
-          </div>
-        </div>
-        <div class="sponsor-save-row">
-          <button class="btn btn--gold btn--sm" onclick="saveSingleSponsor('${rowId}')"><i class="fas fa-floppy-disk"></i> Lagre ${title}</button>
-          <span class="sponsor-save-status" data-save-status></span>
-        </div>
+    <div data-row="${rowId}" style="display:grid;grid-template-columns:120px 1fr 1fr 170px 170px;gap:10px;align-items:center;margin-bottom:10px;padding:10px;border:1px solid var(--gold-border);border-radius:10px;background:var(--off-white)">
+      <div style="font-weight:700;color:var(--dark)">${type === 'home' ? `Spot ${indexKey}` : `Hull ${indexKey}`}</div>
+      <input class="form-input" data-field="sponsor_name" value="${item.sponsor_name || ''}" placeholder="Sponsornavn">
+      <input class="form-input" data-field="description" value="${item.description || ''}" placeholder="Kort beskrivelse">
+      <div>
+        <input class="form-input" data-field="logo_path" value="${item.logo_path || ''}" placeholder="Logo URL eller last opp">
+        <input type="file" data-field="logo_file" accept="image/*" style="margin-top:6px;font-size:.75rem" onchange="uploadSponsorLogo(this, '${rowId}')">
       </div>
-    </section>`;
-}
-
-function toggleSponsorAccordion(rowId) {
-  openSponsorRowId = rowId;
-  document.querySelectorAll('#panel-sponsors .sponsor-accordion-item').forEach(item => {
-    item.classList.toggle('is-open', item.getAttribute('data-row') === rowId);
-  });
-}
-
-function updateSponsorPreview(rowId) {
-  const row = document.querySelector(`[data-row="${rowId}"]`);
-  if (!row) return;
-  const title = rowId.startsWith('home-') ? `Spot ${rowId.split('-')[1]}` : `Hull ${rowId.split('-')[1]}`;
-  const data = extractSponsorFromRow(row);
-  const preview = row.querySelector('[data-preview]');
-  if (preview) preview.innerHTML = sponsorFallbackPreview(data, title);
-}
-
-function extractSponsorFromRow(row) {
-  const [placement, num] = row.getAttribute('data-row').split('-');
-  const isHome = placement === 'home';
-  return {
-    placement,
-    spot_number: isHome ? Number(num) : null,
-    hole_number: isHome ? null : Number(num),
-    sponsor_name: row.querySelector('[data-field="sponsor_name"]').value,
-    description: '',
-    sponsor_link: row.querySelector('[data-field="sponsor_link"]').value,
-    logo_path: row.querySelector('[data-field="logo_path"]').value,
-    is_enabled: row.querySelector('[data-field="is_enabled"]').checked
-  };
+      <label style="display:flex;align-items:center;gap:8px;font-size:.84rem;color:var(--text-muted)">
+        <input type="checkbox" data-field="is_enabled" ${item.is_enabled ? 'checked' : ''} style="accent-color:var(--gold)"> Vis sponsor
+      </label>
+    </div>`;
 }
 
 async function loadSponsorsAdmin() {
@@ -2276,16 +1838,15 @@ async function loadSponsorsAdmin() {
     return;
   }
   const d = await api('/api/admin/tournament/' + tid + '/sponsors');
-  sponsorsCache = d || { home: [], hole: [] };
+  sponsorsCache = d;
   const homeMap = {};
-  (sponsorsCache.home || []).forEach(r => { homeMap[r.spot_number] = r; });
+  (d.home || []).forEach(r => { homeMap[r.spot_number] = r; });
   const holeMap = {};
-  (sponsorsCache.hole || []).forEach(r => { holeMap[r.hole_number] = r; });
+  (d.hole || []).forEach(r => { holeMap[r.hole_number] = r; });
 
-  document.getElementById('homeSponsorRows').innerHTML = [1,2,3,4,5].map(n => SponsorAccordionItem(homeMap[n] || { spot_number:n, is_enabled:0 }, 'home', n)).join('');
+  document.getElementById('homeSponsorRows').innerHTML = [1,2,3,4,5].map(n => sponsorRowHtml(homeMap[n] || { spot_number:n, is_enabled:0 }, 'home', n)).join('');
   document.getElementById('holeSponsorRows').innerHTML = Array.from({ length: 18 }, (_, i) => i + 1)
-    .map(n => SponsorAccordionItem(holeMap[n] || { hole_number:n, is_enabled:0 }, 'hole', n)).join('');
-  toggleSponsorAccordion(openSponsorRowId || 'home-1');
+    .map(n => sponsorRowHtml(holeMap[n] || { hole_number:n, is_enabled:0 }, 'hole', n)).join('');
 }
 
 async function uploadSponsorLogo(input, rowId) {
@@ -2299,30 +1860,27 @@ async function uploadSponsorLogo(input, rowId) {
   const data = await res.json();
   if (!res.ok) { showToast(data.error || 'Kunne ikke laste opp logo', 'error'); return; }
   const row = document.querySelector(`[data-row="${rowId}"]`);
-  if (row) {
-    row.querySelector('[data-field="logo_path"]').value = data.logo_path || '';
-    updateSponsorPreview(rowId);
-  }
+  if (row) row.querySelector('[data-field="logo_path"]').value = data.logo_path || '';
   showToast('Logo lastet opp');
-}
-
-async function saveSingleSponsor(rowId) {
-  const tid = document.getElementById('sponsorsTournamentSelect').value;
-  if (!tid) { showToast('Velg turnering først', 'error'); return; }
-  const row = document.querySelector(`[data-row="${rowId}"]`);
-  if (!row) return;
-  const payload = [extractSponsorFromRow(row)];
-  await api('/api/admin/tournament/' + tid + '/sponsors', { method: 'POST', body: JSON.stringify({ sponsors: payload }) });
-  const status = row.querySelector('[data-save-status]');
-  if (status) status.textContent = 'Lagret ✓';
-  showToast('Sponsor lagret');
 }
 
 async function saveSponsorsAdmin() {
   const tid = document.getElementById('sponsorsTournamentSelect').value;
   if (!tid) { showToast('Velg turnering først', 'error'); return; }
   const rows = Array.from(document.querySelectorAll('#panel-sponsors [data-row]'));
-  const sponsors = rows.map(extractSponsorFromRow);
+  const sponsors = rows.map(row => {
+    const [placement, num] = row.getAttribute('data-row').split('-');
+    const isHome = placement === 'home';
+    return {
+      placement,
+      spot_number: isHome ? Number(num) : null,
+      hole_number: isHome ? null : Number(num),
+      sponsor_name: row.querySelector('[data-field="sponsor_name"]').value,
+      description: row.querySelector('[data-field="description"]').value,
+      logo_path: row.querySelector('[data-field="logo_path"]').value,
+      is_enabled: row.querySelector('[data-field="is_enabled"]').checked
+    };
+  });
   await api('/api/admin/tournament/' + tid + '/sponsors', {
     method: 'POST',
     body: JSON.stringify({ sponsors })
@@ -2507,6 +2065,5 @@ async function deleteCourse(id, name) {
   } catch(e) { showToast(e.message, 'error'); }
 }
 </script>
-  <script src="/js/pwa.js" defer></script>
 </body>
 </html>

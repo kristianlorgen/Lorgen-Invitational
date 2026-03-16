@@ -18,12 +18,6 @@
   <meta name="twitter:description" content="Power • Precision • Party — Live leaderboard, bilder og resultater." />
   <meta name="twitter:image" content="https://www.lorgen-invitational.no/images/logo.png" />
   <link rel="icon" type="image/png" href="/images/logo.png">
-  <meta name="theme-color" content="#0D1B2A">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Lorgen">
-  <link rel="apple-touch-icon" href="/images/logo.png">
-  <link rel="manifest" href="/manifest.webmanifest">
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </head>
@@ -39,7 +33,7 @@
       <li><a href="/gameday" class="nav-link">Spilleregler &amp; Informasjon</a></li>
       <li><a href="/scoreboard" class="nav-link">Live Resultater</a></li>
       <li><a href="/gallery" class="nav-link">Turneringsbilder</a></li>
-      <li><a href="/historikk" class="nav-link">Historikk</a></li>
+      <li><a href="/legacy" class="nav-link">Hall of Fame</a></li>
       <li><a href="/enter-score" class="nav-link nav-link--cta">Scorekort</a></li>
     </ul>
 
@@ -54,7 +48,7 @@
         <a href="/gameday" class="quick-nav-link"><i class="fas fa-calendar-day"></i> Spilleregler & Informasjon</a>
         <a href="/scoreboard" class="quick-nav-link"><i class="fas fa-flag"></i> Live Resultater</a>
         <a href="/gallery" class="quick-nav-link"><i class="fas fa-camera"></i> Turneringsbilder</a>
-        <a href="/historikk" class="quick-nav-link"><i class="fas fa-archive"></i> Historikk</a>
+        <a href="/legacy" class="quick-nav-link"><i class="fas fa-trophy"></i> Hall of Fame</a>
         <a href="/enter-score" class="quick-nav-link"><i class="fas fa-golf-ball"></i> Scorekort</a>
         <a href="/admin" class="quick-nav-link" style="color:rgba(255,255,255,.45)"><i class="fas fa-lock"></i> Admin</a>
       </div>
@@ -69,7 +63,7 @@
   <a href="/gameday" class="nav-link">Spilleregler &amp; Informasjon</a>
   <a href="/scoreboard" class="nav-link">Live Resultater</a>
   <a href="/gallery" class="nav-link">Turneringsbilder</a>
-  <a href="/historikk" class="nav-link">Historikk</a>
+  <a href="/legacy" class="nav-link">Hall of Fame</a>
   <a href="/enter-score" class="nav-link">Scorekort</a>
   <a href="/admin" class="nav-link" style="color:rgba(255,255,255,.35);font-size:.78rem">Admin</a>
 </div>
@@ -132,7 +126,6 @@
       <div class="hero-meta-item">
         <div class="label">Bane</div>
         <div class="value" id="heroCourse">TBA</div>
-        <div class="badge" id="heroFormatBadge" style="margin-top:8px;display:inline-flex">Spillform: —</div>
       </div>
       <div class="hero-divider"></div>
       <div class="hero-meta-item">
@@ -224,7 +217,7 @@
         </div>
       </div>
       <div id="countdownDate" style="margin-top:24px;font-size:.85rem;color:rgba(255,255,255,.35);letter-spacing:.1em;text-transform:uppercase"></div>
-      <div id="noTournament" class="d-none" style="color:rgba(255,255,255,.5);font-size:1rem">Ingen aktiv turnering valgt ennå.<br>Kom tilbake senere for live resultater og turneringsinformasjon.</div>
+      <div id="noTournament" class="d-none" style="color:rgba(255,255,255,.5);font-size:1rem">Ingen kommende turnering er planlagt ennå. Sjekk tilbake snart.</div>
     </div>
   </div>
 </section>
@@ -252,7 +245,7 @@
         </div>
       </div>
       <div style="margin-top:24px">
-        <a href="/historikk" class="btn btn--outline" style="color:var(--gold-dark);border-color:var(--gold)">Se tidligere turneringer <i class="fas fa-arrow-right" style="margin-left:4px"></i></a>
+        <a href="/legacy" class="btn btn--outline" style="color:var(--gold-dark);border-color:var(--gold)">Se alle mestere <i class="fas fa-arrow-right" style="margin-left:4px"></i></a>
       </div>
     </div>
   </div>
@@ -280,7 +273,7 @@
     <div style="display:flex;align-items:center;justify-content:center;gap:16px;flex-wrap:wrap">
       <a href="/scoreboard" class="btn btn--gold"><i class="fas fa-list-ol"></i> Live Resultater</a>
       <a href="/gameday" class="btn btn--dark"><i class="fas fa-flag"></i> Spilleregler & Informasjon</a>
-      <a href="/historikk" class="btn btn--outline" style="color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-archive"></i> Historikk</a>
+      <a href="/legacy" class="btn btn--outline" style="color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-trophy"></i> Hall of Fame</a>
       <a href="/enter-score" class="btn btn--dark"><i class="fas fa-pencil"></i> Scorekort</a>
     </div>
   </div>
@@ -332,8 +325,6 @@
   </div>
 </footer>
 
-<script src="/js/active-tournament.js"></script>
-<script src="/js/tournament-formats.js"></script>
 <script>
 document.getElementById('footerYear').textContent = new Date().getFullYear();
 window.addEventListener('scroll', () => {
@@ -363,19 +354,16 @@ function formatTournamentDate(dateValue, includeWeekday = false) {
   });
 }
 
-let currentTournamentId = null;
-
 async function loadTournament() {
   try {
-    const tournament = await ActiveTournament.getActiveTournament();
-    currentTournamentId = tournament?.id || null;
-    if (tournament) {
-      document.getElementById('heroTournamentName').textContent = tournament.name;
-      document.getElementById('heroDate').textContent = formatTournamentDate(tournament.date);
-      document.getElementById('heroCourse').textContent = tournament.course || 'TBA';
-      document.getElementById('heroFormatBadge').textContent = `Spillform: ${TournamentFormats.getFormatDefinition(tournament.format).label}`;
-      startCountdown(tournament.date);
-      document.getElementById('countdownDate').textContent = formatTournamentDate(tournament.date, true);
+    const r = await fetch('/api/tournament');
+    const d = await r.json();
+    if (d.tournament) {
+      document.getElementById('heroTournamentName').textContent = d.tournament.name;
+      document.getElementById('heroDate').textContent = formatTournamentDate(d.tournament.date);
+      document.getElementById('heroCourse').textContent = d.tournament.course || 'TBA';
+      startCountdown(d.tournament.date);
+      document.getElementById('countdownDate').textContent = formatTournamentDate(d.tournament.date, true);
     } else {
       document.getElementById('noTournament').classList.remove('d-none');
       document.getElementById('countdown').classList.add('d-none');
@@ -463,41 +451,22 @@ async function loadGallery() {
 
 async function loadSponsors() {
   try {
-    const query = currentTournamentId ? `&tournament_id=${currentTournamentId}` : '';
-    const r = await fetch('/api/sponsors?placement=home' + query);
+    const r = await fetch('/api/sponsors?placement=home');
     const d = await r.json();
-    const sponsors = Array.isArray(d.sponsors) ? d.sponsors : [];
-    const topFive = sponsors
-      .filter(s => s && s.spot_number >= 1 && s.spot_number <= 5 && s.is_enabled)
-      .sort((a,b)=>a.spot_number-b.spot_number);
-    if (!topFive.length) return;
+    if (!d.sponsors || d.sponsors.length === 0) return;
     const section = document.getElementById('sponsorSection');
     const grid = document.getElementById('sponsorGrid');
+    const topFive = d.sponsors.filter(s => s.spot_number >= 1 && s.spot_number <= 5).sort((a,b)=>a.spot_number-b.spot_number);
+    if (!topFive.length) return;
     section.classList.remove('d-none');
-    grid.innerHTML = SponsorsGrid(topFive);
-  } catch(_) {}
-}
-
-function sponsorCardContent(sponsor) {
-  if (sponsor.logo_path) {
-    return `<img src="${sponsor.logo_path}" alt="${sponsor.sponsor_name || 'Sponsor'}" class="sponsor-logo">`;
-  }
-  if (sponsor.sponsor_name) {
-    return `<div class="sponsor-logo sponsor-logo--fallback">${sponsor.sponsor_name}</div>`;
-  }
-  return '<div class="sponsor-logo sponsor-logo--placeholder">Ingen sponsor valgt</div>';
-}
-
-function SponsorsGrid(list) {
-  return list.map(s => {
-    const content = sponsorCardContent(s);
-    const card = `
+    grid.innerHTML = topFive.map(s => `
       <article class="sponsor-card">
-        ${content}
+        ${s.logo_path ? `<img src="${s.logo_path}" alt="${s.sponsor_name || 'Sponsor'}" class="sponsor-logo">` : '<div class="sponsor-logo sponsor-logo--placeholder"><i class="fas fa-image"></i></div>'}
         <span class="sponsor-name">${s.sponsor_name || `Sponsorplass ${s.spot_number}`}</span>
-      </article>`;
-    return s.sponsor_link ? `<a class="sponsor-card-link" href="${s.sponsor_link}" target="_blank" rel="noopener noreferrer">${card}</a>` : card;
-  }).join('');
+        ${s.description ? `<span class="sponsor-description">${s.description}</span>` : ''}
+      </article>
+    `).join('');
+  } catch(_) {}
 }
 
 async function loadCoinBack() {
@@ -509,11 +478,11 @@ async function loadCoinBack() {
   } catch(_) {}
 }
 
-loadTournament().finally(loadSponsors);
+loadTournament();
 loadChampion();
 loadGallery();
 loadCoinBack();
+loadSponsors();
 </script>
-  <script src="/js/pwa.js" defer></script>
 </body>
 </html>

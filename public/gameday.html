@@ -6,12 +6,6 @@
   <title>Spilleregler & Informasjon — Lorgen Invitational</title>
   <meta name="description" content="Spilledag informasjon for Lorgen Invitational — alt du trenger å vite om turneringsdagen.">
   <link rel="icon" type="image/png" href="/images/logo.png">
-  <meta name="theme-color" content="#0D1B2A">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Lorgen">
-  <link rel="apple-touch-icon" href="/images/logo.png">
-  <link rel="manifest" href="/manifest.webmanifest">
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </head>
@@ -139,7 +133,6 @@
       <span class="section-tag">Slik Spilles Det</span>
       <h2 class="section-title">2-Mann Scramble <span>Format</span></h2>
       <p class="section-subtitle">Et lagformat designet for maksimal moro og konkurranse</p>
-      <div class="badge" id="gamedayFormatBadge" style="margin:10px auto 0;display:inline-flex">Spillform: —</div>
     </div>
 
     <div style="max-width:840px;margin:0 auto">
@@ -291,8 +284,6 @@
   </div>
 </footer>
 
-<script src="/js/active-tournament.js"></script>
-<script src="/js/tournament-formats.js"></script>
 <script>
 document.getElementById('footerYear').textContent = new Date().getFullYear();
 window.addEventListener('scroll', () => {
@@ -347,9 +338,10 @@ async function loadHeroSponsors() {
 
 async function loadGameday() {
   try {
-    const t = await ActiveTournament.getActiveTournament();
-    if (t) {
-      document.getElementById('gamedayFormatBadge').textContent = `Spillform: ${TournamentFormats.getFormatDefinition(t.format).label}`;
+    const r = await fetch('/api/tournament');
+    const d = await r.json();
+    if (d.tournament) {
+      const t = d.tournament;
       const datoFull = formatTournamentDate(t.date, true);
       const datoKort = formatTournamentDate(t.date);
 
@@ -368,10 +360,8 @@ async function loadGameday() {
       }
 
       // Fotoutfordring-hull
-      const holesResponse = await fetch('/api/tournament');
-      const tournamentPayload = await holesResponse.json();
-      if (tournamentPayload.holes) {
-        const photoHoles = tournamentPayload.holes.filter(h => h.requires_photo);
+      if (d.holes) {
+        const photoHoles = d.holes.filter(h => h.requires_photo);
         if (photoHoles.length > 0) {
           const placeholder = document.getElementById('specialPlaceholder');
           if (placeholder) placeholder.remove();
@@ -387,13 +377,6 @@ async function loadGameday() {
           });
         }
       }
-    } else {
-      document.getElementById('heroDateLine').textContent = 'Ingen aktiv turnering valgt ennå. Kom tilbake senere for live resultater og turneringsinformasjon.';
-      const teamsPlaceholder = document.getElementById('teamsPlaceholder');
-      if (teamsPlaceholder) teamsPlaceholder.innerHTML = '<i class="fas fa-users" style="display:block;font-size:1.3rem;color:var(--gold);margin-bottom:10px"></i>Ingen aktiv turnering valgt ennå.';
-      const specialPlaceholder = document.getElementById('specialPlaceholder');
-      if (specialPlaceholder) specialPlaceholder.textContent = 'Kom tilbake senere for live resultater og turneringsinformasjon.';
-      return;
     }
 
     // Last inn lag via resultattavle-data
@@ -425,6 +408,5 @@ async function loadGameday() {
 loadHeroSponsors();
 loadGameday();
 </script>
-  <script src="/js/pwa.js" defer></script>
 </body>
 </html>
