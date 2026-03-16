@@ -33,11 +33,11 @@
 <body>
 <div class="shell">
   <div class="top-nav">
-    <a href="/admin.html#dashboard">Dashboard</a>
-    <a href="/admin.html#tournament">Tournament</a>
+    <a href="/admin.html#dashboard">Oversikt</a>
+    <a href="/admin.html#tournament">Turnering</a>
     <a href="/admin/setup-wizard" class="active">Wizard</a>
-    <a href="/admin.html#sponsors">Sponsors</a>
-    <a href="/admin/control-panel">Settings</a>
+    <a href="/admin.html#sponsors">Partnere</a>
+    <a href="/admin/control-panel">Innstillinger</a>
   </div>
 
   <div id="loginCard" class="card" style="max-width:460px;margin:40px auto;display:none">
@@ -53,7 +53,7 @@
     <div class="header">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
         <div>
-          <div style="font-family:var(--font-heading);font-size:1.2rem;color:var(--gold-light)">Tournament Setup Wizard</div>
+          <div style="font-family:var(--font-heading);font-size:1.2rem;color:var(--gold-light)">Turneringswizard</div>
           <div id="stepLabel" style="color:rgba(255,255,255,.7);font-size:.82rem"></div>
         </div>
         <button class="btn btn--dark btn--sm" onclick="saveDraft()">Lagre som utkast</button>
@@ -72,6 +72,8 @@
         <div class="form-group"><label class="form-label">Handicapprosent</label><input id="hcpPercent" type="number" min="0" max="100" step="1" class="form-input"></div>
         <div class="form-group"><label class="form-label">Status</label><select id="status" class="form-select"><option value="draft">Utkast</option><option value="published">Publisert</option><option value="live">Live</option><option value="paused">Pauset</option><option value="completed">Fullført</option><option value="archived">Arkivert</option></select></div>
         <div class="form-group" style="grid-column:1/-1"><label class="form-label">Beskrivelse</label><textarea id="description" class="form-input form-textarea" style="min-height:70px"></textarea></div>
+        <div class="form-group" style="grid-column:1/-1"><label class="form-label">Informasjon til spilledag</label><textarea id="gamedayInfo" class="form-input form-textarea" style="min-height:80px" placeholder="Program, oppmøtetid, praktisk info"></textarea></div>
+        <div class="form-group" style="grid-column:1/-1"><label class="form-label">Spilleregler og merknader</label><textarea id="rulesText" class="form-input form-textarea" style="min-height:80px" placeholder="Lokale regler, tie-break, spesialregler"></textarea></div>
       </div>
       <div id="step1Error" class="error"></div>
     </div></section>
@@ -97,6 +99,12 @@
           <option value="create_and_open_scoring">Lagre og åpne scorecard</option>
           <option value="create_and_publish_leaderboard">Lagre og publiser leaderboard</option>
           <option value="draft">Lagre som utkast</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Live leaderboard ved lagring</label>
+        <select id="leaderboardVisibility" class="form-select">
+          <option value="visible">Vis leaderboard for publikum</option>
+          <option value="hidden">Hold leaderboard skjult</option>
         </select>
       </div>
       <div id="step4Error" class="error"></div>
@@ -254,6 +262,11 @@ function wizardStateFromExisting(data) {
   const tournament = data?.tournament || {};
   const formatKey = resolveFormatKey(tournament.format);
   const cfg = formatSettings[formatKey] || formatSettings.strokeplay;
+  const tournamentSettings = (() => {
+    if (!tournament.format_settings) return {};
+    if (typeof tournament.format_settings === 'object') return tournament.format_settings;
+    try { return JSON.parse(tournament.format_settings); } catch { return {}; }
+  })();
   const storedHcp = Number(tournament.handicap_percentage);
   const defaultHcp = Number(cfg.defaultHcpPercent || 100);
   const teams = Array.isArray(data?.teams) ? data.teams : [];
@@ -294,7 +307,10 @@ function wizardStateFromExisting(data) {
       course: tournament.course || '',
       handicapPercent: Number.isFinite(storedHcp) ? storedHcp : defaultHcp,
       status: tournament.status || 'draft',
-      description: tournament.description || ''
+      description: tournament.description || '',
+      gamedayInfo: tournament.gameday_info || '',
+      rulesText: tournamentSettings?.wizard?.rulesText || '',
+      leaderboardVisibility: Number(tournament.results_published || 0) === 1 ? 'visible' : 'hidden'
     },
     step2: {
       setupMode: cfg.useTeams ? 'manual' : 'players',
@@ -321,11 +337,14 @@ function applyWizardState(next) {
   document.getElementById('hcpPercent').value = next.step1?.handicapPercent ?? selectedFormatConfig().defaultHcpPercent;
   document.getElementById('status').value = next.step1?.status || 'draft';
   document.getElementById('description').value = next.step1?.description || '';
+  document.getElementById('gamedayInfo').value = next.step1?.gamedayInfo || '';
+  document.getElementById('rulesText').value = next.step1?.rulesText || '';
 
   const publishAction = document.getElementById('publishAction');
   publishAction.innerHTML = state.mode === 'edit'
     ? '<option value="update">Oppdater turnering</option><option value="draft">Lagre som utkast</option>'
     : '<option value="create_and_set_active">Lagre og sett som aktiv</option><option value="create_and_open_scoring">Lagre og åpne scorecard</option><option value="create_and_publish_leaderboard">Lagre og publiser leaderboard</option><option value="draft">Lagre som utkast</option>';
+  document.getElementById('leaderboardVisibility').value = next.step1?.leaderboardVisibility || 'visible';
 
   renderParticipants();
   renderStep();
@@ -606,6 +625,8 @@ function buildPayload(action = 'draft') {
       endDate: document.getElementById('endDate').value || document.getElementById('date').value,
       format: cfg.apiFormat,
       description: document.getElementById('description').value.trim(),
+      gamedayInfo: document.getElementById('gamedayInfo').value.trim(),
+      rulesText: document.getElementById('rulesText').value.trim(),
       status: document.getElementById('status').value || 'draft',
       mode: 'single_format',
       tournamentId: state.tournamentId
@@ -628,7 +649,10 @@ function buildPayload(action = 'draft') {
         ? state.teams.map((team, idx) => ({ id: team.id, teamName: String(team.name || '').trim() || `Lag ${idx + 1}`, pin: team.pin, players: (team.players || []).map((player) => ({ id: player.id, name: player.name, handicap: player.handicap })) }))
         : state.participants.map((player) => ({ id: player.id, name: player.name, pin: player.pin, handicap: player.handicap }))
     },
-    publishAction: action
+    publishAction: action,
+    live: {
+      leaderboardVisibility: document.getElementById('leaderboardVisibility').value || 'visible'
+    }
   };
 }
 
@@ -779,7 +803,10 @@ async function boot() {
       course: '',
       handicapPercent: selectedFormatConfig().defaultHcpPercent,
       status: 'draft',
-      description: ''
+      description: '',
+      gamedayInfo: '',
+      rulesText: '',
+      leaderboardVisibility: 'visible'
     },
     step2: { setupMode: selectedFormatConfig().defaultMode, teams: [], teamPool: [], participants: [] }
   });
