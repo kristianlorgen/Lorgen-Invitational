@@ -1348,16 +1348,17 @@ function renderTeamScores() {
   const scoresMap = {};
   teamScores.forEach(s => scoresMap[s.hole_number] = s);
 
-  const total = teamScores.reduce((sum, s) => sum + (s.score || 0), 0);
-  const parTotal = teamScores.reduce((sum, s) => sum + (s.par || 4), 0);
-  const toPar = total > 0 ? total - parTotal : null;
+  const playedScores = teamScores.filter(s => Number(s.score) > 0);
+  const total = playedScores.reduce((sum, s) => sum + (s.score || 0), 0);
+  const parTotal = playedScores.reduce((sum, s) => sum + (s.par || 4), 0);
+  const toPar = playedScores.length > 0 ? total - parTotal : null;
   const isLocked = !!team.locked;
 
   // Statuslinje
   document.getElementById('scoresTeamStatus').classList.remove('d-none');
   document.getElementById('scoresTeamInfo').innerHTML =
     `<strong>${team.team_name}</strong> · ${team.player1} &amp; ${team.player2} ·
-     ${teamScores.filter(s=>s.score>0).length}/18 hull innsendt
+     ${playedScores.length}/18 hull innsendt
      ${total ? ' · Totalt: ' + total + (toPar !== null ? (toPar > 0 ? ' (+'+toPar+')' : toPar===0 ? ' (E)' : ' ('+toPar+')') : '') : ''}
      ${isLocked ? '&nbsp;<span style="color:var(--danger)"><i class="fas fa-lock"></i> Låst</span>' : ''}`;
 
