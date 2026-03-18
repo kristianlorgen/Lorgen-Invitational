@@ -554,6 +554,7 @@
 
 <input type="file" id="photoInput" accept="image/*" capture="environment" style="display:none">
 
+<script src="/js/scramble-handicap.js"></script>
 <script>
 window.addEventListener('scroll', () => {
   document.getElementById('navbar').classList.toggle('scrolled', window.scrollY > 40);
@@ -1029,7 +1030,7 @@ function getCourseHandicap() {
   const hcp2 = parseFloat(teamData.player2_handicap) || 0;
   if (!hcp1 && !hcp2) return 0;
   const slope = (tournamentData && tournamentData.slope_rating) || 113;
-  return Math.round((hcp1 + hcp2) * 0.5 * slope / 113);
+  return ScrambleHandicap.calculateTwoManScrambleHandicap(hcp1, hcp2, slope);
 }
 
 function renderAll() {

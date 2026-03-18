@@ -6,6 +6,7 @@ const multer  = require('multer');
 const path    = require('path');
 const fs      = require('fs');
 const db      = require('./database');
+const { calculateTwoManScrambleHandicap } = require('./public/js/scramble-handicap');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -381,23 +382,18 @@ function buildScoreboard(tournament) {
       if (h) { total += s.score; par += h.par; done++; }
       holeScores[s.hole_number] = { score: s.score, photo: normalizePhotoPath(s.photo_path) };
     });
-    const hcpIndex = ((team.player1_handicap || 0) + (team.player2_handicap || 0)) * 0.25;
-    const courseHcp = Math.round(hcpIndex * slopeRating / 113);
-    let usedHandicapStrokes = 0;
-    teamScores.forEach(s => {
-      const h = holes.find(h => h.hole_number === s.hole_number);
-      const si = h?.stroke_index || 0;
-      if (!si || courseHcp <= 0) return;
-      if (courseHcp >= si) usedHandicapStrokes += 1;
-      if (courseHcp >= si + 18) usedHandicapStrokes += 1;
-    });
-    const netScore = total > 0 ? total - usedHandicapStrokes : 0;
+    const teamScrambleHcp = calculateTwoManScrambleHandicap(
+      team.player1_handicap || 0,
+      team.player2_handicap || 0,
+      slopeRating
+    );
+    const netScore = total > 0 ? total - teamScrambleHcp : 0;
     const netToPar = total > 0 ? netScore - par : 0;
     return {
       team_id: team.id, team_name: team.team_name,
       player1: team.player1, player2: team.player2,
       player1_handicap: team.player1_handicap || 0, player2_handicap: team.player2_handicap || 0,
-      handicap: courseHcp, used_handicap_strokes: usedHandicapStrokes, net_score: netScore, net_to_par: netToPar,
+      handicap: teamScrambleHcp, used_handicap_strokes: teamScrambleHcp, net_score: netScore, net_to_par: netToPar,
       total_score: total, total_par: par, to_par: total - par,
       holes_completed: done, hole_scores: holeScores
     };
