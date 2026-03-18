@@ -379,16 +379,22 @@ function buildScoreboard(tournament) {
     const holeScores = {};
     teamScores.forEach(s => {
       const h = holes.find(h => h.hole_number === s.hole_number);
-      if (h) { total += s.score; par += h.par; done++; }
-      holeScores[s.hole_number] = { score: s.score, photo: normalizePhotoPath(s.photo_path) };
+      const scoreValue = Number(s.score);
+      const hasRecordedScore = Number.isFinite(scoreValue) && scoreValue > 0;
+      if (h && hasRecordedScore) {
+        total += scoreValue;
+        par += h.par;
+        done++;
+      }
+      holeScores[s.hole_number] = { score: hasRecordedScore ? scoreValue : null, photo: normalizePhotoPath(s.photo_path) };
     });
     const teamScrambleHcp = calculateTwoManScrambleHandicap(
       team.player1_handicap || 0,
       team.player2_handicap || 0,
       slopeRating
     );
-    const netScore = total > 0 ? total - teamScrambleHcp : 0;
-    const netToPar = total > 0 ? netScore - par : 0;
+    const netScore = done > 0 ? total - teamScrambleHcp : 0;
+    const netToPar = done > 0 ? netScore - par : 0;
     return {
       team_id: team.id, team_name: team.team_name,
       player1: team.player1, player2: team.player2,
