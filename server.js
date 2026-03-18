@@ -268,9 +268,9 @@ function resolveTeamForActiveTournament(req, pinInput) {
   const t = db.prepare(`SELECT * FROM tournaments WHERE status='active' ORDER BY date DESC LIMIT 1`).get();
   if (!t) return { error: { status: 404, message: 'Ingen aktiv turnering' } };
 
-  const pin = String(pinInput || '').trim();
+  const pin = normalizePin(pinInput);
   if (pin) {
-    const teamByPin = db.prepare('SELECT id, team_name, tournament_id FROM teams WHERE tournament_id=? AND pin_code=? LIMIT 1').get(t.id, pin);
+    const teamByPin = findTeamByPin(t.id, pin, 'id, team_name, tournament_id');
     if (!teamByPin) return { error: { status: 401, message: 'Ugyldig PIN' } };
     return { tournament: t, team: teamByPin };
   }
@@ -283,6 +283,39 @@ function resolveTeamForActiveTournament(req, pinInput) {
   }
 
   return { error: { status: 400, message: 'Mangler pin for chat' } };
+}
+
+function normalizePin(pinInput) {
+  const raw = String(pinInput ?? '').trim();
+  if (!raw) return '';
+  const compact = raw.replace(/\s+/g, '');
+  if (/^\d+(\.0+)?$/.test(compact)) {
+    const n = Number(compact);
+    if (Number.isFinite(n)) return String(Math.trunc(n)).padStart(4, '0').slice(-4);
+  }
+  const digits = compact.replace(/\D/g, '');
+  if (!digits) return '';
+  return digits.slice(-4);
+}
+
+function pinLookupCandidates(pin) {
+  const normalized = normalizePin(pin);
+  if (!normalized) return [];
+  const n = Number(normalized);
+  const candidates = new Set([normalized]);
+  if (Number.isFinite(n)) {
+    candidates.add(String(n));
+    candidates.add(`${n}.0`);
+  }
+  return Array.from(candidates);
+}
+
+function findTeamByPin(tournamentId, pin, fields = '*') {
+  const candidates = pinLookupCandidates(pin);
+  if (!candidates.length) return null;
+  const placeholders = candidates.map(() => '?').join(',');
+  const query = `SELECT ${fields} FROM teams WHERE tournament_id=? AND TRIM(pin_code) IN (${placeholders}) LIMIT 1`;
+  return db.prepare(query).get(tournamentId, ...candidates);
 }
 
 
@@ -518,12 +551,13 @@ app.get('/api/auth/github-url', (req, res) => {
 });
 
 app.post('/api/auth/team-login', (req, res) => {
-  const { pin } = req.body;
+  const pin = normalizePin(req.body?.pin);
   if (!pin) return res.status(400).json({ error: 'PIN er påkrevd' });
+  if (!/^\d{4}$/.test(pin)) return res.status(400).json({ error: 'PIN må være 4 siffer' });
   try {
     const t = getActiveTournament();
     if (!t) return res.status(404).json({ error: 'Ingen aktiv turnering' });
-    const team = db.prepare('SELECT * FROM teams WHERE tournament_id=? AND pin_code=? LIMIT 1').get(t.id, pin);
+    const team = findTeamByPin(t.id, pin);
     if (!team) return res.status(401).json({ error: 'Ugyldig PIN' });
     req.session.teamId = team.id;
     req.session.tournamentId = t.id;
@@ -813,11 +847,14 @@ app.get('/api/admin/tournament/:id/teams', requireAdmin, (req, res) => {
 });
 
 app.post('/api/admin/team', requireAdmin, (req, res) => {
-  const { tournament_id, team_name, player1, player2, pin_code, player1_handicap, player2_handicap } = req.body;
+  const { tournament_id, team_name, player1, player2, player1_handicap, player2_handicap } = req.body;
+  const pin_code = normalizePin(req.body?.pin_code);
   if (!tournament_id || !team_name || !player1 || !player2 || !pin_code)
     return res.status(400).json({ error: 'Alle felt er påkrevd' });
+  if (!/^\d{4}$/.test(pin_code))
+    return res.status(400).json({ error: 'PIN må være nøyaktig 4 siffer' });
   try {
-    const existing = db.prepare('SELECT id FROM teams WHERE tournament_id=? AND pin_code=?').get(tournament_id, pin_code);
+    const existing = findTeamByPin(tournament_id, pin_code, 'id');
     if (existing) return res.status(400).json({ error: 'PIN allerede i bruk i denne turneringen' });
     const result = db.prepare(
       'INSERT INTO teams (tournament_id, team_name, player1, player2, pin_code, player1_handicap, player2_handicap) VALUES (?,?,?,?,?,?,?)'
@@ -827,7 +864,9 @@ app.post('/api/admin/team', requireAdmin, (req, res) => {
 });
 
 app.put('/api/admin/team/:id', requireAdmin, (req, res) => {
-  const { team_name, player1, player2, pin_code, player1_handicap, player2_handicap } = req.body;
+  const { team_name, player1, player2, player1_handicap, player2_handicap } = req.body;
+  const pin_code = normalizePin(req.body?.pin_code);
+  if (!/^\d{4}$/.test(pin_code)) return res.status(400).json({ error: 'PIN må være nøyaktig 4 siffer' });
   try {
     db.prepare('UPDATE teams SET team_name=?, player1=?, player2=?, pin_code=?, player1_handicap=?, player2_handicap=? WHERE id=?')
       .run(team_name, player1, player2, pin_code, parseFloat(player1_handicap)||0, parseFloat(player2_handicap)||0, req.params.id);
