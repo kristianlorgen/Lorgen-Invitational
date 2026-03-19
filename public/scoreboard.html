@@ -304,7 +304,7 @@ function renderLeaderboard() {
         <div class="players">${t.player1} &amp; ${t.player2}${hasHandicaps && t.handicap ? ` <span style="color:var(--gold-dark);font-size:.72rem">(Hcp ${t.handicap})</span>` : ''}</div>
       </td>
       <td style="text-align:center;font-weight:600">${t.holes_completed > 0 ? t.total_score : '–'}</td>
-      <td style="text-align:center">${formatToPar(hasHandicaps ? t.net_to_par : t.to_par, t.holes_completed)}</td>
+      <td style="text-align:center">${formatToPar(t.to_par, t.holes_completed)}</td>
       ${hasHandicaps ? `<td style="text-align:center;font-weight:600;color:var(--gold-dark)">${t.holes_completed > 0 ? t.net_score : '–'}</td>` : ''}
       <td style="text-align:center;color:var(--text-muted);font-size:.85rem">${t.total_score || '–'}</td>
       <td style="text-align:center;color:var(--text-muted);font-size:.85rem">${t.holes_completed}/18</td>
