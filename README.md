@@ -28,6 +28,8 @@ npm start              # Runs on http://localhost:3000
 | `PORT` | `3000` | Server port |
 | `SESSION_SECRET` | `lorgen-inv-secret` | Session encryption key |
 | `ADMIN_PASSWORD` | `LorgenAdmin2025` | Admin panel password |
+| `NEXT_PUBLIC_SUPABASE_URL` | _(required)_ | Supabase project URL (required for client init) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | _(required)_ | Supabase anon/public key (required for client init) |
 
 ## Tournament Day Flow
 
