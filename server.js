@@ -1668,22 +1668,26 @@ app.get('/api/instagram-qr', (req, res) => {
   app.get(`/${p}`, (req, res) => res.sendFile(path.join(__dirname, `public/${p}.html`)));
 });
 
-const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`
+if (require.main === module) {
+  const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`
   ╔══════════════════════════════════════╗
   ║   LORGEN INVITATIONAL                ║
   ║   Server running on port ${PORT}         ║
   ╚══════════════════════════════════════╝
   `);
-});
-
-function shutdown(signal) {
-  console.log(`Mottok ${signal}. Stopper server...`);
-  server.close(() => {
-    console.log('Server stoppet.');
-    process.exit(0);
   });
+
+  function shutdown(signal) {
+    console.log(`Mottok ${signal}. Stopper server...`);
+    server.close(() => {
+      console.log('Server stoppet.');
+      process.exit(0);
+    });
+  }
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
+module.exports = app;
