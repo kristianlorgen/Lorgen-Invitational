@@ -31,6 +31,38 @@ npm start              # Runs on http://localhost:3000
 | `NEXT_PUBLIC_SUPABASE_URL` | _(required)_ | Supabase project URL (required for client init) |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | _(required)_ | Supabase anon/public key (required for client init) |
 
+## Vercel deployment note (important)
+
+Denne appen er bygget som en **stateful Express-server** med:
+
+- lokal SQLite-fil (`./data/tournament.db`)
+- filopplasting til lokal disk (`./uploads/*`)
+- session-lagring på disk (`./data/sessions`)
+- Server-Sent Events (`/api/events`) for live-oppdatering
+
+På Vercel kjører backend som serverless-funksjoner med ephemeralt filsystem og uten vedvarende prosess.
+Det betyr at miljøvariabler alene ikke er nok for at backend skal fungere stabilt.
+
+Hvis du deployer på Vercel må du flytte state ut av lokal disk:
+
+1. Bytt fra lokal SQLite til ekstern database (f.eks. Supabase Postgres).
+2. Bytt filopplasting fra `./uploads` til objektlagring (f.eks. Supabase Storage / S3).
+3. Bytt sessions til ekstern store (Redis/Postgres) eller stateless auth.
+4. Vurder å erstatte SSE med en løsning som tåler serverless (polling/realtime-tjeneste).
+
+## Railway note
+
+Nei — denne endringen ødelegger **ikke** Railway.  
+README-notatet er dokumentasjon, ikke kodeendring.
+
+Railway kan fungere med dagens arkitektur hvis du setter opp vedvarende lagring:
+
+- mount et persistent volume for `./data` (SQLite + sessions)
+- mount et persistent volume for `./uploads` (bilder)
+- behold én vedvarende web-prosess for SSE
+
+Uten persistent volume vil du få samme type problemer etter restart/redeploy (tap av DB-filer, sessions og uploads).
+
 ## Tournament Day Flow
 
 1. **Admin** creates the tournament (name, date, course)
