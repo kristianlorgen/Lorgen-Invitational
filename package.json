@@ -8,7 +8,6 @@
     "dev": "nodemon server.js"
   },
   "dependencies": {
-    "better-sqlite3": "^9.4.3",
     "dotenv": "^16.4.1",
     "express": "^4.18.2",
     "express-session": "^1.17.3",

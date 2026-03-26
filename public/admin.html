@@ -1102,26 +1102,31 @@ async function loadDashboard() {
 async function loadTeams() {
   const tid = document.getElementById('teamsTournamentSelect').value;
   if (!tid) return;
-  const d = await api('/api/admin/tournament/'+tid+'/teams');
-  document.getElementById('teamCount').textContent = `(${d.teams.length} lag)`;
-  document.getElementById('teamsTable').innerHTML = !d.teams.length
-    ? '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen lag ennå. Legg til ett ovenfor.</td></tr>'
-    : d.teams.map((t,i) => {
-        const hcp1 = t.player1_handicap || 0, hcp2 = t.player2_handicap || 0;
-        const hcpStr = (hcp1||hcp2) ? ` <span style="font-size:.75rem;color:var(--text-muted)">(Hcp: ${hcp1}/${hcp2})</span>` : '';
-        return `
-        <tr>
-          <td>${i+1}</td>
-          <td><strong>${t.team_name}</strong></td>
-          <td>${t.player1}${hcpStr ? '<br>' + hcpStr.replace('Hcp: ','Hcp '+hcp1+'/') : ''}</td>
-          <td>${t.player2}</td>
-          <td><code style="background:var(--gold-pale);padding:2px 8px;border-radius:4px;font-weight:700;color:var(--gold-dark)">${t.pin_code}</code></td>
-          <td style="display:flex;gap:6px">
-            <button onclick='editTeam(${t.id},${JSON.stringify(t.team_name)},${JSON.stringify(t.player1)},${JSON.stringify(t.player2)},${JSON.stringify(t.pin_code)},${hcp1},${hcp2})' class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)" title="Rediger"><i class="fas fa-pen"></i></button>
-            <button onclick='deleteTeam(${t.id},${JSON.stringify(t.team_name)})' class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
-          </td>
-        </tr>`;
-      }).join('');
+  const tbody = document.getElementById('teamsTable');
+  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)"><i class="fas fa-spinner fa-spin"></i> Laster lag...</td></tr>';
+  try {
+    const d = await api('/api/teams?tournamentId=' + tid);
+    document.getElementById('teamCount').textContent = `(${d.teams.length} lag)`;
+    tbody.innerHTML = !d.teams.length
+      ? '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen lag ennå. Legg til ett ovenfor.</td></tr>'
+      : d.teams.map((t,i) => {
+          const p1 = t.players?.[0]?.name || '—';
+          const p2 = t.players?.[1]?.name || '—';
+          return `
+          <tr>
+            <td>${i+1}</td>
+            <td><strong>${t.name}</strong></td>
+            <td>${p1}</td>
+            <td>${p2}</td>
+            <td><code style="background:var(--gold-pale);padding:2px 8px;border-radius:4px;font-weight:700;color:var(--gold-dark)">${t.pin}</code></td>
+            <td style="display:flex;gap:6px">
+              <button onclick='deleteTeam(${t.id},${JSON.stringify(t.name)})' class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
+            </td>
+          </tr>`;
+        }).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan=\"6\" style=\"text-align:center;padding:24px;color:#ef4444\">Kunne ikke laste lag: ${e.message}</td></tr>`;
+  }
 }
 
 async function addTeam() {
@@ -1136,7 +1141,11 @@ async function addTeam() {
   if (!team_name||!player1||!player2||!pin_code) { showToast('Alle felt er påkrevd','error'); return; }
   if (!/^\d{4}$/.test(pin_code)) { showToast('PIN må være nøyaktig 4 siffer','error'); return; }
   try {
-    await api('/api/admin/team',{method:'POST',body:JSON.stringify({tournament_id:tid,team_name,player1,player2,pin_code,player1_handicap,player2_handicap})});
+    const created = await api('/api/teams',{method:'POST',body:JSON.stringify({tournament_id:tid,name:team_name,pin:pin_code})});
+    const p1 = await api('/api/players',{method:'POST',body:JSON.stringify({tournament_id:tid,name:player1,handicap:player1_handicap})});
+    const p2 = await api('/api/players',{method:'POST',body:JSON.stringify({tournament_id:tid,name:player2,handicap:player2_handicap})});
+    await api('/api/teams/'+created.team.id+'/add-player',{method:'POST',body:JSON.stringify({player_id:p1.player.id})});
+    await api('/api/teams/'+created.team.id+'/add-player',{method:'POST',body:JSON.stringify({player_id:p2.player.id})});
     showToast('Lag lagt til!');
     ['newTeamName','newPlayer1','newPlayer2','newPin','newHcp1','newHcp2'].forEach(id=>document.getElementById(id).value='');
     await loadTeams(); await loadDashboard(); loadAwardTeams();
@@ -1180,7 +1189,8 @@ function cancelTeamEdit() {
 async function deleteTeam(id, name) {
   if (!confirm(`Slett laget «${name}»? Alle tilknyttede poeng slettes også.`)) return;
   try {
-    await api('/api/admin/team/'+id,{method:'DELETE'});
+    const tid = document.getElementById('teamsTournamentSelect').value;
+    await api('/api/teams/'+id+'?tournamentId='+tid,{method:'DELETE'});
     showToast('Lag slettet');
     await loadTeams();
   } catch(e) { showToast(e.message,'error'); }
