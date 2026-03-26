@@ -1,1693 +1,418 @@
 require('dotenv').config();
 const express = require('express');
-const session = require('express-session');
-const FileStore = require('session-file-store')(session);
-const multer  = require('multer');
-const path    = require('path');
-const fs      = require('fs');
-const db      = require('./database');
-const { calculateTwoManScrambleHandicap } = require('./public/js/scramble-handicap');
+const path = require('path');
+const { supabase } = require('./lib/supabaseClient');
+const { getTournamentFormat, getTeamSizeForFormat } = require('./services/tournamentFormat');
 
-const app  = express();
+if (!supabase) {
+  throw new Error('Supabase client is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.');
+}
+
+const app = express();
 const PORT = process.env.PORT || 3000;
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'LorgenAdmin2025';
 
-const allowedImageExtensions = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.heic', '.heif', '.avif']);
-
-function isAllowedImageUpload(file = {}) {
-  const mime = String(file.mimetype || '').toLowerCase();
-  const ext = path.extname(String(file.originalname || '')).toLowerCase();
-  const hasAllowedExt = allowedImageExtensions.has(ext);
-  if (mime.startsWith('image/')) return true;
-  // Mobile browsers/camera apps may label valid image files as octet-stream.
-  if ((mime === 'application/octet-stream' || mime === '') && hasAllowedExt) return true;
-  return false;
-}
-
-// Ensure required directories exist
-if (!fs.existsSync('uploads')) fs.mkdirSync('uploads', { recursive: true });
-if (!fs.existsSync('./uploads/glimtskudd')) fs.mkdirSync('./uploads/glimtskudd', { recursive: true });
-if (!fs.existsSync('./uploads/chat')) fs.mkdirSync('./uploads/chat', { recursive: true });
-if (!fs.existsSync('./data/sessions')) fs.mkdirSync('./data/sessions', { recursive: true });
-
-// ── SSE live-update clients ──────────────────────────────────────────────────
-const sseClients = new Map();
-let sseCounter = 0;
-
-function broadcast(type, data = {}) {
-  const msg = `data: ${JSON.stringify({ type, data, ts: Date.now() })}\n\n`;
-  sseClients.forEach(res => { try { res.write(msg); } catch (_) {} });
-}
-
-// ── File upload (local disk) ─────────────────────────────────────────────────
-const storage = multer.diskStorage({
-  destination: './uploads/',
-  filename: (req, file, cb) =>
-    cb(null, `hole-${Date.now()}-${Math.round(Math.random() * 1e6)}${path.extname(file.originalname)}`)
-});
-const upload = multer({
-  storage,
-  limits: { fileSize: 15 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    if (isAllowedImageUpload(file)) return cb(null, true);
-    cb(new Error('Kun bilder er tillatt'));
-  }
-});
-
-const galleryStorage = multer.diskStorage({
-  destination: './uploads/glimtskudd/',
-  filename: (req, file, cb) =>
-    cb(null, `glimt-${Date.now()}-${Math.round(Math.random() * 1e6)}${path.extname(file.originalname)}`)
-});
-const galleryUpload = multer({
-  storage: galleryStorage,
-  limits: { fileSize: 15 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    if (isAllowedImageUpload(file)) return cb(null, true);
-    cb(new Error('Kun bilder er tillatt'));
-  }
-});
-
-const chatStorage = multer.diskStorage({
-  destination: './uploads/chat/',
-  filename: (req, file, cb) =>
-    cb(null, `chat-${Date.now()}-${Math.round(Math.random() * 1e6)}${path.extname(file.originalname)}`)
-});
-const chatUpload = multer({
-  storage: chatStorage,
-  limits: { fileSize: 10 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    if (isAllowedImageUpload(file)) return cb(null, true);
-    cb(new Error('Kun bilder er tillatt'));
-  }
-});
-
-// ── Middleware ───────────────────────────────────────────────────────────────
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use('/uploads', express.static('uploads', { fallthrough: true }));
-app.use(express.static('public', {
-  setHeaders: (res, filePath) => {
-    if (filePath.endsWith('.html')) {
-      res.setHeader('Cache-Control', 'no-cache');
-    }
-  }
-}));
-let sessionStore;
-try {
-  sessionStore = new FileStore({ path: './data/sessions', ttl: 86400, retries: 0, logFn: () => {} });
-} catch(_) {
-  sessionStore = undefined; // falls back to MemoryStore
-}
-app.use(session({
-  ...(sessionStore ? { store: sessionStore } : {}),
-  secret: process.env.SESSION_SECRET || 'lorgen-inv-secret',
-  resave: false,
-  saveUninitialized: false,
-  cookie: { maxAge: 24 * 60 * 60 * 1000 }
-}));
+app.use(express.static('public'));
 
-// ── Auth guards ──────────────────────────────────────────────────────────────
-const requireTeam = (req, res, next) =>
-  req.session.teamId ? next() : res.status(401).json({ error: 'Laginnlogging påkrevd' });
+app.get('/health', (_, res) => res.status(200).json({ status: 'ok' }));
+app.get('/ready', (_, res) => res.status(200).json({ status: 'ready' }));
 
-const requireAdmin = (req, res, next) =>
-  req.session.isAdmin ? next() : res.status(401).json({ error: 'Admininnlogging påkrevd' });
-
-// ── Platform health checks ──────────────────────────────────────────────────
-app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok' });
-});
-
-app.get('/ready', (req, res) => {
-  res.status(200).json({ status: 'ready' });
-});
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-function getActiveTournament() {
-  return db.prepare(
-    `SELECT * FROM tournaments WHERE status IN ('active','upcoming') ORDER BY date ASC LIMIT 1`
-  ).get();
+function asInt(value) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
-function getScoreboardTournament() {
-  let t = db.prepare(`SELECT * FROM tournaments WHERE status='active' ORDER BY date DESC LIMIT 1`).get();
-  if (!t) t = db.prepare(`SELECT * FROM tournaments WHERE status='completed' ORDER BY date DESC LIMIT 1`).get();
-  return t || null;
+async function resolveTournamentId(tournamentId) {
+  const parsed = asInt(tournamentId);
+  if (parsed) return parsed;
+
+  const { data, error } = await supabase
+    .from('tournaments')
+    .select('id')
+    .in('status', ['active', 'upcoming'])
+    .order('date', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data?.id || null;
 }
 
-function normalizePhotoPath(photoPath = '') {
-  if (!photoPath || typeof photoPath !== 'string') return '';
+async function getTournament(tournamentId) {
+  const { data, error } = await supabase
+    .from('tournaments')
+    .select('*')
+    .eq('id', tournamentId)
+    .maybeSingle();
 
-  let normalized = photoPath.trim();
-  if (!normalized) return '';
-
-  // Keep external/media URIs untouched.
-  if (/^(https?:)?\/\//i.test(normalized) || normalized.startsWith('data:') || normalized.startsWith('blob:')) {
-    return normalized;
-  }
-
-  // Normalize legacy Windows and relative paths.
-  normalized = normalized.replace(/\\+/g, '/').replace(/^\.\//, '');
-
-  // Accept both /public/uploads/* and public/uploads/* by mapping to /uploads/*.
-  normalized = normalized.replace(/^\/?public\//, '/');
-
-  // Collapse any accidental duplicate uploads prefix.
-  normalized = normalized.replace(/^\/?uploads\/uploads\//, '/uploads/');
-
-  if (normalized.startsWith('/uploads/')) return normalized;
-  if (normalized.startsWith('uploads/')) return `/${normalized}`;
-
-  // Legacy values may be a bare filename, or include other app-local folders.
-  if (!normalized.includes('/')) return `/uploads/${normalized}`;
-  return normalized.startsWith('/') ? normalized : `/${normalized}`;
+  if (error) throw error;
+  return data;
 }
 
-function ensureDir(dirPath) {
-  if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
-}
+async function fetchTeamsWithPlayers(tournamentId) {
+  const { data: teams, error: teamsError } = await supabase
+    .from('teams')
+    .select('id, tournament_id, name, pin, created_at')
+    .eq('tournament_id', tournamentId)
+    .order('id', { ascending: true });
+  if (teamsError) throw teamsError;
 
-function syncScorePhotoToGallery({ tournamentId, scoreId, photoPath }) {
-  const existing = db.prepare(
-    `SELECT id FROM gallery_photos
-     WHERE tournament_id=? AND caption=?
-     LIMIT 1`
-  ).get(tournamentId, `score:${scoreId}`);
+  if (!teams.length) return [];
 
-  if (existing) {
-    db.prepare('UPDATE gallery_photos SET photo_path=?, uploaded_at=CURRENT_TIMESTAMP WHERE id=?')
-      .run(photoPath, existing.id);
-    return;
-  }
+  const teamIds = teams.map((team) => team.id);
+  const { data: members, error: membersError } = await supabase
+    .from('team_members')
+    .select('team_id, players (id, tournament_id, name, handicap, created_at)')
+    .in('team_id', teamIds);
+  if (membersError) throw membersError;
 
-  db.prepare(
-    'INSERT INTO gallery_photos (tournament_id, photo_path, caption) VALUES (?,?,?)'
-  ).run(tournamentId, photoPath, `score:${scoreId}`);
-}
+  const playersByTeamId = members.reduce((acc, row) => {
+    if (!acc[row.team_id]) acc[row.team_id] = [];
+    if (row.players) acc[row.team_id].push(row.players);
+    return acc;
+  }, {});
 
-function rebuildPhotoDatabase(tournamentId = null) {
-  const whereTournament = tournamentId ? 'WHERE tm.tournament_id=?' : '';
-  const scoreRows = db.prepare(
-    `SELECT s.id, s.team_id, tm.tournament_id, s.photo_path, s.is_published
-     FROM scores s
-     JOIN teams tm ON tm.id=s.team_id
-     ${whereTournament}`
-  ).all(...(tournamentId ? [tournamentId] : []));
-
-  let normalizedScores = 0;
-  let normalizedGallery = 0;
-  let normalizedLegacy = 0;
-  let syncedScoreCaptions = 0;
-
-  scoreRows.forEach(s => {
-    const normalized = normalizePhotoPath(s.photo_path);
-    const shouldPublish = s.is_published ? 1 : 0;
-
-    if ((s.photo_path || '') !== normalized || s.is_published !== shouldPublish) {
-      db.prepare('UPDATE scores SET photo_path=?, is_published=? WHERE id=?').run(normalized || null, shouldPublish, s.id);
-      normalizedScores++;
-    }
-
-    if (!normalized) {
-      db.prepare('DELETE FROM gallery_photos WHERE tournament_id=? AND caption=?').run(s.tournament_id, `score:${s.id}`);
-      return;
-    }
-
-    const existing = db.prepare(
-      'SELECT id, photo_path, is_published FROM gallery_photos WHERE tournament_id=? AND caption=? LIMIT 1'
-    ).get(s.tournament_id, `score:${s.id}`);
-
-    if (existing) {
-      const normalizedExisting = normalizePhotoPath(existing.photo_path);
-      if (normalizedExisting !== normalized || Number(existing.is_published || 0) !== shouldPublish) {
-        db.prepare(
-          'UPDATE gallery_photos SET photo_path=?, is_published=?, uploaded_at=CURRENT_TIMESTAMP WHERE id=?'
-        ).run(normalized, shouldPublish, existing.id);
-        syncedScoreCaptions++;
-      }
-      return;
-    }
-
-    db.prepare(
-      'INSERT INTO gallery_photos (tournament_id, photo_path, caption, is_published) VALUES (?,?,?,?)'
-    ).run(s.tournament_id, normalized, `score:${s.id}`, shouldPublish);
-    syncedScoreCaptions++;
-  });
-
-  const galleryRows = db.prepare(
-    `SELECT id, photo_path, is_published FROM gallery_photos ${tournamentId ? 'WHERE tournament_id=?' : ''}`
-  ).all(...(tournamentId ? [tournamentId] : []));
-  galleryRows.forEach(p => {
-    const normalized = normalizePhotoPath(p.photo_path);
-    const shouldPublish = p.is_published ? 1 : 0;
-    if ((p.photo_path || '') !== normalized || p.is_published !== shouldPublish) {
-      db.prepare('UPDATE gallery_photos SET photo_path=?, is_published=? WHERE id=?').run(normalized || null, shouldPublish, p.id);
-      normalizedGallery++;
-    }
-  });
-
-  const legacyRows = db.prepare('SELECT id, winner_photo FROM legacy').all();
-  legacyRows.forEach(row => {
-    const normalized = normalizePhotoPath(row.winner_photo);
-    if ((row.winner_photo || '') !== normalized) {
-      db.prepare('UPDATE legacy SET winner_photo=? WHERE id=?').run(normalized || null, row.id);
-      normalizedLegacy++;
-    }
-  });
-
-  return {
-    normalized_scores: normalizedScores,
-    normalized_gallery: normalizedGallery,
-    normalized_legacy: normalizedLegacy,
-    synced_score_captions: syncedScoreCaptions
-  };
-}
-
-
-function resolveTeamForActiveTournament(req, pinInput) {
-  const t = db.prepare(`SELECT * FROM tournaments WHERE status='active' ORDER BY date DESC LIMIT 1`).get();
-  if (!t) return { error: { status: 404, message: 'Ingen aktiv turnering' } };
-
-  const pin = normalizePin(pinInput);
-  if (pin) {
-    const teamByPin = findTeamByPin(t.id, pin, 'id, team_name, tournament_id');
-    if (!teamByPin) return { error: { status: 401, message: 'Ugyldig PIN' } };
-    return { tournament: t, team: teamByPin };
-  }
-
-  if (req.session?.teamId) {
-    const sessionTeam = db.prepare('SELECT id, team_name, tournament_id FROM teams WHERE id=? LIMIT 1').get(req.session.teamId);
-    if (sessionTeam && sessionTeam.tournament_id === t.id) {
-      return { tournament: t, team: sessionTeam };
-    }
-  }
-
-  return { error: { status: 400, message: 'Mangler pin for chat' } };
-}
-
-function normalizePin(pinInput) {
-  const raw = String(pinInput ?? '').trim();
-  if (!raw) return '';
-  const compact = raw.replace(/\s+/g, '');
-  if (/^\d+(\.0+)?$/.test(compact)) {
-    const n = Number(compact);
-    if (Number.isFinite(n)) return String(Math.trunc(n)).padStart(4, '0').slice(-4);
-  }
-  const digits = compact.replace(/\D/g, '');
-  if (!digits) return '';
-  return digits.slice(-4);
-}
-
-function pinLookupCandidates(pin) {
-  const normalized = normalizePin(pin);
-  if (!normalized) return [];
-  const n = Number(normalized);
-  const candidates = new Set([normalized]);
-  if (Number.isFinite(n)) {
-    candidates.add(String(n));
-    candidates.add(`${n}.0`);
-  }
-  return Array.from(candidates);
-}
-
-function findTeamByPin(tournamentId, pin, fields = '*') {
-  const candidates = pinLookupCandidates(pin);
-  if (!candidates.length) return null;
-  const placeholders = candidates.map(() => '?').join(',');
-  const query = `SELECT ${fields} FROM teams WHERE tournament_id=? AND TRIM(pin_code) IN (${placeholders}) LIMIT 1`;
-  return db.prepare(query).get(tournamentId, ...candidates);
-}
-
-
-function getSponsorsForTournament(tournamentId, placement) {
-  return db.prepare(
-    `SELECT id, tournament_id, placement, slot_key, spot_number, hole_number, sponsor_name, description,
-            logo_path, is_enabled
-     FROM sponsors
-     WHERE tournament_id=? AND placement=?
-     ORDER BY CASE WHEN placement='home' THEN spot_number ELSE hole_number END ASC`
-  ).all(tournamentId, placement).map(row => ({
-    ...row,
-    logo_path: normalizePhotoPath(row.logo_path),
-    is_enabled: row.is_enabled ? 1 : 0
+  return teams.map((team) => ({
+    ...team,
+    players: playersByTeamId[team.id] || []
   }));
 }
 
-function buildScoreboard(tournament) {
-  const teams     = db.prepare('SELECT * FROM teams WHERE tournament_id=?').all(tournament.id);
-  const holes     = db.prepare('SELECT * FROM holes WHERE tournament_id=? ORDER BY hole_number').all(tournament.id);
-  const allScoreRows = teams.length
-    ? db.prepare(`SELECT * FROM scores WHERE team_id IN (${teams.map(() => '?').join(',')})`).all(...teams.map(t => t.id))
-    : [];
+app.get('/api/tournament', async (req, res) => {
+  try {
+    const tid = await resolveTournamentId(req.query.tournamentId);
+    if (!tid) return res.json({ tournament: null });
+    const tournament = await getTournament(tid);
+    res.json({ tournament });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
-  // Compute best awards from award_claims (robust: bypasses missing UNIQUE constraint on awards table)
-  const allClaims = db.prepare(
-    `SELECT ac.*, t.team_name, t.player1, t.player2
-     FROM award_claims ac LEFT JOIN teams t ON t.id=ac.team_id
-     WHERE ac.tournament_id=?`
-  ).all(tournament.id);
-  const bestMap = {};
-  allClaims.forEach(c => {
-    const key = `${c.award_type}_${c.hole_number}`;
-    const val = parseFloat(c.detail) || 0;
-    if (!bestMap[key]) { bestMap[key] = c; return; }
-    const cur = parseFloat(bestMap[key].detail) || 0;
-    if (c.award_type === 'longest_drive' && val > cur) bestMap[key] = c;
-    else if (c.award_type === 'closest_to_pin' && val > 0 && (cur <= 0 || val < cur)) bestMap[key] = c;
-  });
-  // Admin manual overrides take precedence
-  const manualAwards = db.prepare(
-    `SELECT a.*, t.team_name, t.player1, t.player2
-     FROM awards a LEFT JOIN teams t ON t.id=a.team_id
-     WHERE a.tournament_id=?`
-  ).all(tournament.id);
-  manualAwards.forEach(a => { bestMap[`${a.award_type}_${a.hole_number}`] = a; });
+app.get('/api/admin/tournaments', async (_, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('tournaments')
+      .select('*')
+      .order('year', { ascending: false });
+    if (error) throw error;
+    res.json({ tournaments: data });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
-  const awards = Object.values(bestMap).map(a => ({
-    id: a.id || null, tournament_id: a.tournament_id, award_type: a.award_type,
-    team_id: a.team_id, player_name: a.player_name || null,
-    hole_number: a.hole_number, detail: a.detail,
-    team_name: a.team_name || null, player1: a.player1 || null, player2: a.player2 || null
-  }));
+app.post('/api/admin/tournament', async (req, res) => {
+  try {
+    const { year, name, date, course = '', description = '', status = 'upcoming', format = 'scramble' } = req.body;
+    if (!year || !name || !date) {
+      return res.status(400).json({ error: 'year, name and date are required' });
+    }
 
-  const slopeRating = tournament.slope_rating || 113;
+    const { data, error } = await supabase
+      .from('tournaments')
+      .insert({ year, name, date, course, description, status, format })
+      .select('*')
+      .single();
+    if (error) throw error;
 
-  const scoreboard = teams.map(team => {
-    const teamScores = allScoreRows.filter(s => s.team_id === team.id);
-    let total = 0, par = 0, done = 0;
-    const holeScores = {};
-    teamScores.forEach(s => {
-      const h = holes.find(h => h.hole_number === s.hole_number);
-      const scoreValue = Number(s.score);
-      const hasRecordedScore = Number.isFinite(scoreValue) && scoreValue > 0;
-      if (h && hasRecordedScore) {
-        total += scoreValue;
-        par += h.par;
-        done++;
-      }
-      holeScores[s.hole_number] = { score: hasRecordedScore ? scoreValue : null, photo: normalizePhotoPath(s.photo_path) };
+    res.status(201).json({ tournament: data });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/players', async (req, res) => {
+  try {
+    const tournamentId = await resolveTournamentId(req.query.tournamentId);
+    if (!tournamentId) return res.json({ players: [] });
+
+    const { data, error } = await supabase
+      .from('players')
+      .select('*')
+      .eq('tournament_id', tournamentId)
+      .order('name', { ascending: true });
+    if (error) throw error;
+
+    res.json({ players: data });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/players', async (req, res) => {
+  try {
+    const tournamentId = asInt(req.body.tournament_id);
+    const { name, handicap = 0 } = req.body;
+    if (!tournamentId || !name) return res.status(400).json({ error: 'tournament_id and name are required' });
+
+    const { data, error } = await supabase
+      .from('players')
+      .insert({ tournament_id: tournamentId, name, handicap })
+      .select('*')
+      .single();
+    if (error) throw error;
+
+    res.status(201).json({ player: data });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/teams', async (req, res) => {
+  try {
+    const tournamentId = await resolveTournamentId(req.query.tournamentId);
+    if (!tournamentId) return res.json({ teams: [] });
+
+    const teams = await fetchTeamsWithPlayers(tournamentId);
+    res.json({ teams });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/teams', async (req, res) => {
+  try {
+    const tournamentId = asInt(req.body.tournament_id || req.body.tournamentId);
+    const name = req.body.name || req.body.team_name;
+    const pin = req.body.pin || req.body.pin_code;
+    if (!tournamentId || !name || !pin) {
+      return res.status(400).json({ error: 'tournament_id, name and pin are required' });
+    }
+
+    const { data, error } = await supabase
+      .from('teams')
+      .insert({ tournament_id: tournamentId, name, pin })
+      .select('*')
+      .single();
+    if (error) throw error;
+
+    res.status(201).json({ team: data });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/teams/:id/add-player', async (req, res) => {
+  try {
+    const teamId = asInt(req.params.id);
+    const playerId = asInt(req.body.player_id || req.body.playerId);
+    if (!teamId || !playerId) return res.status(400).json({ error: 'team id and player id are required' });
+
+    const { data: team, error: teamError } = await supabase
+      .from('teams')
+      .select('id, tournament_id')
+      .eq('id', teamId)
+      .single();
+    if (teamError) throw teamError;
+
+    const tournament = await getTournament(team.tournament_id);
+    if (!tournament) return res.status(404).json({ error: 'Tournament not found' });
+
+    const { count, error: countError } = await supabase
+      .from('team_members')
+      .select('*', { count: 'exact', head: true })
+      .eq('team_id', teamId);
+    if (countError) throw countError;
+
+    const maxPlayers = getTeamSizeForFormat(getTournamentFormat(tournament));
+    if ((count || 0) >= maxPlayers) {
+      return res.status(400).json({ error: 'Antall spillere passer ikke med valgt lagstørrelse' });
+    }
+
+    const { data: player, error: playerError } = await supabase
+      .from('players')
+      .select('id, tournament_id')
+      .eq('id', playerId)
+      .single();
+    if (playerError) throw playerError;
+
+    if (player.tournament_id !== team.tournament_id) {
+      return res.status(400).json({ error: 'Player must belong to same tournament as team' });
+    }
+
+    const { data, error } = await supabase
+      .from('team_members')
+      .insert({ team_id: teamId, player_id: playerId })
+      .select('*')
+      .single();
+    if (error) throw error;
+
+    res.status(201).json({ membership: data });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/teams/:id', async (req, res) => {
+  try {
+    const teamId = asInt(req.params.id);
+    const tournamentId = asInt(req.query.tournamentId || req.body?.tournamentId);
+    if (!teamId || !tournamentId) return res.status(400).json({ error: 'team id and tournamentId are required' });
+
+    await supabase.from('team_members').delete().eq('team_id', teamId);
+    await supabase.from('scores').delete().eq('team_id', teamId);
+    const { error } = await supabase.from('teams').delete().eq('id', teamId).eq('tournament_id', tournamentId);
+    if (error) throw error;
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/admin/tournament/:id/teams', async (req, res) => {
+  try {
+    const tournamentId = asInt(req.params.id);
+    if (!tournamentId) return res.status(400).json({ error: 'Invalid tournament id' });
+    const teams = await fetchTeamsWithPlayers(tournamentId);
+
+    const compat = teams.map((team) => ({
+      id: team.id,
+      tournament_id: team.tournament_id,
+      team_name: team.name,
+      pin_code: team.pin,
+      players: team.players,
+      player1: team.players[0]?.name || '',
+      player2: team.players[1]?.name || ''
+    }));
+
+    res.json({ teams: compat });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/admin/tournament/:id/scores', async (req, res) => {
+  try {
+    const tournamentId = asInt(req.params.id);
+    if (!tournamentId) return res.status(400).json({ error: 'Invalid tournament id' });
+
+    const { data: teams, error: teamError } = await supabase
+      .from('teams')
+      .select('id,name')
+      .eq('tournament_id', tournamentId);
+    if (teamError) throw teamError;
+
+    const teamIds = teams.map((team) => team.id);
+    if (!teamIds.length) return res.json({ scores: [] });
+
+    const { data: scores, error: scoreError } = await supabase
+      .from('scores')
+      .select('*')
+      .eq('tournament_id', tournamentId)
+      .in('team_id', teamIds);
+    if (scoreError) throw scoreError;
+
+    res.json({ scores });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/team', async (req, res) => {
+  try {
+    const { tournament_id, team_name, pin_code, player1, player2 } = req.body;
+
+    const teamResp = await fetch(`http://127.0.0.1:${PORT}/api/teams`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tournament_id, name: team_name, pin: pin_code })
     });
-    const teamScrambleHcp = calculateTwoManScrambleHandicap(
-      team.player1_handicap || 0,
-      team.player2_handicap || 0,
-      slopeRating
-    );
-    const netScore = done > 0 ? total - teamScrambleHcp : 0;
-    const netToPar = done > 0 ? netScore - par : 0;
-    return {
-      team_id: team.id, team_name: team.team_name,
-      player1: team.player1, player2: team.player2,
-      player1_handicap: team.player1_handicap || 0, player2_handicap: team.player2_handicap || 0,
-      handicap: teamScrambleHcp, used_handicap_strokes: teamScrambleHcp, net_score: netScore, net_to_par: netToPar,
-      total_score: total, total_par: par, to_par: total - par,
-      holes_completed: done, hole_scores: holeScores
-    };
-  });
+    const teamBody = await teamResp.json();
+    if (!teamResp.ok) return res.status(teamResp.status).json(teamBody);
 
-  const hasHandicaps = teams.some(t => (t.player1_handicap || 0) + (t.player2_handicap || 0) > 0);
-  scoreboard.sort((a, b) => {
-    if (a.holes_completed === 0 && b.holes_completed === 0) return 0;
-    if (a.holes_completed === 0) return 1;
-    if (b.holes_completed === 0) return -1;
-    return hasHandicaps ? (a.net_to_par - b.net_to_par) : (a.to_par - b.to_par);
-  });
-
-  return { tournament, scoreboard, holes, awards };
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-//  PUBLIC API
-// ════════════════════════════════════════════════════════════════════════════
-
-app.get('/api/version', (req, res) => {
-  res.json({ version: '3.0.0-sqlite', stack: 'SQLite', lang: 'nb', ok: true });
-});
-
-app.get('/api/tournament', (req, res) => {
-  try {
-    const t = getActiveTournament();
-    if (!t) return res.json({ tournament: null, holes: [] });
-    const holes = db.prepare('SELECT * FROM holes WHERE tournament_id=? ORDER BY hole_number').all(t.id);
-    res.json({ tournament: t, holes });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/api/sponsors', (req, res) => {
-  try {
-    const placement = String(req.query.placement || 'home');
-    if (!['home', 'hole'].includes(placement)) {
-      return res.status(400).json({ error: 'Ugyldig sponsor-plassering' });
+    const players = [player1, player2].filter(Boolean);
+    for (const p of players) {
+      const pr = await supabase.from('players').insert({ tournament_id, name: p }).select('*').single();
+      if (pr.error) throw pr.error;
+      const linkResp = await fetch(`http://127.0.0.1:${PORT}/api/teams/${teamBody.team.id}/add-player`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ player_id: pr.data.id })
+      });
+      const linkBody = await linkResp.json();
+      if (!linkResp.ok) return res.status(linkResp.status).json(linkBody);
     }
 
-    let tournamentId = parseInt(req.query.tournament_id, 10);
-    if (!Number.isFinite(tournamentId)) {
-      const t = getActiveTournament() || getScoreboardTournament();
-      tournamentId = t?.id;
-    }
-    if (!tournamentId) return res.json({ sponsors: [] });
-
-    const sponsors = getSponsorsForTournament(tournamentId, placement).filter(s => s.is_enabled);
-    if (placement === 'hole') {
-      const holeNumber = parseInt(req.query.hole_number, 10);
-      if (Number.isFinite(holeNumber)) {
-        return res.json({ sponsors: sponsors.filter(s => s.hole_number === holeNumber) });
-      }
-    }
-    res.json({ sponsors });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+    res.status(201).json({ team: teamBody.team });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
-app.get('/api/scoreboard', (req, res) => {
+app.delete('/api/admin/team/:id', async (req, res) => {
   try {
-    const t = getScoreboardTournament();
-    if (!t) return res.json({ scoreboard: [], holes: [], awards: [], tournament: null });
-    res.json(buildScoreboard(t));
-  } catch(e) { res.status(500).json({ error: e.message }); }
+    const teamId = asInt(req.params.id);
+    const { data: team, error } = await supabase.from('teams').select('id,tournament_id').eq('id', teamId).single();
+    if (error) throw error;
+
+    const del = await supabase.from('teams').delete().eq('id', teamId).eq('tournament_id', team.tournament_id);
+    if (del.error) throw del.error;
+
+    await supabase.from('team_members').delete().eq('team_id', teamId);
+    await supabase.from('scores').delete().eq('team_id', teamId);
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
-app.get('/api/legacy', (req, res) => {
+app.get('/api/scoreboard', async (req, res) => {
   try {
-    const legacy = db.prepare('SELECT id,year,winner_team,player1,player2,score,score_to_par,course,notes,winner_photo,winner_photo_focus FROM legacy ORDER BY year DESC').all();
-    res.json({ legacy });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+    const tournamentId = await resolveTournamentId(req.query.tournamentId);
+    if (!tournamentId) return res.json({ tournament: null, scoreboard: [] });
+
+    const tournament = await getTournament(tournamentId);
+    const teams = await fetchTeamsWithPlayers(tournamentId);
+    const teamIds = teams.map((team) => team.id);
+
+    let scores = [];
+    if (teamIds.length) {
+      const { data, error } = await supabase
+        .from('scores')
+        .select('team_id, score')
+        .in('team_id', teamIds);
+      if (error) throw error;
+      scores = data;
+    }
+
+    const totals = teams.map((team) => {
+      const teamScores = scores.filter((row) => row.team_id === team.id);
+      const total = teamScores.reduce((sum, row) => sum + Number(row.score || 0), 0);
+      const player1 = team.players[0]?.name || '';
+      const player2 = team.players[1]?.name || '';
+      const holeScores = {};
+      for (const s of teamScores) holeScores[s.hole_number] = { score: s.score };
+      return {
+        team_id: team.id,
+        team_name: team.name,
+        players: team.players,
+        player1,
+        player2,
+        total_score: total,
+        holes_completed: teamScores.length,
+        to_par: 0,
+        hole_scores: holeScores
+      };
+    }).sort((a, b) => a.total_score - b.total_score);
+
+    res.json({ tournament, holes: [], awards: [], scoreboard: totals });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 app.get('/api/events', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
-  const id = ++sseCounter;
-  sseClients.set(id, res);
-  res.write(`data: ${JSON.stringify({ type: 'connected' })}\n\n`);
-  const hb = setInterval(() => { try { res.write(':hb\n\n'); } catch (_) { clearInterval(hb); } }, 25000);
-  req.on('close', () => { sseClients.delete(id); clearInterval(hb); });
+  res.write('event: ping\\ndata: {}\\n\\n');
 });
 
-
-app.get('/api/chat/messages', (req, res) => {
-  try {
-    const t = getScoreboardTournament();
-    if (!t) return res.json({ messages: [] });
-    const messages = db.prepare(
-      `SELECT id, team_name, message, image_path, created_at
-       FROM chat_messages
-       WHERE tournament_id=?
-       ORDER BY id DESC
-       LIMIT 100`
-    ).all(t.id).reverse();
-    res.json({ messages });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/chat/send', chatUpload.single('image'), (req, res) => {
-  const body = req.body || {};
-  const msg = String(body.message || '').trim();
-  const imagePath = req.file ? normalizePhotoPath(`/uploads/chat/${req.file.filename}`) : '';
-
-  const resolved = resolveTeamForActiveTournament(req, body.pin);
-  if (resolved.error) return res.status(resolved.error.status).json({ error: resolved.error.message });
-  if (!msg && !imagePath) return res.status(400).json({ error: 'Melding eller bilde er påkrevd' });
-  if (msg.length > 400) return res.status(400).json({ error: 'Meldingen er for lang (maks 400 tegn)' });
-  try {
-    const t = resolved.tournament;
-    const team = resolved.team;
-    const result = db.prepare(
-      'INSERT INTO chat_messages (tournament_id, team_id, team_name, message, image_path) VALUES (?,?,?,?,?)'
-    ).run(t.id, team.id, team.team_name, msg, imagePath);
-    const created = db.prepare('SELECT id, team_name, message, image_path, created_at FROM chat_messages WHERE id=?').get(result.lastInsertRowid);
-    broadcast('chat_message', created);
-    res.json({ success: true, message: created });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/team/birdie-shot', (req, res) => {
-  const { pin, note } = req.body || {};
-  try {
-    const resolved = resolveTeamForActiveTournament(req, pin);
-    if (resolved.error) return res.status(resolved.error.status).json({ error: resolved.error.message });
-    const t = resolved.tournament;
-    const team = resolved.team;
-    const payload = {
-      team_name: team.team_name,
-      note: String(note || '').trim().slice(0, 140)
-    };
-    const shoutMessage = `⛳ ${team.team_name} roper birdie! ${payload.note || 'Alle spillere må ta birdie shots! 🥃'}`;
-    const chatResult = db.prepare(
-      'INSERT INTO chat_messages (tournament_id, team_id, team_name, message, image_path) VALUES (?,?,?,?,?)'
-    ).run(t.id, team.id, team.team_name, shoutMessage.slice(0, 400), '');
-    const chatMessage = db.prepare('SELECT id, team_name, message, image_path, created_at FROM chat_messages WHERE id=?').get(chatResult.lastInsertRowid);
-    broadcast('chat_message', chatMessage);
-    broadcast('birdie_shot', payload);
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// ════════════════════════════════════════════════════════════════════════════
-//  AUTH
-// ════════════════════════════════════════════════════════════════════════════
-
-// GitHub OAuth not supported without Supabase
-app.get('/api/auth/github-url', (req, res) => {
-  res.status(501).json({ error: 'GitHub-innlogging er ikke konfigurert på denne serveren' });
-});
-
-app.post('/api/auth/team-login', (req, res) => {
-  const pin = normalizePin(req.body?.pin);
-  if (!pin) return res.status(400).json({ error: 'PIN er påkrevd' });
-  if (!/^\d{4}$/.test(pin)) return res.status(400).json({ error: 'PIN må være 4 siffer' });
-  try {
-    const t = getActiveTournament();
-    if (!t) return res.status(404).json({ error: 'Ingen aktiv turnering' });
-    const team = findTeamByPin(t.id, pin);
-    if (!team) return res.status(401).json({ error: 'Ugyldig PIN' });
-    req.session.teamId = team.id;
-    req.session.tournamentId = t.id;
-    res.json({
-      success: true,
-      team: { id: team.id, team_name: team.team_name, player1: team.player1, player2: team.player2 }
-    });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/auth/admin-login', (req, res) => {
-  const { password } = req.body;
-  if (password === ADMIN_PASSWORD) {
-    req.session.isAdmin = true;
-    return res.json({ success: true });
-  }
-  res.status(401).json({ error: 'Ugyldig passord' });
-});
-
-app.post('/api/auth/logout', (req, res) => {
-  req.session.destroy();
-  res.json({ success: true });
-});
-
-app.get('/api/auth/status', (req, res) => {
-  if (req.session.isAdmin) {
-    return res.json({ type: 'admin' });
-  }
-  if (req.session.teamId) {
-    const team = db.prepare('SELECT id,team_name,player1,player2 FROM teams WHERE id=?').get(req.session.teamId);
-    return res.json({ type: 'team', team });
-  }
-  res.json({ type: 'none' });
-});
-
-// ════════════════════════════════════════════════════════════════════════════
-//  TEAM (authenticated)
-// ════════════════════════════════════════════════════════════════════════════
-
-app.get('/api/team/scorecard', requireTeam, (req, res) => {
-  try {
-    const team       = db.prepare('SELECT * FROM teams WHERE id=?').get(req.session.teamId);
-    const tournament = db.prepare('SELECT id,name,slope_rating FROM tournaments WHERE id=?').get(req.session.tournamentId);
-    const holes      = db.prepare('SELECT * FROM holes WHERE tournament_id=? ORDER BY hole_number').all(req.session.tournamentId);
-    const scoresRaw  = db.prepare('SELECT * FROM scores WHERE team_id=?').all(req.session.teamId);
-    const scores     = scoresRaw.map(s => ({ ...s, photo_path: normalizePhotoPath(s.photo_path) }));
-    const claims     = db.prepare('SELECT * FROM award_claims WHERE tournament_id=? AND team_id=?').all(req.session.tournamentId, req.session.teamId);
-    const holeSponsors = getSponsorsForTournament(req.session.tournamentId, 'hole').filter(s => s.is_enabled);
-    res.json({ team: { ...team, locked: team.locked || 0 }, tournament, holes, scores, claims, hole_sponsors: holeSponsors });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/team/submit-score', requireTeam, (req, res) => {
-  const { hole_number, score } = req.body;
-  if (!hole_number || score === undefined || score === null)
-    return res.status(400).json({ error: 'Hull og poeng er påkrevd' });
-  const scoreNum = parseInt(score);
-  if (isNaN(scoreNum) || scoreNum < 1 || scoreNum > 20)
-    return res.status(400).json({ error: 'Poengsum må være mellom 1 og 20' });
-  try {
-    const teamLock = db.prepare('SELECT locked FROM teams WHERE id=?').get(req.session.teamId);
-    if (teamLock?.locked) return res.status(403).json({ error: 'Resultatkort er låst. Kontakt turnerings-administrator for å endre.' });
-    const hole = db.prepare('SELECT * FROM holes WHERE tournament_id=? AND hole_number=?')
-      .get(req.session.tournamentId, hole_number);
-    if (!hole) return res.status(404).json({ error: 'Hull ikke funnet' });
-    if (hole.requires_photo) {
-      const existing = db.prepare('SELECT photo_path FROM scores WHERE team_id=? AND hole_number=?')
-        .get(req.session.teamId, hole_number);
-      if (!existing?.photo_path)
-        return res.status(400).json({ error: 'Bilde må lastes opp før du kan registrere poeng på dette hullet' });
-    }
-    const existing = db.prepare('SELECT id FROM scores WHERE team_id=? AND hole_number=?')
-      .get(req.session.teamId, hole_number);
-    if (existing) {
-      db.prepare('UPDATE scores SET score=?, submitted_at=CURRENT_TIMESTAMP WHERE id=?').run(scoreNum, existing.id);
-    } else {
-      db.prepare('INSERT INTO scores (team_id, hole_number, score) VALUES (?,?,?)').run(req.session.teamId, hole_number, scoreNum);
-    }
-    broadcast('score_updated', { tournament_id: req.session.tournamentId });
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/team/upload-photo/:hole', requireTeam, (req, res) => {
-  const holeNum = parseInt(req.params.hole);
-  const tid = req.session.tournamentId;
-  try {
-    const hole = db.prepare('SELECT * FROM holes WHERE tournament_id=? AND hole_number=?').get(tid, holeNum);
-    if (!hole) return res.status(404).json({ error: 'Hull ikke funnet' });
-    const uploadDir = `./uploads/admin/t${tid}/scoreboard/h${holeNum}`;
-    ensureDir(uploadDir);
-    const dynamicUpload = multer({
-      storage: multer.diskStorage({
-        destination: uploadDir,
-        filename: (req, file, cb) => cb(null, `hole-${Date.now()}-${Math.round(Math.random()*1e6)}${path.extname(file.originalname)}`)
-      }),
-      limits: { fileSize: 15 * 1024 * 1024 },
-      fileFilter: (req, file, cb) => {
-        if (isAllowedImageUpload(file)) return cb(null, true);
-        cb(new Error('Kun bilder er tillatt'));
-      }
-    }).single('photo');
-    dynamicUpload(req, res, err => {
-      if (err) return res.status(400).json({ error: err.message });
-      if (!req.file) return res.status(400).json({ error: 'Ingen fil lastet opp' });
-      const photoPath = `/uploads/admin/t${tid}/scoreboard/h${holeNum}/${req.file.filename}`;
-      const existing = db.prepare('SELECT id FROM scores WHERE team_id=? AND hole_number=?').get(req.session.teamId, holeNum);
-      let scoreId;
-      if (existing) {
-        db.prepare('UPDATE scores SET photo_path=?, is_published=1 WHERE id=?').run(photoPath, existing.id);
-        scoreId = existing.id;
-      } else {
-        const created = db.prepare('INSERT INTO scores (team_id, hole_number, score, photo_path, is_published) VALUES (?,?,0,?,1)')
-          .run(req.session.teamId, holeNum, photoPath);
-        scoreId = Number(created.lastInsertRowid);
-      }
-      syncScorePhotoToGallery({ tournamentId: tid, scoreId, photoPath });
-      broadcast('score_updated', { tournament_id: tid });
-      res.json({ success: true, photo_path: photoPath });
-    });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// ════════════════════════════════════════════════════════════════════════════
-//  ADMIN
-// ════════════════════════════════════════════════════════════════════════════
-
-app.get('/api/admin/tournaments', requireAdmin, (req, res) => {
-  try {
-    const tournaments = db.prepare('SELECT * FROM tournaments ORDER BY year DESC').all();
-    res.json({ tournaments });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/admin/tournament', requireAdmin, (req, res) => {
-  const { date, course, description, gameday_info, slope_rating } = req.body;
-  if (!date) return res.status(400).json({ error: 'Dato er påkrevd' });
-  const year = new Date(date).getFullYear();
-  if (!Number.isFinite(year)) return res.status(400).json({ error: 'Ugyldig dato' });
-  const name = 'Lorgen Invitational';
-  try {
-    const result = db.prepare(
-      'INSERT INTO tournaments (year, name, date, course, description, gameday_info, slope_rating) VALUES (?,?,?,?,?,?,?)'
-    ).run(year, name, date, course||'', description||'', gameday_info||'', slope_rating||113);
-    const tid = result.lastInsertRowid;
-    const insertHole = db.prepare('INSERT INTO holes (tournament_id, hole_number, par, requires_photo) VALUES (?,?,4,0)');
-    const insertAllHoles = db.transaction(() => {
-      for (let i = 1; i <= 18; i++) insertHole.run(tid, i);
-    });
-    insertAllHoles();
-    res.json({ success: true, id: tid });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.put('/api/admin/tournament/:id', requireAdmin, (req, res) => {
-  const { date, course, description, gameday_info, status, slope_rating } = req.body;
-  if (!date) return res.status(400).json({ error: 'Dato er påkrevd' });
-  const year = new Date(date).getFullYear();
-  if (!Number.isFinite(year)) return res.status(400).json({ error: 'Ugyldig dato' });
-  const name = 'Lorgen Invitational';
-  try {
-    db.prepare(
-      'UPDATE tournaments SET year=?, name=?, date=?, course=?, description=?, gameday_info=?, status=?, slope_rating=? WHERE id=?'
-    ).run(year, name, date, course||'', description||'', gameday_info||'', status, slope_rating||113, req.params.id);
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.put('/api/admin/tournament/:id/slope', requireAdmin, (req, res) => {
-  try {
-    db.prepare('UPDATE tournaments SET slope_rating=? WHERE id=?').run(parseInt(req.body.slope_rating)||113, req.params.id);
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-
-app.get('/api/admin/tournament/:id/sponsors', requireAdmin, (req, res) => {
-  try {
-    const tournamentId = parseInt(req.params.id, 10);
-    const home = getSponsorsForTournament(tournamentId, 'home');
-    const hole = getSponsorsForTournament(tournamentId, 'hole');
-    res.json({ home, hole });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/admin/tournament/:id/sponsors', requireAdmin, (req, res) => {
-  try {
-    const tournamentId = parseInt(req.params.id, 10);
-    const sponsors = Array.isArray(req.body.sponsors) ? req.body.sponsors : [];
-    const stmt = db.prepare(
-      `INSERT INTO sponsors (tournament_id, placement, slot_key, spot_number, hole_number, sponsor_name, description, logo_path, is_enabled, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
-       ON CONFLICT(tournament_id, placement, slot_key)
-       DO UPDATE SET
-         spot_number=excluded.spot_number,
-         hole_number=excluded.hole_number,
-         sponsor_name=excluded.sponsor_name,
-         description=excluded.description,
-         logo_path=excluded.logo_path,
-         is_enabled=excluded.is_enabled,
-         updated_at=CURRENT_TIMESTAMP`
-    );
-
-    const tx = db.transaction(() => {
-      sponsors.forEach(item => {
-        const placement = item.placement === 'hole' ? 'hole' : 'home';
-        const slotNumber = placement === 'home' ? (parseInt(item.spot_number, 10) || null) : null;
-        const holeNumber = placement === 'hole' ? (parseInt(item.hole_number, 10) || null) : null;
-        const slotKey = placement === 'home' ? `spot_${slotNumber}` : `hole_${holeNumber}`;
-        if (!slotNumber && !holeNumber) return;
-        stmt.run(
-          tournamentId,
-          placement,
-          slotKey,
-          slotNumber,
-          holeNumber,
-          String(item.sponsor_name || '').trim(),
-          String(item.description || '').trim(),
-          String(item.logo_path || '').trim(),
-          item.is_enabled ? 1 : 0
-        );
-      });
-    });
-
-    tx();
-    res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/admin/tournament/:id/sponsor-logo', requireAdmin, (req, res) => {
-  const tournamentId = parseInt(req.params.id, 10);
-  const uploadDir = `./uploads/admin/t${tournamentId}/sponsors`;
-  ensureDir(uploadDir);
-
-  const dynamicUpload = multer({
-    storage: multer.diskStorage({
-      destination: uploadDir,
-      filename: (req, file, cb) => cb(null, `sponsor-${Date.now()}-${Math.round(Math.random()*1e6)}${path.extname(file.originalname)}`)
-    }),
-    limits: { fileSize: 15 * 1024 * 1024 },
-    fileFilter: (req, file, cb) => {
-      if (isAllowedImageUpload(file)) return cb(null, true);
-      cb(new Error('Kun bilder er tillatt'));
-    }
-  }).single('logo');
-
-  dynamicUpload(req, res, err => {
-    if (err) return res.status(400).json({ error: err.message });
-    if (!req.file) return res.status(400).json({ error: 'Ingen fil lastet opp' });
-    const logoPath = `/uploads/admin/t${tournamentId}/sponsors/${req.file.filename}`;
-    res.json({ success: true, logo_path: logoPath });
-  });
-});
-
-app.put('/api/admin/tournament/:id/gameday', requireAdmin, (req, res) => {
-  const { gameday_info } = req.body;
-  try {
-    db.prepare('UPDATE tournaments SET gameday_info=? WHERE id=?').run(gameday_info||'', req.params.id);
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.delete('/api/admin/tournament/:id', requireAdmin, (req, res) => {
-  const id = req.params.id;
-  try {
-    const teams = db.prepare('SELECT id FROM teams WHERE tournament_id=?').all(id);
-    if (teams.length) {
-      const deleteScores = db.transaction(() => {
-        for (const t of teams) db.prepare('DELETE FROM scores WHERE team_id=?').run(t.id);
-      });
-      deleteScores();
-    }
-    db.prepare('DELETE FROM teams WHERE tournament_id=?').run(id);
-    db.prepare('DELETE FROM holes WHERE tournament_id=?').run(id);
-    db.prepare('DELETE FROM awards WHERE tournament_id=?').run(id);
-    db.prepare('DELETE FROM gallery_photos WHERE tournament_id=?').run(id);
-    db.prepare('DELETE FROM tournaments WHERE id=?').run(id);
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/api/admin/tournament/:id/teams', requireAdmin, (req, res) => {
-  try {
-    const teams = db.prepare('SELECT * FROM teams WHERE tournament_id=?').all(req.params.id);
-    res.json({ teams });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/admin/team', requireAdmin, (req, res) => {
-  const { tournament_id, team_name, player1, player2, player1_handicap, player2_handicap } = req.body;
-  const pin_code = normalizePin(req.body?.pin_code);
-  if (!tournament_id || !team_name || !player1 || !player2 || !pin_code)
-    return res.status(400).json({ error: 'Alle felt er påkrevd' });
-  if (!/^\d{4}$/.test(pin_code))
-    return res.status(400).json({ error: 'PIN må være nøyaktig 4 siffer' });
-  try {
-    const existing = findTeamByPin(tournament_id, pin_code, 'id');
-    if (existing) return res.status(400).json({ error: 'PIN allerede i bruk i denne turneringen' });
-    const result = db.prepare(
-      'INSERT INTO teams (tournament_id, team_name, player1, player2, pin_code, player1_handicap, player2_handicap) VALUES (?,?,?,?,?,?,?)'
-    ).run(tournament_id, team_name, player1, player2, pin_code, parseFloat(player1_handicap)||0, parseFloat(player2_handicap)||0);
-    res.json({ success: true, id: result.lastInsertRowid });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.put('/api/admin/team/:id', requireAdmin, (req, res) => {
-  const { team_name, player1, player2, player1_handicap, player2_handicap } = req.body;
-  const pin_code = normalizePin(req.body?.pin_code);
-  if (!/^\d{4}$/.test(pin_code)) return res.status(400).json({ error: 'PIN må være nøyaktig 4 siffer' });
-  try {
-    db.prepare('UPDATE teams SET team_name=?, player1=?, player2=?, pin_code=?, player1_handicap=?, player2_handicap=? WHERE id=?')
-      .run(team_name, player1, player2, pin_code, parseFloat(player1_handicap)||0, parseFloat(player2_handicap)||0, req.params.id);
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.delete('/api/admin/team/:id', requireAdmin, (req, res) => {
-  try {
-    db.prepare('DELETE FROM scores WHERE team_id=?').run(req.params.id);
-    db.prepare('DELETE FROM teams WHERE id=?').run(req.params.id);
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.put('/api/admin/team/:id/lock', requireAdmin, (req, res) => {
-  try {
-    const locked = req.body.locked ? 1 : 0;
-    db.prepare('UPDATE teams SET locked=? WHERE id=?').run(locked, req.params.id);
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/api/admin/tournament/:id/holes', requireAdmin, (req, res) => {
-  try {
-    const holes = db.prepare('SELECT * FROM holes WHERE tournament_id=? ORDER BY hole_number').all(req.params.id);
-    res.json({ holes });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/admin/tournament/:id/holes', requireAdmin, (req, res) => {
-  const { holes } = req.body;
-  const tid = req.params.id;
-  try {
-    const update = db.prepare(
-      'UPDATE holes SET par=?, requires_photo=?, is_longest_drive=?, is_closest_to_pin=?, stroke_index=? WHERE tournament_id=? AND hole_number=?'
-    );
-    const updateAll = db.transaction(() => {
-      for (const h of holes) {
-        update.run(h.par, h.requires_photo ? 1 : 0, h.is_longest_drive ? 1 : 0, h.is_closest_to_pin ? 1 : 0, h.stroke_index || 0, tid, h.hole_number);
-        if (h.requires_photo) {
-          const dir = `./uploads/t${tid}/h${h.hole_number}`;
-          if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        }
-      }
-    });
-    updateAll();
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/api/admin/tournament/:id/scores', requireAdmin, (req, res) => {
-  try {
-    const teams = db.prepare('SELECT id,team_name,player1,player2 FROM teams WHERE tournament_id=?').all(req.params.id);
-    if (!teams.length) return res.json({ scores: [] });
-    const teamIds = teams.map(t => t.id);
-    const scores = db.prepare(`SELECT * FROM scores WHERE team_id IN (${teamIds.map(() => '?').join(',')})`)
-      .all(...teamIds);
-    const holes = db.prepare('SELECT hole_number,par FROM holes WHERE tournament_id=?').all(req.params.id);
-    const holesMap = {};
-    holes.forEach(h => holesMap[h.hole_number] = h.par);
-    const teamsMap = {};
-    teams.forEach(t => teamsMap[t.id] = t);
-    const flat = scores.map(s => ({
-      ...s,
-      team_name: teamsMap[s.team_id]?.team_name,
-      player1:   teamsMap[s.team_id]?.player1,
-      player2:   teamsMap[s.team_id]?.player2,
-      par:       holesMap[s.hole_number] || 4
-    })).sort((a, b) =>
-      (a.team_name || '').localeCompare(b.team_name || '') || a.hole_number - b.hole_number
-    );
-    res.json({ scores: flat });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.put('/api/admin/score/:id', requireAdmin, (req, res) => {
-  try {
-    db.prepare('UPDATE scores SET score=? WHERE id=?').run(req.body.score, req.params.id);
-    broadcast('score_updated', {});
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.delete('/api/admin/score/:id', requireAdmin, (req, res) => {
-  try {
-    db.prepare('DELETE FROM scores WHERE id=?').run(req.params.id);
-    broadcast('score_updated', {});
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// Player-uploaded photos (from scores)
-app.get('/api/admin/tournament/:id/photos', requireAdmin, (req, res) => {
-  try {
-    const teams = db.prepare('SELECT id,team_name,player1,player2 FROM teams WHERE tournament_id=?').all(req.params.id);
-    if (!teams.length) return res.json({ photos: [] });
-    const teamIds = teams.map(t => t.id);
-    const scores = db.prepare(
-      `SELECT * FROM scores WHERE team_id IN (${teamIds.map(() => '?').join(',')})
-       AND photo_path IS NOT NULL AND photo_path != ''
-       ORDER BY submitted_at DESC`
-    ).all(...teamIds);
-    const holes = db.prepare('SELECT hole_number,par,requires_photo FROM holes WHERE tournament_id=?').all(req.params.id);
-    const holesMap = {};
-    holes.forEach(h => holesMap[h.hole_number] = h);
-    const teamsMap = {};
-    teams.forEach(t => teamsMap[t.id] = t);
-    const photos = scores.map(s => ({
-      id: s.id, hole_number: s.hole_number, photo_path: normalizePhotoPath(s.photo_path), submitted_at: s.submitted_at,
-      is_published: !!s.is_published,
-      team_name:      teamsMap[s.team_id]?.team_name,
-      player1:        teamsMap[s.team_id]?.player1,
-      player2:        teamsMap[s.team_id]?.player2,
-      par:            holesMap[s.hole_number]?.par,
-      requires_photo: holesMap[s.hole_number]?.requires_photo
-    }));
-    res.json({ photos });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/admin/tournament/:id/rebuild-photo-db', requireAdmin, (req, res) => {
-  try {
-    const tournamentId = Number(req.params.id);
-    if (!Number.isFinite(tournamentId)) return res.status(400).json({ error: 'Ugyldig turnerings-ID' });
-    const tournament = db.prepare('SELECT id FROM tournaments WHERE id=?').get(tournamentId);
-    if (!tournament) return res.status(404).json({ error: 'Turnering ikke funnet' });
-
-    const result = rebuildPhotoDatabase(tournamentId);
-    res.json({ success: true, ...result });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// ── Team award claim ─────────────────────────────────────────────────────────
-
-app.post('/api/team/claim-award', requireTeam, (req, res) => {
-  const { hole_number, award_type, player_name, detail } = req.body;
-  if (!hole_number || !award_type || !player_name)
-    return res.status(400).json({ error: 'Hull, type og spillernavn er påkrevd' });
-  if (!['longest_drive','closest_to_pin'].includes(award_type))
-    return res.status(400).json({ error: 'Ugyldig utmerkelsestype' });
-  try {
-    const hole = db.prepare('SELECT * FROM holes WHERE tournament_id=? AND hole_number=?')
-      .get(req.session.tournamentId, hole_number);
-    if (!hole) return res.status(404).json({ error: 'Hull ikke funnet' });
-    if (award_type === 'longest_drive' && !hole.is_longest_drive)
-      return res.status(400).json({ error: 'Dette hullet har ingen Lengste Drive-konkurranse' });
-    if (award_type === 'closest_to_pin' && !hole.is_closest_to_pin)
-      return res.status(400).json({ error: 'Dette hullet har ingen Nærmest Flagget-konkurranse' });
-    db.prepare(
-      `INSERT INTO award_claims (tournament_id, team_id, hole_number, award_type, player_name, detail)
-       VALUES (?,?,?,?,?,?)
-       ON CONFLICT(tournament_id, team_id, hole_number, award_type)
-       DO UPDATE SET player_name=excluded.player_name, detail=excluded.detail, claimed_at=CURRENT_TIMESTAMP`
-    ).run(req.session.tournamentId, req.session.teamId, hole_number, award_type, player_name, detail||'');
-    // Auto-register claim as award only if it beats the current best result
-    // Find best existing claim (from award_claims, not awards — robust regardless of schema)
-    const allExistingClaims = db.prepare(
-      'SELECT detail FROM award_claims WHERE tournament_id=? AND award_type=? AND hole_number=?'
-    ).all(req.session.tournamentId, award_type, hole_number);
-    const newVal = parseFloat(detail) || 0;
-    let isNewBest = allExistingClaims.length === 0;
-    if (!isNewBest) {
-      // Compare new claim against all existing claims
-      let bestExisting = null;
-      allExistingClaims.forEach(c => {
-        const v = parseFloat(c.detail) || 0;
-        if (bestExisting === null) { bestExisting = v; return; }
-        if (award_type === 'longest_drive' && v > bestExisting) bestExisting = v;
-        else if (award_type === 'closest_to_pin' && v > 0 && (bestExisting <= 0 || v < bestExisting)) bestExisting = v;
-      });
-      if (award_type === 'longest_drive') isNewBest = newVal > (bestExisting || 0);
-      else if (award_type === 'closest_to_pin') isNewBest = newVal > 0 && (bestExisting === null || bestExisting <= 0 || newVal < bestExisting);
-    }
-    if (isNewBest) {
-      // DELETE all existing rows for this type+hole (handles missing UNIQUE constraint), then INSERT best
-      db.prepare('DELETE FROM awards WHERE tournament_id=? AND award_type=? AND hole_number=?')
-        .run(req.session.tournamentId, award_type, hole_number);
-      db.prepare(
-        `INSERT INTO awards (tournament_id, award_type, team_id, player_name, hole_number, detail) VALUES (?,?,?,?,?,?)`
-      ).run(req.session.tournamentId, award_type, req.session.teamId, player_name, hole_number, detail||'');
-    }
-    broadcast('award_updated', {});
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// ── Team lock scorecard ───────────────────────────────────────────────────────
-app.post('/api/team/lock-scorecard', requireTeam, (req, res) => {
-  try {
-    db.prepare('UPDATE teams SET locked=1 WHERE id=?').run(req.session.teamId);
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// ── Public photo gallery ──────────────────────────────────────────────────────
-
-function getVoterIp(req) {
-  return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
-}
-
-function getLatestTournamentWithPublishedPhotos() {
-  const latestWithPhotos = db.prepare(
-    `SELECT x.tournament_id FROM (
-       SELECT gp.tournament_id, gp.uploaded_at AS ts FROM gallery_photos gp WHERE gp.is_published=1
-     ) x
-     ORDER BY x.ts DESC
-     LIMIT 1`
-  ).get();
-
-  if (!latestWithPhotos?.tournament_id) return null;
-  return db.prepare('SELECT * FROM tournaments WHERE id=?').get(latestWithPhotos.tournament_id) || null;
-}
-
-function getTournamentForPhotoRef(photoRef) {
-  if (!photoRef || typeof photoRef !== 'string') return null;
-
-  if (photoRef.startsWith('gallery:')) {
-    const id = Number(photoRef.split(':')[1]);
-    if (!Number.isFinite(id)) return null;
-    const row = db.prepare('SELECT tournament_id FROM gallery_photos WHERE id=?').get(id);
-    if (!row?.tournament_id) return null;
-    return db.prepare('SELECT * FROM tournaments WHERE id=?').get(row.tournament_id) || null;
-  }
-
-  if (photoRef.startsWith('score:')) {
-    const id = Number(photoRef.split(':')[1]);
-    if (!Number.isFinite(id)) return null;
-    const row = db.prepare(
-      `SELECT tm.tournament_id FROM scores s
-       JOIN teams tm ON tm.id=s.team_id
-       WHERE s.id=?`
-    ).get(id);
-    if (!row?.tournament_id) return null;
-    return db.prepare('SELECT * FROM tournaments WHERE id=?').get(row.tournament_id) || null;
-  }
-
-  return null;
-}
-
-app.get('/api/gallery', (req, res) => {
-  try {
-    // Show the most recently updated published gallery first, so users always
-    // see the same photos as in admin regardless of tournament status.
-    let t = getLatestTournamentWithPublishedPhotos();
-    if (!t) t = getActiveTournament();
-    if (!t) t = db.prepare(`SELECT * FROM tournaments WHERE status='completed' ORDER BY date DESC LIMIT 1`).get();
-    const collectPhotosForTournament = (tournamentId) => {
-      const items = [];
-      const scoreIdsFromGallery = new Set();
-
-      const galleryPhotos = db.prepare(
-        `SELECT id, photo_path, caption, uploaded_at FROM gallery_photos WHERE tournament_id=? AND is_published=1 ORDER BY uploaded_at DESC`
-      ).all(tournamentId);
-      galleryPhotos.forEach(g => {
-        const scoreMatch = String(g.caption || '').match(/^score:(\d+)$/);
-        if (scoreMatch) {
-          scoreIdsFromGallery.add(Number(scoreMatch[1]));
-          return;
-        }
-        if (String(g.caption || '').startsWith('score:')) return;
-        const photoPath = normalizePhotoPath(g.photo_path);
-        if (!photoPath) return;
-        items.push({
-          photo_ref: `gallery:${g.id}`,
-          hole_number: null,
-          photo_path: photoPath,
-          team_name: g.caption || '',
-          submitted_at: g.uploaded_at,
-          source: 'gallery'
-        });
-      });
-
-      const scores = db.prepare(
-        `SELECT s.id, s.team_id, s.hole_number, s.photo_path, s.submitted_at, t.team_name
-         FROM scores s
-         JOIN teams t ON t.id=s.team_id
-         WHERE t.tournament_id=?
-         AND is_published=1
-         AND photo_path IS NOT NULL AND photo_path != ''
-         ORDER BY submitted_at DESC`
-      ).all(tournamentId);
-      scores.forEach(s => {
-        scoreIdsFromGallery.delete(Number(s.id));
-        const photoPath = normalizePhotoPath(s.photo_path);
-        if (!photoPath) return;
-        items.push({
-          photo_ref: `score:${s.id}`,
-          hole_number: s.hole_number,
-          photo_path: photoPath,
-          team_name: s.team_name || '',
-          submitted_at: s.submitted_at,
-          source: 'player'
-        });
-      });
-
-      // Fallback: include score-linked gallery entries when score rows are gone,
-      // so older photos do not disappear after team resets/imports.
-      if (scoreIdsFromGallery.size) {
-        const missingScoreRefs = Array.from(scoreIdsFromGallery);
-        const placeholders = db.prepare(
-          `SELECT caption, photo_path, uploaded_at FROM gallery_photos
-           WHERE tournament_id=? AND is_published=1
-           AND caption IN (${missingScoreRefs.map(() => '?').join(',')})`
-        ).all(tournamentId, ...missingScoreRefs.map(id => `score:${id}`));
-
-        placeholders.forEach(p => {
-          const photoPath = normalizePhotoPath(p.photo_path);
-          if (!photoPath) return;
-          const scoreId = Number(String(p.caption || '').split(':')[1]);
-          if (!Number.isFinite(scoreId)) return;
-          items.push({
-            photo_ref: `score:${scoreId}`,
-            hole_number: null,
-            photo_path: photoPath,
-            team_name: 'Lagbilde',
-            submitted_at: p.uploaded_at,
-            source: 'player'
-          });
-        });
-      }
-
-      return items;
-    };
-
-    if (!t) return res.json({ photos: [], tournament: null });
-
-    let photos = collectPhotosForTournament(t.id);
-    if (!photos.length) {
-      const fallbackTournament = getLatestTournamentWithPublishedPhotos();
-      if (fallbackTournament && fallbackTournament.id !== t.id) {
-        if (fallbackTournament) {
-          const fallbackPhotos = collectPhotosForTournament(fallbackTournament.id);
-          if (fallbackPhotos.length) {
-            t = fallbackTournament;
-            photos = fallbackPhotos;
-          }
-        }
-      }
-    }
-
-    // Add vote counts and voter status
-    const voterIp = getVoterIp(req);
-    const voteCounts = db.prepare(
-      `SELECT photo_ref, COUNT(*) as count FROM photo_votes WHERE tournament_id=? GROUP BY photo_ref`
-    ).all(t.id);
-    const myVotes = db.prepare(
-      `SELECT photo_ref FROM photo_votes WHERE tournament_id=? AND voter_ip=?`
-    ).all(t.id, voterIp);
-    const voteMap = {};
-    voteCounts.forEach(v => voteMap[v.photo_ref] = v.count);
-    const myVoteSet = new Set(myVotes.map(v => v.photo_ref));
-
-    photos.forEach(p => {
-      p.votes = voteMap[p.photo_ref] || 0;
-      p.voted = myVoteSet.has(p.photo_ref);
-    });
-
-    // Sort by most votes first, then newest
-    photos.sort((a, b) => (b.votes - a.votes) || (new Date(b.submitted_at) - new Date(a.submitted_at)));
-    res.json({ photos, tournament: t });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// ── Vote on photo ─────────────────────────────────────────────────────────────
-
-app.post('/api/gallery/vote', (req, res) => {
-  const { photo_ref } = req.body;
-  if (!photo_ref) return res.status(400).json({ error: 'photo_ref er påkrevd' });
-  try {
-    // Always store votes on the tournament that owns the selected image.
-    let t = getTournamentForPhotoRef(photo_ref);
-    if (!t) t = getLatestTournamentWithPublishedPhotos();
-    if (!t) t = getActiveTournament();
-    if (!t) t = db.prepare(`SELECT * FROM tournaments WHERE status='completed' ORDER BY date DESC LIMIT 1`).get();
-    if (!t) return res.status(404).json({ error: 'Ingen aktiv turnering' });
-    const voterIp = getVoterIp(req);
-    // Toggle vote
-    const existing = db.prepare('SELECT id FROM photo_votes WHERE tournament_id=? AND photo_ref=? AND voter_ip=?')
-      .get(t.id, photo_ref, voterIp);
-    if (existing) {
-      db.prepare('DELETE FROM photo_votes WHERE id=?').run(existing.id);
-      return res.json({ voted: false });
-    }
-    db.prepare('INSERT INTO photo_votes (tournament_id, photo_ref, voter_ip) VALUES (?,?,?)')
-      .run(t.id, photo_ref, voterIp);
-    res.json({ voted: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// ── Admin gallery (admin-uploaded photos) ────────────────────────────────────
-
-app.get('/api/admin/tournament/:id/gallery', requireAdmin, (req, res) => {
-  try {
-    const photosRaw = db.prepare(
-      'SELECT * FROM gallery_photos WHERE tournament_id=? ORDER BY uploaded_at DESC'
-    ).all(req.params.id);
-    const photos = photosRaw.map(p => ({ ...p, photo_path: normalizePhotoPath(p.photo_path) }));
-    res.json({ photos });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/admin/tournament/:id/gallery', requireAdmin, galleryUpload.single('photo'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'Ingen fil lastet opp' });
-  try {
-    const photoPath = `/uploads/glimtskudd/${req.file.filename}`;
-    const caption = req.body.caption || '';
-    const result = db.prepare(
-      'INSERT INTO gallery_photos (tournament_id, photo_path, caption) VALUES (?,?,?)'
-    ).run(req.params.id, photoPath, caption);
-    res.json({ success: true, id: result.lastInsertRowid, photo_path: photoPath });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.put('/api/admin/gallery/:id/publish', requireAdmin, (req, res) => {
-  try {
-    const isPublished = req.body?.is_published ? 1 : 0;
-    db.prepare('UPDATE gallery_photos SET is_published=? WHERE id=?').run(isPublished, req.params.id);
-    res.json({ success: true, is_published: !!isPublished });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/api/admin/gallery/:id/download', requireAdmin, (req, res) => {
-  try {
-    const photo = db.prepare('SELECT photo_path FROM gallery_photos WHERE id=?').get(req.params.id);
-    if (!photo?.photo_path) return res.status(404).json({ error: 'Bilde ikke funnet' });
-    const normalized = normalizePhotoPath(photo.photo_path);
-    if (!normalized.startsWith('/uploads/')) return res.status(400).json({ error: 'Kan ikke laste ned eksternt bilde' });
-    const filePath = path.join(__dirname, normalized.replace(/^\//, ''));
-    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Filen finnes ikke på server' });
-    return res.download(filePath, path.basename(filePath));
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/api/admin/photo/:id/download', requireAdmin, (req, res) => {
-  try {
-    const score = db.prepare('SELECT photo_path FROM scores WHERE id=?').get(req.params.id);
-    if (!score?.photo_path) return res.status(404).json({ error: 'Bilde ikke funnet' });
-    const normalized = normalizePhotoPath(score.photo_path);
-    if (!normalized.startsWith('/uploads/')) return res.status(400).json({ error: 'Kan ikke laste ned eksternt bilde' });
-    const filePath = path.join(__dirname, normalized.replace(/^\//, ''));
-    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Filen finnes ikke på server' });
-    return res.download(filePath, path.basename(filePath));
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.delete('/api/admin/gallery/:id', requireAdmin, (req, res) => {
-  try {
-    const photo = db.prepare('SELECT photo_path FROM gallery_photos WHERE id=?').get(req.params.id);
-    if (photo) {
-      const filePath = path.join(__dirname, photo.photo_path.replace(/^\//, ''));
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    }
-    db.prepare('DELETE FROM gallery_photos WHERE id=?').run(req.params.id);
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// ── Awards ───────────────────────────────────────────────────────────────────
-
-app.get('/api/admin/tournament/:id/awards', requireAdmin, (req, res) => {
-  try {
-    const awards = db.prepare(
-      `SELECT a.*, t.team_name FROM awards a LEFT JOIN teams t ON t.id=a.team_id WHERE a.tournament_id=?`
-    ).all(req.params.id);
-    res.json({ awards });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/api/admin/tournament/:id/award-claims', requireAdmin, (req, res) => {
-  try {
-    const claims = db.prepare(
-      `SELECT ac.*, t.team_name, t.player1, t.player2
-       FROM award_claims ac LEFT JOIN teams t ON t.id=ac.team_id
-       WHERE ac.tournament_id=? ORDER BY ac.claimed_at DESC`
-    ).all(req.params.id);
-    res.json({ claims });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/admin/award', requireAdmin, (req, res) => {
-  const { tournament_id, award_type, team_id, player_name, hole_number, detail } = req.body;
-  try {
-    db.prepare(
-      `INSERT INTO awards (tournament_id, award_type, team_id, player_name, hole_number, detail) VALUES (?,?,?,?,?,?)
-       ON CONFLICT(tournament_id, award_type, hole_number) DO UPDATE SET team_id=excluded.team_id, player_name=excluded.player_name, detail=excluded.detail`
-    ).run(tournament_id, award_type, team_id||null, player_name||'', hole_number||0, detail||'');
-    broadcast('award_updated', {});
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.delete('/api/admin/award/:id', requireAdmin, (req, res) => {
-  try {
-    db.prepare('DELETE FROM awards WHERE id=?').run(req.params.id);
-    broadcast('award_updated', {});
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// ── Courses ──────────────────────────────────────────────────────────────────
-
-app.get('/api/admin/courses', requireAdmin, (req, res) => {
-  try {
-    const courses = db.prepare('SELECT * FROM courses ORDER BY name ASC').all();
-    res.json({ courses });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/admin/course', requireAdmin, (req, res) => {
-  const { name, slope_rating, location, notes } = req.body;
-  if (!name) return res.status(400).json({ error: 'Banenavn er påkrevd' });
-  try {
-    const result = db.prepare(
-      'INSERT INTO courses (name, slope_rating, location, notes) VALUES (?,?,?,?)'
-    ).run(name, parseInt(slope_rating)||113, location||'', notes||'');
-    res.json({ success: true, id: result.lastInsertRowid });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.put('/api/admin/course/:id', requireAdmin, (req, res) => {
-  const { name, slope_rating, location, notes } = req.body;
-  if (!name) return res.status(400).json({ error: 'Banenavn er påkrevd' });
-  try {
-    db.prepare('UPDATE courses SET name=?, slope_rating=?, location=?, notes=? WHERE id=?')
-      .run(name, parseInt(slope_rating)||113, location||'', notes||'', req.params.id);
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.delete('/api/admin/course/:id', requireAdmin, (req, res) => {
-  try {
-    db.prepare('DELETE FROM course_holes WHERE course_id=?').run(req.params.id);
-    db.prepare('DELETE FROM courses WHERE id=?').run(req.params.id);
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get('/api/admin/course/:id/holes', requireAdmin, (req, res) => {
-  try {
-    let holes = db.prepare('SELECT * FROM course_holes WHERE course_id=? ORDER BY hole_number').all(req.params.id);
-    // If no template saved yet, return default 18 holes
-    if (!holes.length) {
-      holes = Array.from({ length: 18 }, (_, i) => ({
-        course_id: parseInt(req.params.id), hole_number: i + 1,
-        par: 4, requires_photo: 0, is_longest_drive: 0, is_closest_to_pin: 0
-      }));
-    }
-    res.json({ holes });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/admin/course/:id/holes', requireAdmin, (req, res) => {
-  const { holes } = req.body;
-  const courseId = req.params.id;
-  try {
-    const upsert = db.prepare(
-      `INSERT INTO course_holes (course_id, hole_number, par, requires_photo, is_longest_drive, is_closest_to_pin, stroke_index)
-       VALUES (?,?,?,?,?,?,?)
-       ON CONFLICT(course_id, hole_number) DO UPDATE SET
-         par=excluded.par, requires_photo=excluded.requires_photo,
-         is_longest_drive=excluded.is_longest_drive, is_closest_to_pin=excluded.is_closest_to_pin,
-         stroke_index=excluded.stroke_index`
-    );
-    const saveAll = db.transaction(() => {
-      for (const h of holes) {
-        upsert.run(courseId, h.hole_number, h.par, h.requires_photo ? 1 : 0, h.is_longest_drive ? 1 : 0, h.is_closest_to_pin ? 1 : 0, h.stroke_index || 0);
-      }
-    });
-    saveAll();
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// ── Legacy ───────────────────────────────────────────────────────────────────
-
-app.get('/api/admin/legacy', requireAdmin, (req, res) => {
-  try {
-    const legacy = db.prepare('SELECT * FROM legacy ORDER BY year DESC').all();
-    res.json({ legacy });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/admin/legacy', requireAdmin, (req, res) => {
-  const { year, winner_team, player1, player2, score, score_to_par, course, notes } = req.body;
-  if (!year || !winner_team || !player1 || !player2)
-    return res.status(400).json({ error: 'År, lag og spillere er påkrevd' });
-  try {
-    const result = db.prepare(
-      'INSERT INTO legacy (year, winner_team, player1, player2, score, score_to_par, course, notes) VALUES (?,?,?,?,?,?,?,?)'
-    ).run(year, winner_team, player1, player2, score||'', score_to_par||'', course||'', notes||'');
-    res.json({ success: true, id: result.lastInsertRowid });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.put('/api/admin/legacy/:id', requireAdmin, (req, res) => {
-  const { year, winner_team, player1, player2, score, score_to_par, course, notes } = req.body;
-  try {
-    db.prepare(
-      'UPDATE legacy SET year=?, winner_team=?, player1=?, player2=?, score=?, score_to_par=?, course=?, notes=? WHERE id=?'
-    ).run(year, winner_team, player1, player2, score||'', score_to_par||'', course||'', notes||'', req.params.id);
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/admin/legacy/:id/photo', requireAdmin, (req, res) => {
-  const legacyId = req.params.id;
-  const entry = db.prepare('SELECT id FROM legacy WHERE id=?').get(legacyId);
-  if (!entry) return res.status(404).json({ error: 'Oppføring ikke funnet' });
-  const dir = './uploads/legacy';
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  const legacyUpload = multer({
-    storage: multer.diskStorage({
-      destination: dir,
-      filename: (req, file, cb) => cb(null, `legacy-${legacyId}-${Date.now()}${path.extname(file.originalname)}`)
-    }),
-    limits: { fileSize: 15 * 1024 * 1024 },
-    fileFilter: (req, file, cb) => {
-      if (isAllowedImageUpload(file)) return cb(null, true);
-      cb(new Error('Kun bilder er tillatt'));
-    }
-  }).single('photo');
-  legacyUpload(req, res, err => {
-    if (err) return res.status(400).json({ error: err.message });
-    if (!req.file) return res.status(400).json({ error: 'Ingen fil lastet opp' });
-    const photoPath = `/uploads/legacy/${req.file.filename}`;
-    db.prepare('UPDATE legacy SET winner_photo=? WHERE id=?').run(photoPath, legacyId);
-    res.json({ success: true, winner_photo: photoPath });
-  });
-});
-
-app.put('/api/admin/legacy/:id/photo-focus', requireAdmin, (req, res) => {
-  try {
-    const focus = req.body.focus || '50% 50%';
-    db.prepare('UPDATE legacy SET winner_photo_focus=? WHERE id=?').run(focus, req.params.id);
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.delete('/api/admin/legacy/:id', requireAdmin, (req, res) => {
-  try {
-    db.prepare('DELETE FROM legacy WHERE id=?').run(req.params.id);
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// ── Delete photo from score ───────────────────────────────────────────────────
-app.delete('/api/admin/photo/:id', requireAdmin, (req, res) => {
-  try {
-    const score = db.prepare('SELECT photo_path FROM scores WHERE id=?').get(req.params.id);
-    if (score && score.photo_path) {
-      const filePath = path.join(__dirname, score.photo_path.replace(/^\//, ''));
-      if (fs.existsSync(filePath)) { try { fs.unlinkSync(filePath); } catch(_) {} }
-    }
-    db.prepare('UPDATE scores SET photo_path=NULL WHERE id=?').run(req.params.id);
-    db.prepare('DELETE FROM gallery_photos WHERE caption=?').run(`score:${req.params.id}`);
-    broadcast('score_updated', {});
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.put('/api/admin/photo/:id/publish', requireAdmin, (req, res) => {
-  try {
-    const isPublished = req.body?.is_published ? 1 : 0;
-    db.prepare('UPDATE scores SET is_published=? WHERE id=?').run(isPublished, req.params.id);
-    res.json({ success: true, is_published: !!isPublished });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+app.listen(PORT, () => {
+  // eslint-disable-next-line no-console
+  console.log(`Lorgen Invitational listening on ${PORT}`);
 });
-
-// ── Coin back image ───────────────────────────────────────────────────────────
-function readCoinBackConfig() {
-  const configPath = path.join(__dirname, 'uploads', 'coin-back.json');
-  let data = {};
-  if (fs.existsSync(configPath)) {
-    try {
-      data = JSON.parse(fs.readFileSync(configPath, 'utf8')) || {};
-    } catch(_) {
-      data = {};
-    }
-  }
-
-  let photos = Array.isArray(data.photos) ? data.photos : [];
-
-  // Backward compatibility for older single-image format.
-  if (!photos.length && data.photo_path) {
-    photos = [{
-      id: 'legacy',
-      photo_path: data.photo_path,
-      focal_point: data.focal_point || '50% 50%',
-      is_active: true
-    }];
-  }
-
-  photos = photos
-    .filter(p => p && p.photo_path)
-    .map(p => ({
-      id: p.id || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      photo_path: p.photo_path,
-      focal_point: p.focal_point || '50% 50%',
-      is_active: p.is_active !== false
-    }));
-
-  const activePhotos = photos.filter(p => p.is_active);
-  const selectedPhoto = activePhotos[0] || photos[0] || null;
-
-  return { configPath, photos, selectedPhoto };
-}
-
-function writeCoinBackConfig(configPath, photos) {
-  fs.writeFileSync(configPath, JSON.stringify({ photos }, null, 2));
-}
-
-app.get('/api/coin-back', (req, res) => {
-  const { photos, selectedPhoto } = readCoinBackConfig();
-  res.json({
-    photo_path: selectedPhoto?.photo_path || null,
-    focal_point: selectedPhoto?.focal_point || null,
-    photos
-  });
-});
-
-app.put('/api/admin/coin-back/focus', requireAdmin, (req, res) => {
-  try {
-    const { configPath, photos } = readCoinBackConfig();
-    const focalPoint = req.body.focal_point || '50% 50%';
-    const imageId = req.body.image_id;
-    if (imageId) {
-      const idx = photos.findIndex(p => p.id === imageId);
-      if (idx === -1) return res.status(404).json({ error: 'Fant ikke bildet' });
-      photos[idx].focal_point = focalPoint;
-    } else if (photos[0]) {
-      photos[0].focal_point = focalPoint;
-    }
-    writeCoinBackConfig(configPath, photos);
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.put('/api/admin/coin-back/:id/active', requireAdmin, (req, res) => {
-  try {
-    const { configPath, photos } = readCoinBackConfig();
-    const idx = photos.findIndex(p => p.id === req.params.id);
-    if (idx === -1) return res.status(404).json({ error: 'Fant ikke bildet' });
-    photos[idx].is_active = !!req.body.is_active;
-    writeCoinBackConfig(configPath, photos);
-    res.json({ success: true, is_active: photos[idx].is_active });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/admin/coin-back', requireAdmin, (req, res) => {
-  const dir = './uploads/coin';
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  const coinUpload = multer({
-    storage: multer.diskStorage({
-      destination: dir,
-      filename: (req, file, cb) => cb(null, `back-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${path.extname(file.originalname)}`)
-    }),
-    limits: { fileSize: 10 * 1024 * 1024 },
-    fileFilter: (req, file, cb) => {
-      if (isAllowedImageUpload(file)) return cb(null, true);
-      cb(new Error('Kun bilder er tillatt'));
-    }
-  }).single('photo');
-  coinUpload(req, res, err => {
-    if (err) return res.status(400).json({ error: err.message });
-    if (!req.file) return res.status(400).json({ error: 'Ingen fil lastet opp' });
-    const photoPath = `/uploads/coin/${req.file.filename}`;
-    const { configPath, photos } = readCoinBackConfig();
-    const newPhoto = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      photo_path: photoPath,
-      focal_point: '50% 50%',
-      is_active: true
-    };
-    photos.push(newPhoto);
-    writeCoinBackConfig(configPath, photos);
-    res.json({ success: true, photo_path: photoPath, image: newPhoto, photos });
-  });
-});
-
-// ── Instagram QR code ─────────────────────────────────────────────────────────
-app.get('/api/instagram-qr', (req, res) => {
-  try {
-    const QRCode = require('qrcode');
-    const url = 'https://www.instagram.com/lorgeninvitational';
-    QRCode.toBuffer(url, { type: 'png', width: 200, margin: 1, color: { dark: '#0D1B2A', light: '#FFFFFF' } }, (err, buf) => {
-      if (err) return res.status(500).end();
-      res.set('Content-Type', 'image/png');
-      res.set('Cache-Control', 'public, max-age=86400');
-      res.send(buf);
-    });
-  } catch(e) { res.status(500).end(); }
-});
-
-// ── Clean URL routing ────────────────────────────────────────────────────────
-['gameday', 'scoreboard', 'legacy', 'enter-score', 'admin', 'gallery'].forEach(p => {
-  app.get(`/${p}`, (req, res) => res.sendFile(path.join(__dirname, `public/${p}.html`)));
-});
-
-if (require.main === module) {
-  const server = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`
-  ╔══════════════════════════════════════╗
-  ║   LORGEN INVITATIONAL                ║
-  ║   Server running on port ${PORT}         ║
-  ╚══════════════════════════════════════╝
-  `);
-  });
-
-  function shutdown(signal) {
-    console.log(`Mottok ${signal}. Stopper server...`);
-    server.close(() => {
-      console.log('Server stoppet.');
-      process.exit(0);
-    });
-  }
-
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
-  process.on('SIGINT', () => shutdown('SIGINT'));
-}
 
 module.exports = app;
