@@ -178,13 +178,69 @@ async function getTournament(tournamentId) {
   return data;
 }
 
+function isMissingColumnError(error, columnName) {
+  const message = `${error?.message || ''} ${error?.details || ''}`;
+  return message.includes(`'${columnName}'`) && (message.includes('Could not find') || message.includes('column') || message.includes('schema cache'));
+}
+
+async function insertTeamCompat(payload) {
+  const basePayload = {
+    tournament_id: payload.tournament_id,
+    name: payload.name,
+    team_name: payload.name,
+    pin: payload.pin,
+    pin_code: payload.pin,
+    locked: false
+  };
+
+  const attempts = [
+    { ...basePayload },
+    { ...basePayload, pin_code: undefined },
+    { ...basePayload, team_name: undefined },
+    { tournament_id: payload.tournament_id, name: payload.name, pin: payload.pin, locked: false },
+    { tournament_id: payload.tournament_id, team_name: payload.name, pin_code: payload.pin, locked: false }
+  ];
+
+  let lastError = null;
+  for (const attempt of attempts) {
+    const insertPayload = Object.fromEntries(Object.entries(attempt).filter(([, value]) => value !== undefined));
+    const { data, error } = await supabase.from('teams').insert(insertPayload).select('*').single();
+    if (!error) return data;
+    lastError = error;
+
+    const missingColumn =
+      isMissingColumnError(error, 'team_name') ||
+      isMissingColumnError(error, 'name') ||
+      isMissingColumnError(error, 'pin_code') ||
+      isMissingColumnError(error, 'pin');
+    if (!missingColumn) break;
+  }
+
+  throw lastError || new Error('Unable to create team');
+}
+
 async function fetchTeamsWithPlayers(tournamentId) {
-  const { data: teams, error: teamsError } = await supabase
+  let teamsResult = await supabase
     .from('teams')
     .select('id, tournament_id, name, pin, created_at')
     .eq('tournament_id', tournamentId)
     .order('id', { ascending: true });
-  if (teamsError) throw teamsError;
+  if (teamsResult.error && (isMissingColumnError(teamsResult.error, 'name') || isMissingColumnError(teamsResult.error, 'pin'))) {
+    teamsResult = await supabase
+      .from('teams')
+      .select('id, tournament_id, team_name, pin_code, created_at')
+      .eq('tournament_id', tournamentId)
+      .order('id', { ascending: true });
+  }
+  if (teamsResult.error) throw teamsResult.error;
+
+  const teams = (teamsResult.data || []).map((row) => ({
+    ...row,
+    name: row.name ?? row.team_name ?? '',
+    team_name: row.team_name ?? row.name ?? '',
+    pin: row.pin ?? row.pin_code ?? '',
+    pin_code: row.pin_code ?? row.pin ?? ''
+  }));
 
   if (!teams.length) return [];
 
@@ -735,7 +791,7 @@ app.get('/api/teams', async (req, res) => {
     const teams = await fetchTeamsWithPlayers(tournamentId);
     res.json({ teams });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -744,20 +800,26 @@ app.post('/api/teams', async (req, res) => {
     const tournamentId = asInt(req.body.tournament_id || req.body.tournamentId);
     const name = req.body.name || req.body.team_name;
     const pin = req.body.pin || req.body.pin_code;
+    console.info('[api:teams:create] payload', {
+      tournament_id: req.body?.tournament_id ?? req.body?.tournamentId ?? null,
+      name: req.body?.name ?? null,
+      team_name: req.body?.team_name ?? null,
+      pin: req.body?.pin ?? null,
+      pin_code: req.body?.pin_code ?? null,
+      player1: req.body?.player1 ?? null,
+      player2: req.body?.player2 ?? null,
+      player1_handicap: req.body?.player1_handicap ?? null,
+      player2_handicap: req.body?.player2_handicap ?? null
+    });
     if (!tournamentId || !name || !pin) {
-      return res.status(400).json({ error: 'tournament_id, name and pin are required' });
+      return res.status(400).json({ success: false, error: 'tournament_id, name and pin are required' });
     }
 
-    const { data, error } = await supabase
-      .from('teams')
-      .insert({ tournament_id: tournamentId, name, pin })
-      .select('*')
-      .single();
-    if (error) throw error;
+    const data = await insertTeamCompat({ tournament_id: tournamentId, name, pin });
 
     res.status(201).json({ team: data });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -1030,15 +1092,10 @@ app.post('/api/admin/team', async (req, res) => {
   try {
     const { tournament_id, team_name, pin_code, player1, player2 } = req.body || {};
     if (!tournament_id || !team_name || !pin_code) {
-      return res.status(400).json({ error: 'tournament_id, team_name and pin_code are required' });
+      return res.status(400).json({ success: false, error: 'tournament_id, team_name and pin_code are required' });
     }
 
-    const createTeam = await supabase
-      .from('teams')
-      .insert({ tournament_id, name: team_name, pin: pin_code })
-      .select('*')
-      .single();
-    if (createTeam.error) throw createTeam.error;
+    const createTeamData = await insertTeamCompat({ tournament_id, name: team_name, pin: pin_code });
 
     const players = [player1, player2].filter(Boolean);
     for (const playerName of players) {
@@ -1051,15 +1108,15 @@ app.post('/api/admin/team', async (req, res) => {
 
       const linkPlayer = await supabase
         .from('team_members')
-        .insert({ team_id: createTeam.data.id, player_id: createPlayer.data.id })
+        .insert({ team_id: createTeamData.id, player_id: createPlayer.data.id })
         .select('*')
         .single();
       if (linkPlayer.error) throw linkPlayer.error;
     }
 
-    res.status(201).json({ team: createTeam.data });
+    res.status(201).json({ team: createTeamData });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

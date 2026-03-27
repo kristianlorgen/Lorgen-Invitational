@@ -1230,7 +1230,19 @@ async function addTeam() {
   if (!team_name||!player1||!player2||!pin_code) { showToast('Alle felt er påkrevd','error'); return; }
   if (!/^\d{4}$/.test(pin_code)) { showToast('PIN må være nøyaktig 4 siffer','error'); return; }
   try {
-    const created = await api('/api/teams',{method:'POST',body:JSON.stringify({tournament_id:tid,name:team_name,pin:pin_code})});
+    const teamPayload = {
+      tournament_id: tid,
+      name: team_name,
+      team_name,
+      pin: pin_code,
+      pin_code,
+      player1,
+      player2,
+      player1_handicap,
+      player2_handicap
+    };
+    console.info('[admin:addTeam] payload', teamPayload);
+    const created = await api('/api/teams',{method:'POST',body:JSON.stringify(teamPayload)});
     const p1 = await api('/api/players',{method:'POST',body:JSON.stringify({tournament_id:tid,name:player1,handicap:player1_handicap})});
     const p2 = await api('/api/players',{method:'POST',body:JSON.stringify({tournament_id:tid,name:player2,handicap:player2_handicap})});
     await api('/api/teams/'+created.team.id+'/add-player',{method:'POST',body:JSON.stringify({player_id:p1.player.id})});
