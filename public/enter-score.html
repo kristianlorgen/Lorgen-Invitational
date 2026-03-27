@@ -399,7 +399,6 @@
       <input type="file" id="chatImageInput" class="chat-upload-input" accept="image/*" capture="environment">
       <div class="team-chat-actions">
         <input type="text" id="chatInput" class="team-chat-input" maxlength="400" placeholder="Skriv en melding til de andre lagene…" autocomplete="off">
-        <input type="text" id="chatNoteInput" class="team-chat-input" maxlength="220" placeholder="Valgfri note (vises under melding)" autocomplete="off">
         <button class="btn btn--gold btn--sm" id="chatSendBtn" style="justify-content:center" type="submit">
           <i class="fas fa-paper-plane"></i>
         </button>
@@ -985,7 +984,7 @@ function renderChatMessages() {
 async function loadChatMessages() {
   if (!isTeamAuthenticated()) return;
   try {
-    const r = await fetch('/api/chat/messages');
+    const r = await fetch('/api/chat/messages?private=1');
     const d = await r.json();
     if (!r.ok || !d?.success) {
       const wrap = document.getElementById('chatMessages');
@@ -1083,11 +1082,9 @@ async function sendChatMessage(event) {
   }
   event.preventDefault();
   const input = document.getElementById('chatInput');
-  const noteInput = document.getElementById('chatNoteInput');
   const imageInput = document.getElementById('chatImageInput');
   const btn = document.getElementById('chatSendBtn');
   const message = (input?.value || '').trim();
-  const note = (noteInput?.value || '').trim();
   const imageFile = imageInput?.files?.[0] || null;
   if (!message && !imageFile) return;
   btn.disabled = true;
@@ -1097,14 +1094,13 @@ async function sendChatMessage(event) {
     if (imageFile) {
       const formData = new FormData();
       formData.append('message', message);
-      formData.append('note', note);
       formData.append('image', imageFile);
       r = await fetch('/api/chat/send', { method: 'POST', body: formData });
     } else {
       r = await fetch('/api/chat/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, note })
+        body: JSON.stringify({ message })
       });
     }
     const d = await r.json();
@@ -1116,9 +1112,15 @@ async function sendChatMessage(event) {
       }
     } else {
       input.value = '';
-      if (noteInput) noteInput.value = '';
       if (imageInput) imageInput.value = '';
       updateChatUploadMeta();
+      if (d.message) {
+        chatMessages.push(d.message);
+        if (chatMessages.length > 100) chatMessages = chatMessages.slice(-100);
+        renderChatMessages();
+      } else {
+        await loadChatMessages();
+      }
     }
   } catch (_) {
     showToast('Tilkoblingsfeil ved sending av melding', 'error');
@@ -1513,7 +1515,9 @@ document.getElementById('photoInput').addEventListener('change', async e => {
         showToast(d.error || 'Opplasting mislyktes', 'error');
       }
     }
-  } catch (e) { showToast('Opplasting mislyktes — sjekk tilkoblingen', 'error'); }
+  } catch (e) {
+    showToast('Opplasting mislyktes: ' + (e?.message || 'sjekk tilkoblingen'), 'error');
+  }
   renderDots(); renderCurrentHole();
   e.target.value = ''; pendingPhotoHole = null;
 });
