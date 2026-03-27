@@ -198,7 +198,7 @@ app.get('/api/admin/tournaments', async (_, res) => {
   }
 });
 
-app.post('/api/admin/tournament', async (req, res) => {
+async function createTournamentHandler(req, res) {
   try {
     const { year, name, date, course = '', description = '', status = 'upcoming', format = 'scramble' } = req.body;
     if (!year || !name || !date) {
@@ -213,6 +213,55 @@ app.post('/api/admin/tournament', async (req, res) => {
     if (error) throw error;
 
     res.status(201).json({ tournament: data });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
+app.post('/api/admin/tournament', createTournamentHandler);
+app.post('/api/admin/tournaments', createTournamentHandler);
+
+app.put('/api/admin/tournament/:id', async (req, res) => {
+  try {
+    const tournamentId = asInt(req.params.id);
+    if (!tournamentId) return res.status(400).json({ error: 'Invalid tournament id' });
+
+    const updates = {};
+    const allowedFields = ['year', 'name', 'date', 'course', 'description', 'status', 'format'];
+    for (const field of allowedFields) {
+      if (req.body[field] !== undefined) updates[field] = req.body[field];
+    }
+
+    if (!Object.keys(updates).length) {
+      return res.status(400).json({ error: 'No valid fields to update' });
+    }
+
+    const { data, error } = await supabase
+      .from('tournaments')
+      .update(updates)
+      .eq('id', tournamentId)
+      .select('*')
+      .single();
+    if (error) throw error;
+
+    res.json({ tournament: data });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/admin/tournament/:id', async (req, res) => {
+  try {
+    const tournamentId = asInt(req.params.id);
+    if (!tournamentId) return res.status(400).json({ error: 'Invalid tournament id' });
+
+    const { error } = await supabase
+      .from('tournaments')
+      .delete()
+      .eq('id', tournamentId);
+    if (error) throw error;
+
+    res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
