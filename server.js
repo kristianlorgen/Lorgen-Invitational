@@ -244,25 +244,71 @@ app.get('/api/admin/tournaments', async (req, res) => {
 });
 
 async function createTournamentHandler(req, res) {
-  const payload = req.body || {};
-  console.info('[api:createTournament] request start', { method: req.method, path: req.path });
-  console.info('[api:createTournament] incoming payload', payload);
   try {
+    const payload = req.body || {};
+    console.info('[api:createTournament] request start', { method: req.method, path: req.path });
+    console.info('[api:createTournament] incoming payload', payload);
+
     const envError = ensureSupabaseEnv();
     if (envError) {
       return res.status(500).json({ success: false, error: envError });
     }
 
-    const { year, name, date, course = '', description = '', status = 'upcoming', format = 'scramble', mode = null, handicap_percent = null, slope_rating = null, is_published = false, is_active = false } = payload;
-    console.info('[api:createTournament] create start', { path: req.path, year, name, date });
-    if (!year || !name || !date) {
-      return res.status(400).json({ success: false, error: 'year, name and date are required' });
+    const rawName = typeof payload.name === 'string' ? payload.name.trim() : '';
+    const rawDate = payload.date || payload.start_date || null;
+    const rawCourse = payload.course ?? payload.course_name ?? '';
+    const rawSlope = payload.slope_rating ?? payload.slope ?? null;
+    const rawDescription = payload.description ?? '';
+
+    const parsedDate = rawDate ? new Date(rawDate) : null;
+    const date = parsedDate && Number.isFinite(parsedDate.getTime()) ? parsedDate.toISOString() : null;
+    const year = Number.isFinite(Number(payload.year)) ? Number(payload.year) : (date ? new Date(date).getUTCFullYear() : null);
+    const slope_rating = Number.isFinite(Number(rawSlope)) ? Number(rawSlope) : 113;
+    const course = typeof rawCourse === 'string' ? rawCourse : '';
+    const description = typeof rawDescription === 'string' ? rawDescription : '';
+    const status = payload.status || 'upcoming';
+    const format = payload.format || 'scramble';
+    const mode = payload.mode ?? null;
+    const handicap_percent = payload.handicap_percent ?? null;
+    const is_published = Boolean(payload.is_published);
+    const is_active = Boolean(payload.is_active);
+
+    console.info('[api:createTournament] create start', { path: req.path, year, name: rawName, date });
+    console.info('[api:createTournament] DATA BEFORE INSERT:', {
+      name: rawName,
+      date,
+      course,
+      slope: slope_rating,
+      description
+    });
+
+    if (!rawName) {
+      return res.status(400).json({ success: false, error: 'Missing tournament name' });
+    }
+    if (!date) {
+      return res.status(400).json({ success: false, error: 'Missing or invalid tournament date' });
+    }
+    if (!year) {
+      return res.status(400).json({ success: false, error: 'Missing or invalid tournament year' });
     }
 
     console.info('[api:createTournament] supabase query start', { action: 'insert tournament' });
     const { data, error } = await supabase
       .from('tournaments')
-      .insert({ year, name, date, course, description, status, format, mode, handicap_percent, slope_rating, is_published, is_active })
+      .insert([{
+        year,
+        name: rawName,
+        date,
+        course,
+        slope_rating,
+        description,
+        status,
+        format,
+        mode,
+        handicap_percent,
+        is_published,
+        is_active
+      }])
       .select('*')
       .single();
 
@@ -270,13 +316,16 @@ async function createTournamentHandler(req, res) {
       error: error ? error.message : null,
       tournamentId: data?.id || null
     });
-    if (error) throw error;
+    if (error) {
+      console.error('[api:createTournament] Supabase insert error:', error);
+      return res.status(500).json({ success: false, error: error.message || 'Failed to create tournament' });
+    }
 
     console.info('[api:createTournament] create success', { tournamentId: data.id, path: req.path });
     res.status(201).json({ success: true, tournamentId: data.id, tournament: data });
   } catch (error) {
-    console.error('[api:createTournament] caught error', { path: req.path, error: error.message, stack: error.stack });
-    res.status(500).json({ success: false, error: error.message });
+    console.error('Tournament creation error:', error);
+    res.status(500).json({ success: false, error: error?.message || 'Unknown error' });
   }
 }
 

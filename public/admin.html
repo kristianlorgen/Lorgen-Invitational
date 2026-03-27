@@ -1032,12 +1032,12 @@ function renderTournamentsTable() {
 async function createTournament() {
   const name='Lorgen Invitational', rawDate=document.getElementById('tDate').value, course=document.getElementById('tCourse').value,
         description=document.getElementById('tDesc').value,
-        slope_rating=document.getElementById('tSlope').value||113;
+        slope=document.getElementById('tSlope').value||113;
   const date = parseTournamentDateInput(rawDate);
   const year = date ? new Date(date).getFullYear() : null;
   if (!year||!date) { showToast('Ugyldig dato. Bruk format DD.MM.ÅÅÅÅ TT:MM','error'); return; }
 
-  const payload = {year,name,date,course,description,slope_rating};
+  const payload = { year, name, date, course, slope: Number(slope) || 113, description };
   console.info('[admin:createTournament] incoming payload', payload);
   try {
     console.info('[admin:createTournament] create start');
