@@ -994,8 +994,14 @@ async function createTournament() {
   const date = parseTournamentDateInput(rawDate);
   const year = date ? new Date(date).getFullYear() : null;
   if (!year||!date) { showToast('Ugyldig dato. Bruk format DD.MM.ÅÅÅÅ TT:MM','error'); return; }
+
+  const payload = {year,name,date,course,description,slope_rating};
+  console.info('[admin:createTournament] incoming payload', payload);
   try {
-    const created = await api('/api/admin/tournament',{method:'POST',body:JSON.stringify({year,name,date,course,description,slope_rating})});
+    console.info('[admin:createTournament] create start');
+    const created = await createTournamentRequest(payload);
+    const createdId = created?.tournament?.id || created?.tournamentId || null;
+    console.info('[admin:createTournament] create success', { tournamentId: createdId });
     showToast('Turneringen ble opprettet.');
     ['tDate','tCourse','tDesc'].forEach(id=>document.getElementById(id).value='');
     document.getElementById('tName').value='Lorgen Invitational';
@@ -1004,20 +1010,33 @@ async function createTournament() {
       await loadTournaments();
       await loadDashboard();
     } catch (refreshError) {
+      console.error('[admin:createTournament] list refresh failed', refreshError);
       showToast('Turneringen ble opprettet, men listen kunne ikke oppdateres automatisk. Last siden på nytt.', 'error');
     }
+  } catch(e) {
+    console.error('[admin:createTournament] caught error', e);
+    showToast(e.message,'error');
+  }
+}
 
-    const redirectTarget = created?.redirectTarget || created?.redirectUrl || null;
-    if (!redirectTarget) return;
+async function createTournamentRequest(payload) {
+  const createEndpoints = ['/api/admin/tournament', '/api/admin/tournaments'];
+  let lastError = null;
 
-    const validPostCreateRoutes = new Set(['/admin', '/admin.html']);
-    if (!validPostCreateRoutes.has(redirectTarget)) {
-      showToast(`Turneringen ble lagret, men kunne ikke navigere til "${redirectTarget}". Du er fortsatt på en gyldig admin-side.`, 'error');
-      return;
+  for (const endpoint of createEndpoints) {
+    try {
+      console.info('[admin:createTournament] trying endpoint', endpoint);
+      return await api(endpoint,{method:'POST',body:JSON.stringify(payload)});
+    } catch (error) {
+      lastError = error;
+      console.warn('[admin:createTournament] endpoint failed', { endpoint, error: error?.message || String(error) });
+      const msg = String(error?.message || '').toLowerCase();
+      const isNotFound = msg.includes('404') || msg.includes('not found') || msg.includes('could not be found');
+      if (!isNotFound) throw error;
     }
+  }
 
-    window.location.assign(redirectTarget);
-  } catch(e) { showToast(e.message,'error'); }
+  throw lastError || new Error('Kunne ikke opprette turnering.');
 }
 
 async function changeTournamentStatus(id, status) {

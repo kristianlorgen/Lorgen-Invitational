@@ -199,8 +199,11 @@ app.get('/api/admin/tournaments', async (_, res) => {
 });
 
 async function createTournamentHandler(req, res) {
+  const payload = req.body || {};
+  console.info('[api:createTournament] incoming payload', payload);
   try {
-    const { year, name, date, course = '', description = '', status = 'upcoming', format = 'scramble' } = req.body;
+    const { year, name, date, course = '', description = '', status = 'upcoming', format = 'scramble' } = payload;
+    console.info('[api:createTournament] create start', { path: req.path, year, name, date });
     if (!year || !name || !date) {
       return res.status(400).json({ error: 'year, name and date are required' });
     }
@@ -212,9 +215,11 @@ async function createTournamentHandler(req, res) {
       .single();
     if (error) throw error;
 
-    res.status(201).json({ tournament: data });
+    console.info('[api:createTournament] create success', { tournamentId: data.id, path: req.path });
+    res.status(201).json({ success: true, tournamentId: data.id, tournament: data });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('[api:createTournament] caught error', { path: req.path, error: error.message });
+    res.status(500).json({ success: false, error: error.message });
   }
 }
 
