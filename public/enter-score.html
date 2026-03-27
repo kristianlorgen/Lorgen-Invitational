@@ -255,6 +255,7 @@
     .team-chat-name { font-weight: 700; color: var(--gold-dark); }
     .team-chat-time { color: var(--text-muted); }
     .team-chat-text { color: var(--text); font-size: .82rem; line-height: 1.35; white-space: pre-wrap; }
+    .team-chat-note { color: var(--text-muted); font-size: .76rem; line-height: 1.35; margin-top: 4px; white-space: pre-wrap; }
     .team-chat-form {
       display: flex;
       gap: 8px;
@@ -398,6 +399,7 @@
       <input type="file" id="chatImageInput" class="chat-upload-input" accept="image/*" capture="environment">
       <div class="team-chat-actions">
         <input type="text" id="chatInput" class="team-chat-input" maxlength="400" placeholder="Skriv en melding til de andre lagene…" autocomplete="off">
+        <input type="text" id="chatNoteInput" class="team-chat-input" maxlength="220" placeholder="Valgfri note (vises under melding)" autocomplete="off">
         <button class="btn btn--gold btn--sm" id="chatSendBtn" style="justify-content:center" type="submit">
           <i class="fas fa-paper-plane"></i>
         </button>
@@ -971,6 +973,7 @@ function renderChatMessages() {
       </div>
       ${m.message ? `<div class="team-chat-text">${escapeHtml(m.message)}</div>` : ''}
       ${m.image_path ? `<img class="team-chat-image" src="${escapeHtml(m.image_path)}" alt="Bilde sendt i chat" loading="lazy">` : ''}
+      ${m.note ? `<div class="team-chat-note">${escapeHtml(m.note)}</div>` : ''}
     </div>
   `).join('');
   wrap.scrollTop = wrap.scrollHeight;
@@ -1080,9 +1083,11 @@ async function sendChatMessage(event) {
   }
   event.preventDefault();
   const input = document.getElementById('chatInput');
+  const noteInput = document.getElementById('chatNoteInput');
   const imageInput = document.getElementById('chatImageInput');
   const btn = document.getElementById('chatSendBtn');
   const message = (input?.value || '').trim();
+  const note = (noteInput?.value || '').trim();
   const imageFile = imageInput?.files?.[0] || null;
   if (!message && !imageFile) return;
   btn.disabled = true;
@@ -1092,13 +1097,14 @@ async function sendChatMessage(event) {
     if (imageFile) {
       const formData = new FormData();
       formData.append('message', message);
+      formData.append('note', note);
       formData.append('image', imageFile);
       r = await fetch('/api/chat/send', { method: 'POST', body: formData });
     } else {
       r = await fetch('/api/chat/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message })
+        body: JSON.stringify({ message, note })
       });
     }
     const d = await r.json();
@@ -1110,6 +1116,7 @@ async function sendChatMessage(event) {
       }
     } else {
       input.value = '';
+      if (noteInput) noteInput.value = '';
       if (imageInput) imageInput.value = '';
       updateChatUploadMeta();
     }
