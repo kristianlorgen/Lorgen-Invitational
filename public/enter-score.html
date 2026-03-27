@@ -337,9 +337,7 @@
 <!-- ── Navigasjon ──────────────────────────────────────────────────────────── -->
 <nav class="navbar" id="navbar">
   <div class="container">
-    <button class="chat-widget-toggle" id="chatWidgetToggle" type="button" onclick="toggleChatWidget()" aria-label="Åpne chat" data-unread="0">
-      <i class="fas fa-comment-dots"></i>
-    </button>
+    <div id="chatToggleMount"></div>
     <ul class="navbar-nav">
       <li><a href="/" class="nav-link">Hjem</a></li>
       <li><a href="/gameday" class="nav-link">Spilleregler &amp; Informasjon</a></li>
@@ -382,26 +380,32 @@
 
 <div class="toast-container" id="toastContainer"></div>
 
-<section class="chat-widget" id="chatWidget" aria-label="Felles chat">
-  <div class="team-chat-header"><span><i class="fas fa-comments"></i> Felles chat</span><button type="button" class="birdie-shout-btn" id="birdieShoutBtn" onclick="sendBirdieShoutout()"><i class="fas fa-bullhorn"></i> Birdie shoutout</button></div>
-  <div class="notification-banner" id="notificationBanner"></div>
-  <div class="team-chat-messages" id="chatMessages">
-    <div class="team-chat-empty">Laster chat…</div>
-  </div>
-  <form class="team-chat-form" onsubmit="sendChatMessage(event)">
-    <label class="chat-upload-btn" for="chatImageInput" title="Ta bilde med kamera" aria-label="Ta bilde med kamera">
-      <i class="fas fa-camera"></i>
-    </label>
-    <input type="file" id="chatImageInput" class="chat-upload-input" accept="image/*" capture="environment">
-    <div class="team-chat-actions">
-      <input type="text" id="chatInput" class="team-chat-input" maxlength="400" placeholder="Skriv en melding til de andre lagene…" autocomplete="off">
-      <button class="btn btn--gold btn--sm" id="chatSendBtn" style="justify-content:center" type="submit">
-        <i class="fas fa-paper-plane"></i>
-      </button>
+<div id="chatWidgetMount"></div>
+<template id="chatTemplate">
+  <button class="chat-widget-toggle" id="chatWidgetToggle" type="button" onclick="toggleChatWidget()" aria-label="Åpne chat" data-unread="0">
+    <i class="fas fa-comment-dots"></i>
+  </button>
+  <section class="chat-widget" id="chatWidget" aria-label="Felles chat">
+    <div class="team-chat-header"><span><i class="fas fa-comments"></i> Felles chat</span><button type="button" class="birdie-shout-btn" id="birdieShoutBtn" onclick="sendBirdieShoutout()"><i class="fas fa-bullhorn"></i> Birdie shoutout</button></div>
+    <div class="notification-banner" id="notificationBanner"></div>
+    <div class="team-chat-messages" id="chatMessages">
+      <div class="team-chat-empty">Laster chat…</div>
     </div>
-  </form>
-  <div class="chat-upload-meta" id="chatUploadMeta"></div>
-</section>
+    <form class="team-chat-form" onsubmit="sendChatMessage(event)">
+      <label class="chat-upload-btn" for="chatImageInput" title="Ta bilde med kamera" aria-label="Ta bilde med kamera">
+        <i class="fas fa-camera"></i>
+      </label>
+      <input type="file" id="chatImageInput" class="chat-upload-input" accept="image/*" capture="environment">
+      <div class="team-chat-actions">
+        <input type="text" id="chatInput" class="team-chat-input" maxlength="400" placeholder="Skriv en melding til de andre lagene…" autocomplete="off">
+        <button class="btn btn--gold btn--sm" id="chatSendBtn" style="justify-content:center" type="submit">
+          <i class="fas fa-paper-plane"></i>
+        </button>
+      </div>
+    </form>
+    <div class="chat-upload-meta" id="chatUploadMeta"></div>
+  </section>
+</template>
 
 <!-- ── INNLOGGINGSSKJERM ───────────────────────────────────────────────────── -->
 <div id="loginScreen" style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;padding-top:calc(var(--nav-height)+40px);background:linear-gradient(160deg,var(--dark),var(--dark-mid))">
@@ -622,6 +626,28 @@ let chatEventSource = null;
 let notificationRegistration = null;
 let unreadChatCount = 0;
 let lastSeenChatId = 0;
+let chatUiMounted = false;
+
+function isTeamAuthenticated() {
+  return !!teamData?.id && document.getElementById('scorecardScreen') && !document.getElementById('scorecardScreen').classList.contains('d-none');
+}
+
+function mountChatUi() {
+  if (chatUiMounted) return;
+  const template = document.getElementById('chatTemplate');
+  const toggleMount = document.getElementById('chatToggleMount');
+  const widgetMount = document.getElementById('chatWidgetMount');
+  if (!template || !toggleMount || !widgetMount) return;
+  const fragment = template.content.cloneNode(true);
+  const toggle = fragment.querySelector('#chatWidgetToggle');
+  const widget = fragment.querySelector('#chatWidget');
+  if (toggle) toggleMount.appendChild(toggle);
+  if (widget) widgetMount.appendChild(widget);
+  document.getElementById('chatImageInput')?.addEventListener('change', updateChatUploadMeta);
+  chatUiMounted = true;
+  syncChatUnreadIndicator();
+  updateNotificationBanner();
+}
 
 function isIOSDevice() {
   return /iPad|iPhone|iPod/.test(navigator.userAgent || '') ||
@@ -800,9 +826,9 @@ async function doLogin() {
       teamPin = pin;
       sessionStorage.setItem('team_pin', pin);
       teamData = d.team;
-      updateNotificationBanner();
       document.getElementById('loginScreen').classList.add('d-none');
       document.getElementById('scorecardScreen').classList.remove('d-none');
+      mountChatUi();
       renderScoreStatus('idle');
       await loadScorecard();
     } else {
@@ -849,8 +875,10 @@ async function loadScorecard() {
   if (d.hole_sponsors) d.hole_sponsors.forEach(s => { holeSponsorsMap[s.hole_number] = s; });
   renderAll();
   loadPosition();
-  await loadChatMessages();
-  startChatEvents();
+  if (isTeamAuthenticated()) {
+    await loadChatMessages();
+    startChatEvents();
+  }
   if (teamData.locked) {
     showLockedState();
     return;
@@ -902,6 +930,7 @@ function renderChatMessages() {
 }
 
 async function loadChatMessages() {
+  if (!isTeamAuthenticated()) return;
   try {
     const r = await fetch('/api/chat/messages');
     const d = await r.json();
@@ -914,6 +943,7 @@ async function loadChatMessages() {
 }
 
 function startChatEvents() {
+  if (!isTeamAuthenticated()) return;
   if (chatEventSource) return;
   chatEventSource = new EventSource('/api/events');
   chatEventSource.onmessage = (evt) => {
@@ -953,6 +983,10 @@ function startChatEvents() {
 
 
 async function sendBirdieShoutout() {
+  if (!isTeamAuthenticated()) {
+    showToast('Du må være logget inn for å bruke chat.', 'error');
+    return;
+  }
   const btn = document.getElementById('birdieShoutBtn');
   if (btn) btn.classList.add('is-celebrating');
   if (navigator.vibrate) navigator.vibrate([120, 80, 120, 80, 180]);
@@ -960,7 +994,7 @@ async function sendBirdieShoutout() {
     const r = await fetch('/api/team/birdie-shot', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ note: 'Alle spillere må ta birdie shots! 🥃', ...(teamPin ? { pin: teamPin } : {}) })
+      body: JSON.stringify({ note: 'Alle spillere må ta birdie shots! 🥃' })
     });
     const d = await r.json();
     if (!d.success) {
@@ -985,6 +1019,10 @@ function updateChatUploadMeta() {
 document.getElementById('chatImageInput')?.addEventListener('change', updateChatUploadMeta);
 
 async function sendChatMessage(event) {
+  if (!isTeamAuthenticated()) {
+    showToast('Du må være logget inn for å sende melding.', 'error');
+    return;
+  }
   event.preventDefault();
   const input = document.getElementById('chatInput');
   const imageInput = document.getElementById('chatImageInput');
@@ -998,7 +1036,6 @@ async function sendChatMessage(event) {
     let r;
     if (imageFile) {
       const formData = new FormData();
-      if (teamPin) formData.append('pin', teamPin);
       formData.append('message', message);
       formData.append('image', imageFile);
       r = await fetch('/api/chat/send', { method: 'POST', body: formData });
@@ -1006,7 +1043,7 @@ async function sendChatMessage(event) {
       r = await fetch('/api/chat/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, ...(teamPin ? { pin: teamPin } : {}) })
+        body: JSON.stringify({ message })
       });
     }
     const d = await r.json();
@@ -1439,6 +1476,7 @@ async function checkSession() {
       await ensureNotificationPermission();
       document.getElementById('loginScreen').classList.add('d-none');
       document.getElementById('scorecardScreen').classList.remove('d-none');
+      mountChatUi();
       renderScoreStatus('idle');
       await loadScorecard();
     }
