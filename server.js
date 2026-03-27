@@ -30,6 +30,31 @@ function asInt(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function ensureSupabaseEnv() {
+  const hasUrl = !!(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL);
+  const hasKey = !!(
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  );
+
+  if (!hasUrl || !hasKey) {
+    const missing = [];
+    if (!hasUrl) missing.push('SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL)');
+    if (!hasKey) missing.push('SUPABASE_SERVICE_ROLE_KEY / SUPABASE_ANON_KEY (or NEXT_PUBLIC_SUPABASE_ANON_KEY)');
+    const message = `Missing Supabase environment variables: ${missing.join(', ')}`;
+    console.error('[api:admin:tournaments] env check failed', {
+      hasUrl,
+      hasServiceRole: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+      hasAnon: !!process.env.SUPABASE_ANON_KEY,
+      hasPublicAnon: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    });
+    return message;
+  }
+
+  return null;
+}
+
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const ADMIN_COOKIE_NAME = 'admin_auth';
 const ADMIN_COOKIE_TTL_SECONDS = 60 * 60 * 12; // 12 timer
@@ -191,40 +216,66 @@ app.get('/api/tournament', async (req, res) => {
   }
 });
 
-app.get('/api/admin/tournaments', async (_, res) => {
+app.get('/api/admin/tournaments', async (req, res) => {
+  console.info('[api:admin:tournaments] request start', { method: req.method, path: req.path });
   try {
+    const envError = ensureSupabaseEnv();
+    if (envError) {
+      return res.status(500).json({ success: false, error: envError });
+    }
+
+    console.info('[api:admin:tournaments] supabase query start', { action: 'list tournaments' });
     const { data, error } = await supabase
       .from('tournaments')
       .select('*')
       .order('year', { ascending: false });
+
+    console.info('[api:admin:tournaments] supabase response', {
+      error: error ? error.message : null,
+      count: Array.isArray(data) ? data.length : null
+    });
+
     if (error) throw error;
-    res.json({ tournaments: data });
+    res.json({ success: true, tournaments: data || [] });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('[api:admin:tournaments] caught error', { error: error.message, stack: error.stack });
+    res.status(500).json({ success: false, error: error.message || 'Failed to load tournaments' });
   }
 });
 
 async function createTournamentHandler(req, res) {
   const payload = req.body || {};
+  console.info('[api:createTournament] request start', { method: req.method, path: req.path });
   console.info('[api:createTournament] incoming payload', payload);
   try {
+    const envError = ensureSupabaseEnv();
+    if (envError) {
+      return res.status(500).json({ success: false, error: envError });
+    }
+
     const { year, name, date, course = '', description = '', status = 'upcoming', format = 'scramble', mode = null, handicap_percent = null, slope_rating = null, is_published = false, is_active = false } = payload;
     console.info('[api:createTournament] create start', { path: req.path, year, name, date });
     if (!year || !name || !date) {
-      return res.status(400).json({ error: 'year, name and date are required' });
+      return res.status(400).json({ success: false, error: 'year, name and date are required' });
     }
 
+    console.info('[api:createTournament] supabase query start', { action: 'insert tournament' });
     const { data, error } = await supabase
       .from('tournaments')
       .insert({ year, name, date, course, description, status, format, mode, handicap_percent, slope_rating, is_published, is_active })
       .select('*')
       .single();
+
+    console.info('[api:createTournament] supabase response', {
+      error: error ? error.message : null,
+      tournamentId: data?.id || null
+    });
     if (error) throw error;
 
     console.info('[api:createTournament] create success', { tournamentId: data.id, path: req.path });
     res.status(201).json({ success: true, tournamentId: data.id, tournament: data });
   } catch (error) {
-    console.error('[api:createTournament] caught error', { path: req.path, error: error.message });
+    console.error('[api:createTournament] caught error', { path: req.path, error: error.message, stack: error.stack });
     res.status(500).json({ success: false, error: error.message });
   }
 }
