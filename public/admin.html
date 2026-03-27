@@ -218,7 +218,7 @@
               <div class="form-group" style="grid-column:1/-1"><label class="form-label">Beskrivelse</label><textarea class="form-input form-textarea" id="tDesc" placeholder="Kort beskrivelse til forsiden..." style="min-height:70px"></textarea></div>
             </div>
             <div style="margin-top:16px">
-              <button onclick="createTournament()" class="btn btn--gold btn--sm"><i class="fas fa-plus"></i> Opprett turnering</button>
+              <button type="button" onclick="createTournament()" class="btn btn--gold btn--sm"><i class="fas fa-plus"></i> Opprett turnering</button>
             </div>
           </div>
         </div>
@@ -995,12 +995,28 @@ async function createTournament() {
   const year = date ? new Date(date).getFullYear() : null;
   if (!year||!date) { showToast('Ugyldig dato. Bruk format DD.MM.ÅÅÅÅ TT:MM','error'); return; }
   try {
-    await api('/api/admin/tournament',{method:'POST',body:JSON.stringify({year,name,date,course,description,slope_rating})});
-    showToast('Turnering opprettet!');
+    const created = await api('/api/admin/tournament',{method:'POST',body:JSON.stringify({year,name,date,course,description,slope_rating})});
+    showToast('Turneringen ble opprettet.');
     ['tDate','tCourse','tDesc'].forEach(id=>document.getElementById(id).value='');
     document.getElementById('tName').value='Lorgen Invitational';
     document.getElementById('tSlope').value='113';
-    await loadTournaments(); await loadDashboard();
+    try {
+      await loadTournaments();
+      await loadDashboard();
+    } catch (refreshError) {
+      showToast('Turneringen ble opprettet, men listen kunne ikke oppdateres automatisk. Last siden på nytt.', 'error');
+    }
+
+    const redirectTarget = created?.redirectTarget || created?.redirectUrl || null;
+    if (!redirectTarget) return;
+
+    const validPostCreateRoutes = new Set(['/admin', '/admin.html']);
+    if (!validPostCreateRoutes.has(redirectTarget)) {
+      showToast(`Turneringen ble lagret, men kunne ikke navigere til "${redirectTarget}". Du er fortsatt på en gyldig admin-side.`, 'error');
+      return;
+    }
+
+    window.location.assign(redirectTarget);
   } catch(e) { showToast(e.message,'error'); }
 }
 
