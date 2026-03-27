@@ -771,7 +771,12 @@ async function api(url, options={}) {
     d = await r.json().catch(() => ({}));
   } else {
     const text = await r.text().catch(() => '');
-    d = { error: text ? text.slice(0, 160) : 'Serveren svarte ikke med JSON' };
+    const looksLikeHtml = text.trim().startsWith('<');
+    d = {
+      error: looksLikeHtml
+        ? `API returned non-JSON response (${r.status}) for ${url}. Sjekk at Vercel API-ruten finnes.`
+        : (text ? text.slice(0, 160) : 'Serveren svarte ikke med JSON')
+    };
   }
   if (!r.ok) throw new Error(d.error || d.message || 'Forespørsel mislyktes');
   return d;
