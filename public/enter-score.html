@@ -984,6 +984,11 @@ async function loadChatMessages() {
   try {
     const r = await fetch('/api/chat/messages');
     const d = await r.json();
+    if (!r.ok || !d?.success) {
+      const wrap = document.getElementById('chatMessages');
+      if (wrap) wrap.innerHTML = `<div class="team-chat-empty">${escapeHtml(d?.error || 'Kunne ikke hente chat nå.')}</div>`;
+      return;
+    }
     chatMessages = Array.isArray(d.messages) ? d.messages : [];
     renderChatMessages();
   } catch (_) {
@@ -1098,7 +1103,11 @@ async function sendChatMessage(event) {
     }
     const d = await r.json();
     if (!d.success) {
-      showToast(d.error || 'Kunne ikke sende melding', 'error');
+      if (d.code === 'STORAGE_BUCKET_NOT_FOUND' && d.bucket) {
+        showToast('Chat-bilde feilet: mangler bucket "' + d.bucket + '"', 'error');
+      } else {
+        showToast(d.error || 'Kunne ikke sende melding', 'error');
+      }
     } else {
       input.value = '';
       if (imageInput) imageInput.value = '';
@@ -1490,9 +1499,15 @@ document.getElementById('photoInput').addEventListener('change', async e => {
       if (!scoresData[holeNum]) scoresData[holeNum] = {};
       scoresData[holeNum].photo_path = d.photo_path;
       showToast('Bilde lastet opp for hull ' + holeNum + '!', 'success');
-      renderDots(); renderCurrentHole();
-    } else { showToast(d.error || 'Opplasting mislyktes', 'error'); }
+    } else {
+      if (d.code === 'STORAGE_BUCKET_NOT_FOUND' && d.bucket) {
+        showToast('Opplasting feilet: mangler bucket "' + d.bucket + '"', 'error');
+      } else {
+        showToast(d.error || 'Opplasting mislyktes', 'error');
+      }
+    }
   } catch (e) { showToast('Opplasting mislyktes — sjekk tilkoblingen', 'error'); }
+  renderDots(); renderCurrentHole();
   e.target.value = ''; pendingPhotoHole = null;
 });
 

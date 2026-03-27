@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS scores (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(team_id, round_id, hole_number)
 );
+CREATE UNIQUE INDEX IF NOT EXISTS scores_team_tournament_hole_uidx ON scores(team_id, tournament_id, hole_number);
 
 CREATE TABLE IF NOT EXISTS chat_messages (
   id BIGSERIAL PRIMARY KEY,
@@ -144,7 +145,9 @@ CREATE TABLE IF NOT EXISTS award_claims (
   award_type TEXT NOT NULL,
   player_name TEXT NOT NULL,
   detail TEXT,
-  claimed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  value TEXT,
+  claimed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS sponsors (
