@@ -2,12 +2,13 @@ require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
-const { supabase } = require('./lib/supabaseClient');
+const { supabaseAdmin } = require('./lib/supabaseClient');
 const { getTournamentFormat, getTeamSizeForFormat } = require('./services/tournamentFormat');
 
-if (!supabase) {
+if (!supabaseAdmin) {
   throw new Error('Supabase client is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.');
 }
+const supabase = supabaseAdmin;
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -275,12 +276,14 @@ async function createTournamentHandler(req, res) {
     const is_active = Boolean(payload.is_active);
 
     console.info('[api:createTournament] create start', { path: req.path, year, name: rawName, date });
-    console.info('[api:createTournament] DATA BEFORE INSERT:', {
-      name: rawName,
-      date,
-      course,
-      slope: slope_rating,
-      description
+    console.info('[api:createTournament] env presence', {
+      hasNextPublicSupabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+      hasSupabaseServiceRoleKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+      hasNextPublicSupabaseAnonKey: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    });
+    console.info('[api:createTournament] supabase client auth key source', {
+      keyName: 'SUPABASE_SERVICE_ROLE_KEY',
+      usingServiceRoleKey: true
     });
 
     if (!rawName) {
@@ -318,8 +321,16 @@ async function createTournamentHandler(req, res) {
       status
     };
 
+    const connectivityTest = await supabaseAdmin.from('tournaments').select('id').limit(1);
+    if (connectivityTest.error) {
+      console.error('[api:createTournament] supabase connectivity test error object:', connectivityTest.error);
+      return res.status(500).json({ success: false, error: `Supabase connectivity test failed: ${connectivityTest.error.message}` });
+    }
+
+    console.info('[api:createTournament] insert payload (extended):', extendedInsertPayload);
+
     console.info('[api:createTournament] supabase query start', { action: 'insert tournament', mode: 'extended' });
-    let { data, error } = await supabase
+    let { data, error } = await supabaseAdmin
       .from('tournaments')
       .insert([extendedInsertPayload])
       .select('*')
@@ -331,7 +342,8 @@ async function createTournamentHandler(req, res) {
         error: error.message,
         code: error.code || null
       });
-      const fallbackResponse = await supabase
+      console.info('[api:createTournament] insert payload (compatibility):', compatibilityInsertPayload);
+      const fallbackResponse = await supabaseAdmin
         .from('tournaments')
         .insert([compatibilityInsertPayload])
         .select('*')
@@ -345,15 +357,19 @@ async function createTournamentHandler(req, res) {
       tournamentId: data?.id || null
     });
     if (error) {
-      console.error('[api:createTournament] Supabase insert error:', error);
+      console.error('[api:createTournament] supabase insert error object:', error);
       return res.status(500).json({ success: false, error: error.message || 'Failed to create tournament' });
     }
 
     console.info('[api:createTournament] create success', { tournamentId: data.id, path: req.path });
     res.status(201).json({ success: true, tournamentId: data.id, tournament: data });
-  } catch (error) {
-    console.error('Tournament creation error:', error);
-    res.status(500).json({ success: false, error: error?.message || 'Unknown error' });
+  } catch (err) {
+    console.error('[api:createTournament] caught error object:', err);
+    res.status(500).json({
+      success: false,
+      error: err?.message || 'Unknown error',
+      stack: process.env.NODE_ENV !== 'production' ? err?.stack : undefined
+    });
   }
 }
 
