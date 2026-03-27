@@ -1643,7 +1643,7 @@ app.post('/api/team/submit-score', async (req, res) => {
     const payload = { tournament_id: tournamentId, team_id: team.id, hole_number: holeNumber, score };
     const { data, error } = await supabase
       .from('scores')
-      .upsert(payload, { onConflict: 'team_id,hole_number' })
+      .upsert(payload, { onConflict: 'team_id,tournament_id,hole_number' })
       .select('*')
       .single();
     if (error) throw error;
@@ -1685,8 +1685,24 @@ app.post('/api/team/upload-photo/:holeNum', upload.single('photo'), async (req, 
     const { data: publicData } = supabase.storage.from(MEDIA_BUCKET).getPublicUrl(storagePath);
     const photoPath = publicData?.publicUrl || null;
 
+    const { data: existingScore, error: existingScoreError } = await supabase
+      .from('scores')
+      .select('score')
+      .eq('tournament_id', tournamentId)
+      .eq('team_id', team.id)
+      .eq('hole_number', holeNum)
+      .maybeSingle();
+    if (existingScoreError) throw existingScoreError;
+
+    const scorePayload = {
+      tournament_id: tournamentId,
+      team_id: team.id,
+      hole_number: holeNum,
+      score: Number.isFinite(Number(existingScore?.score)) ? Number(existingScore.score) : 1,
+      photo_path: photoPath
+    };
     const { data, error } = await supabase.from('scores')
-      .upsert({ tournament_id: tournamentId, team_id: team.id, hole_number: holeNum, score: 1, photo_path: photoPath }, { onConflict: 'team_id,hole_number' })
+      .upsert(scorePayload, { onConflict: 'team_id,tournament_id,hole_number' })
       .select('*').single();
     if (error) throw error;
     routeLog(route, 'db_action', { action: 'upload_photo', scoreId: data?.id, storagePath });
