@@ -2,7 +2,7 @@
 
 > Power. Precision. Party.
 
-An annual 2-man scramble golf tournament website built with Node.js + Express + SQLite.
+An annual 2-man scramble golf tournament website built with Node.js + Express + Supabase.
 
 ## Features
 
@@ -35,7 +35,7 @@ npm start              # Runs on http://localhost:3000
 
 Denne appen er bygget som en **stateful Express-server** med:
 
-- lokal SQLite-fil (`./data/tournament.db`)
+- ekstern Supabase Postgres-database
 - filopplasting til lokal disk (`./uploads/*`)
 - session-lagring på disk (`./data/sessions`)
 - Server-Sent Events (`/api/events`) for live-oppdatering
@@ -45,7 +45,7 @@ Det betyr at miljøvariabler alene ikke er nok for at backend skal fungere stabi
 
 Hvis du deployer på Vercel må du flytte state ut av lokal disk:
 
-1. Bytt fra lokal SQLite til ekstern database (f.eks. Supabase Postgres).
+1. Bruk Supabase Postgres for vedvarende database.
 2. Bytt filopplasting fra `./uploads` til objektlagring (f.eks. Supabase Storage / S3).
 3. Bytt sessions til ekstern store (Redis/Postgres) eller stateless auth.
 4. Vurder å erstatte SSE med en løsning som tåler serverless (polling/realtime-tjeneste).
@@ -57,7 +57,7 @@ README-notatet er dokumentasjon, ikke kodeendring.
 
 Railway kan fungere med dagens arkitektur hvis du setter opp vedvarende lagring:
 
-- mount et persistent volume for `./data` (SQLite + sessions)
+- sørg for vedvarende lagring for `./data/sessions`
 - mount et persistent volume for `./uploads` (bilder)
 - behold én vedvarende web-prosess for SSE
 
@@ -78,7 +78,7 @@ Uten persistent volume vil du få samme type problemer etter restart/redeploy (t
 ## Tech Stack
 
 - **Backend**: Node.js + Express
-- **Database**: SQLite (better-sqlite3)
+- **Database**: Supabase (Postgres)
 - **Live Updates**: Server-Sent Events (SSE)
 - **File Uploads**: Multer
 - **Auth**: Express-session (PIN for teams, password for admin)
