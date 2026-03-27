@@ -7,27 +7,48 @@ BEGIN;
 CREATE TABLE IF NOT EXISTS award_claims (
   id BIGSERIAL PRIMARY KEY,
   tournament_id BIGINT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+  round_id BIGINT REFERENCES rounds(id) ON DELETE CASCADE,
   team_id BIGINT REFERENCES teams(id) ON DELETE SET NULL,
+  player_id BIGINT REFERENCES players(id) ON DELETE SET NULL,
   team_name TEXT,
   hole_number INTEGER NOT NULL,
   award_type TEXT NOT NULL,
   player_name TEXT NOT NULL,
   detail TEXT,
+  image_url TEXT,
+  distance NUMERIC,
   value TEXT,
   claimed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT award_claims_unique UNIQUE (round_id, hole_number, award_type, player_id)
 );
 
 ALTER TABLE award_claims ADD COLUMN IF NOT EXISTS tournament_id BIGINT REFERENCES tournaments(id) ON DELETE CASCADE;
+ALTER TABLE award_claims ADD COLUMN IF NOT EXISTS round_id BIGINT REFERENCES rounds(id) ON DELETE CASCADE;
 ALTER TABLE award_claims ADD COLUMN IF NOT EXISTS team_id BIGINT REFERENCES teams(id) ON DELETE SET NULL;
+ALTER TABLE award_claims ADD COLUMN IF NOT EXISTS player_id BIGINT REFERENCES players(id) ON DELETE SET NULL;
 ALTER TABLE award_claims ADD COLUMN IF NOT EXISTS team_name TEXT;
 ALTER TABLE award_claims ADD COLUMN IF NOT EXISTS hole_number INTEGER;
 ALTER TABLE award_claims ADD COLUMN IF NOT EXISTS award_type TEXT;
 ALTER TABLE award_claims ADD COLUMN IF NOT EXISTS player_name TEXT;
 ALTER TABLE award_claims ADD COLUMN IF NOT EXISTS detail TEXT;
+ALTER TABLE award_claims ADD COLUMN IF NOT EXISTS image_url TEXT;
+ALTER TABLE award_claims ADD COLUMN IF NOT EXISTS distance NUMERIC;
 ALTER TABLE award_claims ADD COLUMN IF NOT EXISTS value TEXT;
 ALTER TABLE award_claims ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE award_claims ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'award_claims_unique'
+      AND conrelid = 'award_claims'::regclass
+  ) THEN
+    ALTER TABLE award_claims
+      ADD CONSTRAINT award_claims_unique UNIQUE (round_id, hole_number, award_type, player_id);
+  END IF;
+END $$;
 
 -- chat_messages: canonical private chat schema expected by scorecard chat.
 CREATE TABLE IF NOT EXISTS chat_messages (

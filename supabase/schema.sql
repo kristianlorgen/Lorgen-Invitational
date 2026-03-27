@@ -143,15 +143,20 @@ CREATE TABLE IF NOT EXISTS legacy_entries (
 CREATE TABLE IF NOT EXISTS award_claims (
   id BIGSERIAL PRIMARY KEY,
   tournament_id BIGINT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+  round_id BIGINT REFERENCES rounds(id) ON DELETE CASCADE,
   team_id BIGINT REFERENCES teams(id) ON DELETE SET NULL,
+  player_id BIGINT REFERENCES players(id) ON DELETE SET NULL,
   team_name TEXT,
   hole_number INTEGER NOT NULL,
   award_type TEXT NOT NULL,
   player_name TEXT NOT NULL,
   detail TEXT,
+  image_url TEXT,
+  distance NUMERIC,
   value TEXT,
   claimed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT award_claims_unique UNIQUE (round_id, hole_number, award_type, player_id)
 );
 
 CREATE TABLE IF NOT EXISTS sponsors (

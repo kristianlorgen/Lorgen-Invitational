@@ -1735,24 +1735,53 @@ app.post('/api/team/lock-scorecard', async (req, res) => {
 app.post('/api/team/claim-award', async (req, res) => {
   const route = '/api/team/claim-award';
   try {
-    const rawValue = String(req.body?.value ?? req.body?.detail ?? '').trim();
+    const rawValue = String(req.body?.value ?? req.body?.detail ?? req.body?.distance ?? '').trim();
+    const parsedDistance = req.body?.distance === undefined || req.body?.distance === null || req.body?.distance === ''
+      ? null
+      : Number(req.body.distance);
+    const roundId = asInt(req.body?.round_id ?? req.body?.roundId);
+    const playerId = asInt(req.body?.player_id ?? req.body?.playerId);
+    const imageUrl = String(req.body?.image_url ?? req.body?.imageUrl ?? '').trim() || null;
     const payload = {
       hole_number: asInt(req.body?.hole_number),
       award_type: String(req.body?.award_type || '').trim(),
       player_name: String(req.body?.player_name || '').trim(),
+      player_id: playerId || null,
+      round_id: roundId || null,
+      distance: Number.isFinite(parsedDistance) ? parsedDistance : null,
+      image_url: imageUrl,
       detail: rawValue || null,
       value: rawValue || null
     };
     routeLog(route, 'hit', { payload });
     const { team, tournamentId } = await requireTeamContext(req);
     if (!team || !tournamentId) return res.status(401).json({ success: false, error: 'Team session mangler. Logg inn på nytt.' });
-    if (!payload.hole_number || !payload.award_type || !payload.player_name) {
-      return res.status(400).json({ success: false, error: 'hole_number, award_type og player_name er påkrevd' });
+    if (!payload.hole_number || !payload.award_type || !(payload.player_name || payload.player_id)) {
+      return res.status(400).json({ success: false, error: 'hole_number, award_type og player_name/player_id er påkrevd' });
     }
-    const insertPayload = { ...payload, tournament_id: tournamentId, team_id: team.id, team_name: team.team_name, claimed_at: new Date().toISOString() };
-    const { data, error } = await supabase.from('award_claims').insert(insertPayload).select('*').single();
+    const fallbackRoundId = asInt(req.body?.hole_round_id ?? req.body?.score_round_id) || payload.hole_number;
+    const conflictPayload = {
+      round_id: payload.round_id || fallbackRoundId || payload.hole_number,
+      hole_number: payload.hole_number,
+      award_type: payload.award_type,
+      player_id: payload.player_id || team.id,
+      player_name: payload.player_name || team.team_name || null,
+      tournament_id: tournamentId,
+      team_id: team.id,
+      team_name: team.team_name,
+      distance: payload.distance,
+      detail: payload.detail,
+      image_url: payload.image_url,
+      value: payload.value,
+      claimed_at: new Date().toISOString()
+    };
+    const { data, error } = await supabase
+      .from('award_claims')
+      .upsert(conflictPayload, { onConflict: 'round_id,hole_number,award_type,player_id' })
+      .select('*')
+      .single();
     if (error) throw error;
-    routeLog(route, 'db_action', { action: 'insert_award_claim', claimId: data?.id, teamId: team.id });
+    routeLog(route, 'db_action', { action: 'upsert_award_claim', claimId: data?.id, teamId: team.id });
     return res.json({ success: true, claim: data });
   } catch (error) {
     const missingColumn = detectMissingColumn(error);
