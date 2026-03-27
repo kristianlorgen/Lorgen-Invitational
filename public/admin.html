@@ -764,13 +764,32 @@ function showToast(msg, type='success') {
 }
 
 async function api(url, options={}) {
-  const r = await fetch(url, { headers:{'Content-Type':'application/json'}, ...options });
+  const method = (options.method || 'GET').toUpperCase();
+  let r;
+  try {
+    r = await fetch(url, { headers:{'Content-Type':'application/json'}, ...options });
+  } catch (error) {
+    console.error('[admin:api] network failure', {
+      url,
+      method,
+      error: error?.message || String(error)
+    });
+    if (url.includes('/api/admin/tournaments') && method === 'GET') {
+      throw new Error('Kunne ikke laste turneringer');
+    }
+    if ((url.includes('/api/admin/tournaments') || url.includes('/api/admin/tournament')) && method === 'POST') {
+      throw new Error('Kunne ikke opprette turnering');
+    }
+    throw new Error(error?.message || 'Forespørsel mislyktes');
+  }
+
   const contentType = (r.headers.get('content-type') || '').toLowerCase();
   let d = {};
   if (contentType.includes('application/json')) {
     d = await r.json().catch(() => ({}));
   } else {
     const text = await r.text().catch(() => '');
+    console.error('[admin:api] non-json response', { url, method, status: r.status, responseText: text.slice(0, 500) });
     const looksLikeHtml = text.trim().startsWith('<');
     d = {
       error: looksLikeHtml
@@ -778,7 +797,22 @@ async function api(url, options={}) {
         : (text ? text.slice(0, 160) : 'Serveren svarte ikke med JSON')
     };
   }
-  if (!r.ok) throw new Error(d.error || d.message || 'Forespørsel mislyktes');
+
+  if (!r.ok) {
+    console.error('[admin:api] request failed', {
+      url,
+      method,
+      status: r.status,
+      payload: d
+    });
+    if (url.includes('/api/admin/tournaments') && method === 'GET') {
+      throw new Error('Kunne ikke laste turneringer');
+    }
+    if ((url.includes('/api/admin/tournaments') || url.includes('/api/admin/tournament')) && method === 'POST') {
+      throw new Error('Kunne ikke opprette turnering');
+    }
+    throw new Error(d.error || d.message || `Forespørsel mislyktes (${r.status})`);
+  }
   return d;
 }
 
@@ -881,10 +915,18 @@ async function initAdmin() {
 
 // ── Turneringer ───────────────────────────────────────────────────────────────
 async function loadTournaments() {
-  const d = await api('/api/admin/tournaments');
-  allTournaments = d.tournaments;
-  renderTournamentsTable();
-  populateTournamentSelects();
+  try {
+    const d = await api('/api/admin/tournaments');
+    allTournaments = d.tournaments || [];
+    renderTournamentsTable();
+    populateTournamentSelects();
+  } catch (error) {
+    console.error('[admin:loadTournaments] failed', { url: '/api/admin/tournaments', error: error?.message || String(error) });
+    allTournaments = [];
+    renderTournamentsTable();
+    populateTournamentSelects();
+    throw error;
+  }
 }
 
 function statusLabel(s) {
@@ -1015,7 +1057,7 @@ async function createTournament() {
     }
   } catch(e) {
     console.error('[admin:createTournament] caught error', e);
-    showToast(e.message,'error');
+    showToast(e.message || 'Kunne ikke opprette turnering','error');
   }
 }
 
