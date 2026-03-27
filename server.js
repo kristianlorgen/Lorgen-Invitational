@@ -1426,14 +1426,23 @@ app.get('/api/team/scorecard', async (req, res) => {
   try {
     routeLog(route, 'hit');
     const { team, tournamentId } = await requireTeamContext(req);
+    routeLog(route, 'session_resolved', {
+      authenticated: !!team,
+      teamId: team?.id || null,
+      teamTournamentId: team?.tournament_id || null,
+      cookieTournamentId: tournamentId || null
+    });
     if (!team || !tournamentId) return res.status(401).json({ success: false, error: 'Team session mangler. Logg inn på nytt.' });
 
+    const resolvedTournamentId = asInt(team.tournament_id) || tournamentId;
+    routeLog(route, 'tournament_resolved', { resolvedTournamentId, source: asInt(team.tournament_id) ? 'team_session' : 'cookie_session' });
+
     const [tournamentResp, holesResp, scoresResp, claimsResp, holeSponsorsResp] = await Promise.all([
-      supabase.from('tournaments').select('*').eq('id', tournamentId).maybeSingle(),
-      supabase.from('tournament_holes').select('*').eq('tournament_id', tournamentId).order('hole_number', { ascending: true }),
-      supabase.from('scores').select('*').eq('team_id', team.id).eq('tournament_id', tournamentId),
-      supabase.from('award_claims').select('*').eq('team_id', team.id).eq('tournament_id', tournamentId),
-      supabase.from('sponsors').select('*').eq('tournament_id', tournamentId).eq('placement', 'hole').eq('is_enabled', true).order('hole_number', { ascending: true })
+      supabase.from('tournaments').select('*').eq('id', resolvedTournamentId).maybeSingle(),
+      supabase.from('tournament_holes').select('*').eq('tournament_id', resolvedTournamentId).order('hole_number', { ascending: true }),
+      supabase.from('scores').select('*').eq('team_id', team.id).eq('tournament_id', resolvedTournamentId),
+      supabase.from('award_claims').select('*').eq('team_id', team.id).eq('tournament_id', resolvedTournamentId),
+      supabase.from('sponsors').select('*').eq('tournament_id', resolvedTournamentId).eq('placement', 'hole').eq('is_enabled', true).order('hole_number', { ascending: true })
     ]);
     if (tournamentResp.error) throw tournamentResp.error;
     if (holesResp.error) throw holesResp.error;
@@ -1441,15 +1450,63 @@ app.get('/api/team/scorecard', async (req, res) => {
     if (claimsResp.error && claimsResp.error.code !== '42P01') throw claimsResp.error;
     if (holeSponsorsResp.error && holeSponsorsResp.error.code !== '42P01') throw holeSponsorsResp.error;
 
-    routeLog(route, 'db_action', { action: 'load_scorecard', teamId: team.id, tournamentId });
-    return res.json({
+    routeLog(route, 'dataset_loaded', {
+      teamId: team.id,
+      tournamentId: resolvedTournamentId,
+      tournamentFound: !!tournamentResp.data,
+      tournamentHolesCount: Array.isArray(holesResp.data) ? holesResp.data.length : 0,
+      scoresCount: Array.isArray(scoresResp.data) ? scoresResp.data.length : 0,
+      claimsCount: Array.isArray(claimsResp.data) ? claimsResp.data.length : 0,
+      holeSponsorsCount: Array.isArray(holeSponsorsResp.data) ? holeSponsorsResp.data.length : 0
+    });
+
+    if (!tournamentResp.data) {
+      routeLog(route, 'error', { step: 'load_tournament', resolvedTournamentId, message: 'Fant ikke turnering for laget' });
+      return res.status(404).json({ success: false, error: 'Fant ikke turnering for laget' });
+    }
+
+    let holeRows = Array.isArray(holesResp.data) ? holesResp.data : [];
+    if (!holeRows.length) {
+      const courseId = asInt(tournamentResp.data.course_id);
+      if (courseId) {
+        routeLog(route, 'holes_fallback', { from: 'tournament_holes', to: 'course_holes', courseId, tournamentId: resolvedTournamentId });
+        const courseHolesResp = await supabase
+          .from('course_holes')
+          .select('*')
+          .eq('course_id', courseId)
+          .order('hole_number', { ascending: true });
+        if (courseHolesResp.error) {
+          routeLog(route, 'error', { step: 'load_course_holes_fallback', error: courseHolesResp.error?.message || String(courseHolesResp.error) });
+          throw courseHolesResp.error;
+        }
+        holeRows = Array.isArray(courseHolesResp.data) ? courseHolesResp.data : [];
+      }
+    }
+
+    if (!holeRows.length) {
+      routeLog(route, 'error', { step: 'resolve_holes', tournamentId: resolvedTournamentId, message: 'Turneringen mangler hulloppsett' });
+      return res.status(422).json({ success: false, error: 'Turneringen mangler hulloppsett', code: 'MISSING_HOLE_SETUP' });
+    }
+
+    const payload = {
       success: true,
       team,
       tournament: tournamentResp.data || null,
-      holes: normalizeHoles(holesResp.data || []),
+      holes: normalizeHoles(holeRows),
       scores: scoresResp.data || [],
       claims: claimsResp.data || [],
       hole_sponsors: holeSponsorsResp.data || []
+    };
+    routeLog(route, 'payload_ready', {
+      teamId: payload.team?.id || null,
+      tournamentId: payload.tournament?.id || null,
+      holes: payload.holes.length,
+      scores: payload.scores.length,
+      claims: payload.claims.length,
+      sponsors: payload.hole_sponsors.length
+    });
+    return res.json({
+      ...payload
     });
   } catch (error) {
     routeLog(route, 'error', { error: error?.message || String(error) });
