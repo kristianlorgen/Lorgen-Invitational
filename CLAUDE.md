@@ -8,7 +8,7 @@ Read this before making any changes to the codebase.
 ## Project Overview
 
 Annual 2-man scramble golf tournament website.
-**Stack:** Node.js · Express · SQLite (better-sqlite3) · Vanilla HTML/CSS/JS · Server-Sent Events
+**Stack:** Node.js · Express · Supabase (Postgres) · Vanilla HTML/CSS/JS · Server-Sent Events
 
 ---
 
@@ -173,7 +173,6 @@ Sidebar order:
 ```
 lorgen-invitational/
 ├── server.js          ← Express server + all API routes
-├── database.js        ← SQLite schema + db instance
 ├── package.json
 ├── .env               ← NOT committed
 ├── .env.example
@@ -195,7 +194,7 @@ lorgen-invitational/
 - All styles in `public/css/style.css` — no per-page `<style>` blocks except page-specific overrides
 - No JavaScript frameworks — vanilla JS only
 - No separate JS files — page JS lives in `<script>` at bottom of each HTML file
-- `database.js` is the only file that touches SQLite
+- Bruk Supabase-klientlag for dataoperasjoner; unngå lokal DB-adapter
 
 ---
 
