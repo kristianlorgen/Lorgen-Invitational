@@ -116,6 +116,8 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const ADMIN_COOKIE_NAME = 'admin_auth';
 const ADMIN_COOKIE_TTL_SECONDS = 60 * 60 * 12; // 12 timer
 const ADMIN_SIGNING_SECRET = process.env.SESSION_SECRET || process.env.ADMIN_SIGNING_SECRET || ADMIN_PASSWORD || 'lorgen-admin';
+const TEAM_COOKIE_NAME = 'team_auth';
+const TEAM_COOKIE_TTL_SECONDS = 60 * 60 * 16;
 
 function signAdminCookieValue(payload) {
   const hmac = crypto
@@ -170,6 +172,84 @@ function isAdminAuthenticated(req) {
   return verifyAdminCookieValue(cookies[ADMIN_COOKIE_NAME]);
 }
 
+function signTeamCookieValue(payload) {
+  const hmac = crypto
+    .createHmac('sha256', ADMIN_SIGNING_SECRET)
+    .update(payload)
+    .digest('hex');
+  return `${payload}.${hmac}`;
+}
+
+function verifyTeamCookieValue(value) {
+  if (!value || !value.includes('.')) return null;
+  const idx = value.lastIndexOf('.');
+  const payload = value.slice(0, idx);
+  const sig = value.slice(idx + 1);
+  const expected = crypto
+    .createHmac('sha256', ADMIN_SIGNING_SECRET)
+    .update(payload)
+    .digest('hex');
+  if (sig.length !== expected.length) return null;
+  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
+  const [issuedAtRaw, tournamentIdRaw, teamIdRaw] = payload.split(':');
+  const issuedAt = Number.parseInt(issuedAtRaw, 10);
+  const tournamentId = Number.parseInt(tournamentIdRaw, 10);
+  const teamId = Number.parseInt(teamIdRaw, 10);
+  if (!Number.isFinite(issuedAt) || !Number.isFinite(tournamentId) || !Number.isFinite(teamId)) return null;
+  const ageSeconds = Math.floor(Date.now() / 1000) - issuedAt;
+  if (!(ageSeconds >= 0 && ageSeconds <= TEAM_COOKIE_TTL_SECONDS)) return null;
+  return { tournamentId, teamId };
+}
+
+function setTeamAuthCookie(res, tournamentId, teamId) {
+  const issuedAt = Math.floor(Date.now() / 1000);
+  const token = signTeamCookieValue(`${issuedAt}:${tournamentId}:${teamId}`);
+  const secureFlag = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  res.setHeader('Set-Cookie', `${TEAM_COOKIE_NAME}=${encodeURIComponent(token)}; HttpOnly; Path=/; Max-Age=${TEAM_COOKIE_TTL_SECONDS}; SameSite=Lax${secureFlag}`);
+}
+
+function clearTeamAuthCookie(res) {
+  const secureFlag = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  const existing = res.getHeader('Set-Cookie');
+  const teamClear = `${TEAM_COOKIE_NAME}=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax${secureFlag}`;
+  if (!existing) {
+    res.setHeader('Set-Cookie', teamClear);
+    return;
+  }
+  const next = Array.isArray(existing) ? [...existing, teamClear] : [existing, teamClear];
+  res.setHeader('Set-Cookie', next);
+}
+
+async function resolveTeamFromCookie(req) {
+  const cookies = readCookies(req);
+  const parsed = verifyTeamCookieValue(cookies[TEAM_COOKIE_NAME]);
+  if (!parsed) return null;
+
+  const { data: team, error } = await supabase
+    .from('teams')
+    .select('id, tournament_id, name, team_name, pin, pin_code, locked')
+    .eq('id', parsed.teamId)
+    .eq('tournament_id', parsed.tournamentId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!team) return null;
+
+  const normalized = normalizeTeamRow(team);
+  const { data: members, error: membersError } = await supabase
+    .from('team_members')
+    .select('players(name, handicap)')
+    .eq('team_id', normalized.id);
+  if (membersError) throw membersError;
+  const players = (members || []).map((row) => row.players).filter(Boolean);
+  return {
+    ...normalized,
+    player1: players[0]?.name || '',
+    player2: players[1]?.name || '',
+    player1_handicap: players[0]?.handicap ?? null,
+    player2_handicap: players[1]?.handicap ?? null
+  };
+}
+
 app.post('/api/auth/admin-login', async (req, res) => {
   try {
     const password = String(req.body?.password || '');
@@ -187,14 +267,18 @@ app.post('/api/auth/admin-login', async (req, res) => {
 });
 
 app.get('/api/auth/status', (req, res) => {
-  if (isAdminAuthenticated(req)) {
-    return res.json({ type: 'admin' });
-  }
-  res.json({ type: null });
+  resolveTeamFromCookie(req)
+    .then((team) => {
+      if (team) return res.json({ type: 'team', team });
+      if (isAdminAuthenticated(req)) return res.json({ type: 'admin' });
+      return res.json({ type: null });
+    })
+    .catch((error) => res.status(500).json({ type: null, success: false, error: error?.message || 'Status check failed' }));
 });
 
 app.post('/api/auth/logout', (_, res) => {
   clearAdminAuthCookie(res);
+  clearTeamAuthCookie(res);
   res.json({ success: true });
 });
 
@@ -227,6 +311,7 @@ app.post('/api/auth/team-login', async (req, res) => {
       return res.status(401).json({ success: false, error: 'Ugyldig PIN' });
     }
 
+    setTeamAuthCookie(res, tournamentId, team.id);
     routeLog(route, 'db_action', { action: 'team_lookup_success', tournamentId, teamId: team.id });
     return res.json({ success: true, tournament_id: tournamentId, team });
   } catch (error) {
@@ -1317,6 +1402,326 @@ app.get('/api/events', (req, res) => {
   res.write('event: ping\\ndata: {}\\n\\n');
 });
 
+async function requireTeamContext(req, { allowPinFallback = false } = {}) {
+  const teamFromCookie = await resolveTeamFromCookie(req);
+  if (teamFromCookie) {
+    return { team: teamFromCookie, tournamentId: teamFromCookie.tournament_id };
+  }
+
+  const pin = String(req.body?.pin || req.query?.pin || '').trim();
+  if (allowPinFallback && pin) {
+    const requestedTournamentId = asInt(req.body?.tournament_id || req.query?.tournament_id);
+    const tournamentId = requestedTournamentId || await resolveTournamentId(null);
+    if (!tournamentId) return { team: null, tournamentId: null };
+    const team = await resolveTeamByTournamentAndPin(tournamentId, pin);
+    if (!team) return { team: null, tournamentId };
+    return { team, tournamentId };
+  }
+
+  return { team: null, tournamentId: null };
+}
+
+app.get('/api/team/scorecard', async (req, res) => {
+  const route = '/api/team/scorecard';
+  try {
+    routeLog(route, 'hit');
+    const { team, tournamentId } = await requireTeamContext(req);
+    if (!team || !tournamentId) return res.status(401).json({ success: false, error: 'Team session mangler. Logg inn på nytt.' });
+
+    const [tournamentResp, holesResp, scoresResp, claimsResp, holeSponsorsResp] = await Promise.all([
+      supabase.from('tournaments').select('*').eq('id', tournamentId).maybeSingle(),
+      supabase.from('tournament_holes').select('*').eq('tournament_id', tournamentId).order('hole_number', { ascending: true }),
+      supabase.from('scores').select('*').eq('team_id', team.id).eq('tournament_id', tournamentId),
+      supabase.from('award_claims').select('*').eq('team_id', team.id).eq('tournament_id', tournamentId),
+      supabase.from('sponsors').select('*').eq('tournament_id', tournamentId).eq('placement', 'hole').eq('is_enabled', true).order('hole_number', { ascending: true })
+    ]);
+    if (tournamentResp.error) throw tournamentResp.error;
+    if (holesResp.error) throw holesResp.error;
+    if (scoresResp.error) throw scoresResp.error;
+    if (claimsResp.error && claimsResp.error.code !== '42P01') throw claimsResp.error;
+    if (holeSponsorsResp.error && holeSponsorsResp.error.code !== '42P01') throw holeSponsorsResp.error;
+
+    routeLog(route, 'db_action', { action: 'load_scorecard', teamId: team.id, tournamentId });
+    return res.json({
+      success: true,
+      team,
+      tournament: tournamentResp.data || null,
+      holes: normalizeHoles(holesResp.data || []),
+      scores: scoresResp.data || [],
+      claims: claimsResp.data || [],
+      hole_sponsors: holeSponsorsResp.data || []
+    });
+  } catch (error) {
+    routeLog(route, 'error', { error: error?.message || String(error) });
+    return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke laste scorecard' });
+  }
+});
+
+app.post('/api/team/submit-score', async (req, res) => {
+  const route = '/api/team/submit-score';
+  try {
+    const holeNumber = asInt(req.body?.hole_number);
+    const score = asInt(req.body?.score);
+    routeLog(route, 'hit', { payload: { holeNumber, score } });
+    const { team, tournamentId } = await requireTeamContext(req);
+    if (!team || !tournamentId) return res.status(401).json({ success: false, error: 'Team session mangler. Logg inn på nytt.' });
+    if (team.locked) return res.status(400).json({ success: false, error: 'Resultatkort er låst' });
+    if (!holeNumber || !score) return res.status(400).json({ success: false, error: 'hole_number og score er påkrevd' });
+
+    const payload = { tournament_id: tournamentId, team_id: team.id, hole_number: holeNumber, score };
+    const { data, error } = await supabase
+      .from('scores')
+      .upsert(payload, { onConflict: 'team_id,hole_number' })
+      .select('*')
+      .single();
+    if (error) throw error;
+
+    routeLog(route, 'db_action', { action: 'upsert_score', teamId: team.id, holeNumber });
+    return res.json({ success: true, score: data });
+  } catch (error) {
+    routeLog(route, 'error', { error: error?.message || String(error) });
+    return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke lagre score' });
+  }
+});
+
+app.post('/api/team/upload-photo/:holeNum', upload.single('photo'), async (req, res) => {
+  const route = '/api/team/upload-photo/:holeNum';
+  try {
+    const holeNum = asInt(req.params.holeNum);
+    routeLog(route, 'hit', { payload: { holeNum, hasFile: !!req.file } });
+    const { team, tournamentId } = await requireTeamContext(req);
+    if (!team || !tournamentId) return res.status(401).json({ success: false, error: 'Team session mangler. Logg inn på nytt.' });
+    if (!holeNum) return res.status(400).json({ success: false, error: 'Ugyldig hullnummer' });
+    if (!req.file) return res.status(400).json({ success: false, error: 'Mangler bildefil' });
+
+    const extension = path.extname(req.file.originalname || '').toLowerCase() || '.jpg';
+    const safeExt = /^[.][a-z0-9]+$/.test(extension) ? extension : '.jpg';
+    const storagePath = `score-photos/tournament-${tournamentId}/team-${team.id}/hole-${holeNum}-${Date.now()}-${crypto.randomUUID()}${safeExt}`;
+    const { error: uploadError } = await supabase.storage.from('tournament-gallery')
+      .upload(storagePath, req.file.buffer, { contentType: req.file.mimetype || 'image/jpeg', upsert: false });
+    if (uploadError) throw uploadError;
+    const { data: publicData } = supabase.storage.from('tournament-gallery').getPublicUrl(storagePath);
+    const photoPath = publicData?.publicUrl || null;
+
+    const { data, error } = await supabase.from('scores')
+      .upsert({ tournament_id: tournamentId, team_id: team.id, hole_number: holeNum, score: 1, photo_path: photoPath }, { onConflict: 'team_id,hole_number' })
+      .select('*').single();
+    if (error) throw error;
+    routeLog(route, 'db_action', { action: 'upload_photo', scoreId: data?.id, storagePath });
+    return res.json({ success: true, photo_path: photoPath, score: data });
+  } catch (error) {
+    routeLog(route, 'error', { error: error?.message || String(error) });
+    return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke laste opp bilde' });
+  }
+});
+
+app.post('/api/team/lock-scorecard', async (req, res) => {
+  const route = '/api/team/lock-scorecard';
+  try {
+    routeLog(route, 'hit');
+    const { team } = await requireTeamContext(req);
+    if (!team) return res.status(401).json({ success: false, error: 'Team session mangler. Logg inn på nytt.' });
+    const { data, error } = await supabase.from('teams').update({ locked: true }).eq('id', team.id).select('*').single();
+    if (error) throw error;
+    routeLog(route, 'db_action', { action: 'lock_scorecard', teamId: team.id });
+    return res.json({ success: true, team: data });
+  } catch (error) {
+    routeLog(route, 'error', { error: error?.message || String(error) });
+    return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke låse scorecard' });
+  }
+});
+
+app.post('/api/team/claim-award', async (req, res) => {
+  const route = '/api/team/claim-award';
+  try {
+    const payload = {
+      hole_number: asInt(req.body?.hole_number),
+      award_type: String(req.body?.award_type || '').trim(),
+      player_name: String(req.body?.player_name || '').trim(),
+      detail: String(req.body?.detail || '').trim() || null
+    };
+    routeLog(route, 'hit', { payload });
+    const { team, tournamentId } = await requireTeamContext(req);
+    if (!team || !tournamentId) return res.status(401).json({ success: false, error: 'Team session mangler. Logg inn på nytt.' });
+    if (!payload.hole_number || !payload.award_type || !payload.player_name) {
+      return res.status(400).json({ success: false, error: 'hole_number, award_type og player_name er påkrevd' });
+    }
+    const insertPayload = { ...payload, tournament_id: tournamentId, team_id: team.id, team_name: team.team_name, claimed_at: new Date().toISOString() };
+    const { data, error } = await supabase.from('award_claims').insert(insertPayload).select('*').single();
+    if (error) throw error;
+    routeLog(route, 'db_action', { action: 'insert_award_claim', claimId: data?.id, teamId: team.id });
+    return res.json({ success: true, claim: data });
+  } catch (error) {
+    routeLog(route, 'error', { error: error?.message || String(error) });
+    return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke melde inn kandidat' });
+  }
+});
+
+app.get('/api/chat/messages', async (req, res) => {
+  const route = '/api/chat/messages';
+  try {
+    const requestedTournamentId = asInt(req.query?.tournament_id);
+    const tournamentId = requestedTournamentId || await resolveTournamentId(null);
+    routeLog(route, 'hit', { payload: { requestedTournamentId, tournamentId } });
+    if (!tournamentId) return res.json({ success: true, messages: [] });
+    const { data, error } = await supabase
+      .from('chat_messages')
+      .select('id, tournament_id, team_id, team_name, message, image_path, note, created_at')
+      .eq('tournament_id', tournamentId)
+      .order('created_at', { ascending: true })
+      .limit(100);
+    if (error) throw error;
+    routeLog(route, 'db_action', { action: 'fetch_chat_messages', count: data?.length || 0, tournamentId });
+    return res.json({ success: true, messages: data || [] });
+  } catch (error) {
+    routeLog(route, 'error', { error: error?.message || String(error) });
+    return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke hente chat' });
+  }
+});
+
+app.post('/api/chat/send', upload.single('image'), async (req, res) => {
+  const route = '/api/chat/send';
+  try {
+    const message = String(req.body?.message || '').trim();
+    const note = String(req.body?.note || '').trim() || null;
+    routeLog(route, 'hit', { payload: { messageLength: message.length, hasImage: !!req.file } });
+    const { team, tournamentId } = await requireTeamContext(req, { allowPinFallback: true });
+    if (!team || !tournamentId) return res.status(401).json({ success: false, error: 'Team session mangler. Logg inn på nytt.' });
+    if (!message && !req.file) return res.status(400).json({ success: false, error: 'Melding eller bilde må sendes' });
+
+    let imagePath = null;
+    if (req.file) {
+      const extension = path.extname(req.file.originalname || '').toLowerCase() || '.jpg';
+      const safeExt = /^[.][a-z0-9]+$/.test(extension) ? extension : '.jpg';
+      const storagePath = `chat/tournament-${tournamentId}/team-${team.id}/${Date.now()}-${crypto.randomUUID()}${safeExt}`;
+      const { error: uploadError } = await supabase.storage.from('tournament-gallery')
+        .upload(storagePath, req.file.buffer, { contentType: req.file.mimetype || 'image/jpeg', upsert: false });
+      if (uploadError) throw uploadError;
+      const { data: publicData } = supabase.storage.from('tournament-gallery').getPublicUrl(storagePath);
+      imagePath = publicData?.publicUrl || null;
+    }
+
+    const payload = { tournament_id: tournamentId, team_id: team.id, team_name: team.team_name, message: message || null, note, image_path: imagePath };
+    const { data, error } = await supabase.from('chat_messages').insert(payload).select('*').single();
+    if (error) throw error;
+    routeLog(route, 'db_action', { action: 'insert_chat_message', messageId: data?.id, teamId: team.id, tournamentId });
+    return res.json({ success: true, message: data });
+  } catch (error) {
+    routeLog(route, 'error', { error: error?.message || String(error) });
+    return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke sende melding' });
+  }
+});
+
+app.get('/api/gallery', async (req, res) => {
+  const route = '/api/gallery';
+  try {
+    const tournamentId = asInt(req.query?.tournament_id) || await resolveTournamentId(null);
+    routeLog(route, 'hit', { payload: { tournamentId } });
+    if (!tournamentId) return res.json({ success: true, photos: [] });
+    const scorePhotosResp = await supabase.from('scores')
+      .select('id, team_id, hole_number, photo_path, created_at')
+      .eq('tournament_id', tournamentId)
+      .not('photo_path', 'is', null);
+    if (scorePhotosResp.error) throw scorePhotosResp.error;
+    const galleryResp = await supabase.from('tournament_gallery_images')
+      .select('id, tournament_id, photo_path, caption, is_published, uploaded_at')
+      .eq('tournament_id', tournamentId)
+      .eq('is_published', true);
+    if (galleryResp.error) throw galleryResp.error;
+
+    const teamIds = [...new Set((scorePhotosResp.data || []).map((row) => row.team_id).filter(Boolean))];
+    let teamsById = {};
+    if (teamIds.length) {
+      const teamsResp = await supabase.from('teams').select('id, name, team_name').in('id', teamIds);
+      if (teamsResp.error) throw teamsResp.error;
+      teamsById = Object.fromEntries((teamsResp.data || []).map((team) => [team.id, normalizeTeamRow(team)]));
+    }
+    const scorePhotos = (scorePhotosResp.data || []).map((row) => ({
+      id: `score-${row.id}`,
+      photo_ref: `score-${row.id}`,
+      photo_path: row.photo_path,
+      hole_number: row.hole_number,
+      team_name: teamsById[row.team_id]?.team_name || 'Lag',
+      created_at: row.created_at,
+      votes: 0,
+      voted: false
+    }));
+    const galleryPhotos = (galleryResp.data || []).map((row) => ({
+      id: `gallery-${row.id}`,
+      photo_ref: `gallery-${row.id}`,
+      photo_path: row.photo_path,
+      hole_number: null,
+      team_name: row.caption || 'Turneringsbilde',
+      created_at: row.uploaded_at,
+      votes: 0,
+      voted: false
+    }));
+    const photos = [...galleryPhotos, ...scorePhotos].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    routeLog(route, 'db_action', { action: 'fetch_gallery_public', count: photos.length, tournamentId });
+    return res.json({ success: true, photos });
+  } catch (error) {
+    routeLog(route, 'error', { error: error?.message || String(error) });
+    return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke hente galleri' });
+  }
+});
+
+app.post('/api/gallery/vote', async (req, res) => {
+  routeLog('/api/gallery/vote', 'hit', { payload: req.body || {} });
+  return res.json({ success: true });
+});
+
+app.get('/api/legacy', async (_req, res) => {
+  const route = '/api/legacy';
+  try {
+    routeLog(route, 'hit');
+    const { data, error } = await supabase.from('legacy_entries').select('*').order('year', { ascending: false });
+    if (error) throw error;
+    routeLog(route, 'db_action', { action: 'fetch_legacy_public', count: data?.length || 0 });
+    return res.json({ success: true, legacy: data || [] });
+  } catch (error) {
+    routeLog(route, 'error', { error: error?.message || String(error) });
+    return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke hente historikk' });
+  }
+});
+
+app.get('/api/sponsors', async (req, res) => {
+  const route = '/api/sponsors';
+  try {
+    const placement = String(req.query?.placement || '').trim() || null;
+    const tournamentId = asInt(req.query?.tournament_id) || await resolveTournamentId(null);
+    routeLog(route, 'hit', { payload: { placement, tournamentId } });
+    if (!tournamentId) return res.json({ success: true, sponsors: [] });
+    let query = supabase.from('sponsors').select('*').eq('tournament_id', tournamentId).eq('is_enabled', true);
+    if (placement) query = query.eq('placement', placement);
+    const { data, error } = await query.order('spot_number', { ascending: true }).order('hole_number', { ascending: true });
+    if (error) throw error;
+    routeLog(route, 'db_action', { action: 'fetch_sponsors', count: data?.length || 0, tournamentId });
+    return res.json({ success: true, sponsors: data || [] });
+  } catch (error) {
+    routeLog(route, 'error', { error: error?.message || String(error) });
+    return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke hente sponsorer' });
+  }
+});
+
+app.get('/api/coin-back', async (_req, res) => {
+  const route = '/api/coin-back';
+  try {
+    routeLog(route, 'hit');
+    const { data, error } = await supabase
+      .from('coin_back_images')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error && error.code !== '42P01') throw error;
+    const photos = data || [];
+    const active = photos.find((row) => row.is_active && row.photo_path) || photos[0] || null;
+    routeLog(route, 'db_action', { action: 'fetch_coin_back', count: photos.length });
+    return res.json({ success: true, photo_path: active?.photo_path || null, focal_point: active?.focal_point || '50% 50%', photos });
+  } catch (error) {
+    routeLog(route, 'error', { error: error?.message || String(error) });
+    return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke hente coin back' });
+  }
+});
+
 app.put('/api/admin/tournament/:id/gameday', async (req, res) => {
   try {
     const tournamentId = asInt(req.params.id);
@@ -1458,6 +1863,331 @@ app.post('/api/admin/tournament/:id/gallery', upload.single('photo'), async (req
 app.get('/admin/tournament/:id/gallery', (req, res) => forwardTo(req, res, 'GET', `/api/admin/tournament/${req.params.id}/gallery`));
 app.post('/admin/tournament/:id/gallery', (req, res) => forwardTo(req, res, 'POST', `/api/admin/tournament/${req.params.id}/gallery`));
 
+app.post('/api/admin/tournament/:id/rebuild-photo-db', async (req, res) => {
+  const route = '/api/admin/tournament/:id/rebuild-photo-db';
+  try {
+    const tournamentId = asInt(req.params.id);
+    routeLog(route, 'hit', { payload: { tournamentId } });
+    if (!tournamentId) return res.status(400).json({ success: false, error: 'Invalid tournament id' });
+    routeLog(route, 'db_action', { action: 'rebuild_photo_db_noop', tournamentId });
+    return res.json({ success: true, normalized_scores: 0, normalized_gallery: 0, synced_score_captions: 0 });
+  } catch (error) {
+    routeLog(route, 'error', { error: error?.message || String(error) });
+    return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke rebuild photo db' });
+  }
+});
+
+app.put('/api/admin/photo/:id/publish', async (req, res) => {
+  const route = '/api/admin/photo/:id/publish';
+  try {
+    const scoreId = asInt(req.params.id);
+    routeLog(route, 'hit', { payload: { scoreId, is_published: !!req.body?.is_published } });
+    if (!scoreId) return res.status(400).json({ success: false, error: 'Invalid photo id' });
+    routeLog(route, 'db_action', { action: 'score_publish_toggle_noop', scoreId });
+    return res.json({ success: true });
+  } catch (error) {
+    routeLog(route, 'error', { error: error?.message || String(error) });
+    return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke oppdatere publisering' });
+  }
+});
+
+app.delete('/api/admin/photo/:id', async (req, res) => {
+  const route = '/api/admin/photo/:id:DELETE';
+  try {
+    const scoreId = asInt(req.params.id);
+    routeLog(route, 'hit', { payload: { scoreId } });
+    if (!scoreId) return res.status(400).json({ success: false, error: 'Invalid photo id' });
+    const { error } = await supabase.from('scores').update({ photo_path: null }).eq('id', scoreId);
+    if (error) throw error;
+    routeLog(route, 'db_action', { action: 'clear_score_photo', scoreId });
+    return res.json({ success: true });
+  } catch (error) {
+    routeLog(route, 'error', { error: error?.message || String(error) });
+    return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke slette bilde' });
+  }
+});
+
+app.get('/api/admin/photo/:id/download', async (req, res) => {
+  const route = '/api/admin/photo/:id/download';
+  try {
+    const scoreId = asInt(req.params.id);
+    routeLog(route, 'hit', { payload: { scoreId } });
+    if (!scoreId) return res.status(400).json({ success: false, error: 'Invalid photo id' });
+    const { data, error } = await supabase.from('scores').select('photo_path').eq('id', scoreId).maybeSingle();
+    if (error) throw error;
+    if (!data?.photo_path) return res.status(404).json({ success: false, error: 'Bilde ikke funnet' });
+    return res.redirect(data.photo_path);
+  } catch (error) {
+    routeLog(route, 'error', { error: error?.message || String(error) });
+    return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke laste ned bilde' });
+  }
+});
+
+app.put('/api/admin/gallery/:id/publish', async (req, res) => {
+  const route = '/api/admin/gallery/:id/publish';
+  try {
+    const galleryId = asInt(req.params.id);
+    const isPublished = !!req.body?.is_published;
+    routeLog(route, 'hit', { payload: { galleryId, isPublished } });
+    if (!galleryId) return res.status(400).json({ success: false, error: 'Invalid gallery id' });
+    const { data, error } = await supabase
+      .from('tournament_gallery_images')
+      .update({ is_published: isPublished })
+      .eq('id', galleryId)
+      .select('*')
+      .maybeSingle();
+    if (error) throw error;
+    routeLog(route, 'db_action', { action: 'update_gallery_publish', galleryId, isPublished });
+    return res.json({ success: true, photo: data });
+  } catch (error) {
+    routeLog(route, 'error', { error: error?.message || String(error) });
+    return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke oppdatere galleri-bilde' });
+  }
+});
+
+app.delete('/api/admin/gallery/:id', async (req, res) => {
+  const route = '/api/admin/gallery/:id:DELETE';
+  try {
+    const galleryId = asInt(req.params.id);
+    routeLog(route, 'hit', { payload: { galleryId } });
+    if (!galleryId) return res.status(400).json({ success: false, error: 'Invalid gallery id' });
+    const { error } = await supabase.from('tournament_gallery_images').delete().eq('id', galleryId);
+    if (error) throw error;
+    routeLog(route, 'db_action', { action: 'delete_gallery_image', galleryId });
+    return res.json({ success: true });
+  } catch (error) {
+    routeLog(route, 'error', { error: error?.message || String(error) });
+    return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke slette galleri-bilde' });
+  }
+});
+
+app.get('/api/admin/gallery/:id/download', async (req, res) => {
+  const route = '/api/admin/gallery/:id/download';
+  try {
+    const galleryId = asInt(req.params.id);
+    routeLog(route, 'hit', { payload: { galleryId } });
+    if (!galleryId) return res.status(400).json({ success: false, error: 'Invalid gallery id' });
+    const { data, error } = await supabase.from('tournament_gallery_images').select('photo_path').eq('id', galleryId).maybeSingle();
+    if (error) throw error;
+    if (!data?.photo_path) return res.status(404).json({ success: false, error: 'Bilde ikke funnet' });
+    return res.redirect(data.photo_path);
+  } catch (error) {
+    routeLog(route, 'error', { error: error?.message || String(error) });
+    return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke laste ned bilde' });
+  }
+});
+
+app.get('/api/admin/tournament/:id/sponsors', async (req, res) => {
+  const route = '/api/admin/tournament/:id/sponsors';
+  try {
+    const tournamentId = asInt(req.params.id);
+    routeLog(route, 'hit', { payload: { tournamentId } });
+    if (!tournamentId) return res.status(400).json({ success: false, error: 'Invalid tournament id' });
+    const { data, error } = await supabase.from('sponsors').select('*').eq('tournament_id', tournamentId);
+    if (error) throw error;
+    const rows = data || [];
+    const home = rows.filter((row) => row.placement === 'home').sort((a, b) => (a.spot_number || 0) - (b.spot_number || 0));
+    const hole = rows.filter((row) => row.placement === 'hole').sort((a, b) => (a.hole_number || 0) - (b.hole_number || 0));
+    routeLog(route, 'db_action', { action: 'fetch_sponsors_admin', count: rows.length, tournamentId });
+    return res.json({ success: true, home, hole, sponsors: rows });
+  } catch (error) {
+    routeLog(route, 'error', { error: error?.message || String(error) });
+    return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke hente sponsorer' });
+  }
+});
+
+app.post('/api/admin/tournament/:id/sponsors', async (req, res) => {
+  const route = '/api/admin/tournament/:id/sponsors:POST';
+  try {
+    const tournamentId = asInt(req.params.id);
+    const sponsors = Array.isArray(req.body?.sponsors) ? req.body.sponsors : [];
+    routeLog(route, 'hit', { payload: { tournamentId, sponsorCount: sponsors.length } });
+    if (!tournamentId) return res.status(400).json({ success: false, error: 'Invalid tournament id' });
+    await supabase.from('sponsors').delete().eq('tournament_id', tournamentId);
+    if (sponsors.length) {
+      const payload = sponsors.map((row) => ({
+        tournament_id: tournamentId,
+        placement: row.placement === 'hole' ? 'hole' : 'home',
+        spot_number: asInt(row.spot_number),
+        hole_number: asInt(row.hole_number),
+        sponsor_name: String(row.sponsor_name || '').trim() || null,
+        description: String(row.description || '').trim() || null,
+        logo_path: String(row.logo_path || '').trim() || null,
+        is_enabled: !!row.is_enabled
+      }));
+      const { error } = await supabase.from('sponsors').insert(payload);
+      if (error) throw error;
+    }
+    routeLog(route, 'db_action', { action: 'replace_sponsors', tournamentId, sponsorCount: sponsors.length });
+    return res.json({ success: true });
+  } catch (error) {
+    routeLog(route, 'error', { error: error?.message || String(error) });
+    return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke lagre sponsorer' });
+  }
+});
+
+app.post('/api/admin/tournament/:id/sponsor-logo', upload.single('logo'), async (req, res) => {
+  const route = '/api/admin/tournament/:id/sponsor-logo';
+  try {
+    const tournamentId = asInt(req.params.id);
+    routeLog(route, 'hit', { payload: { tournamentId, hasFile: !!req.file } });
+    if (!tournamentId) return res.status(400).json({ success: false, error: 'Invalid tournament id' });
+    if (!req.file) return res.status(400).json({ success: false, error: 'Mangler bildefil (logo)' });
+    const extension = path.extname(req.file.originalname || '').toLowerCase() || '.png';
+    const safeExt = /^[.][a-z0-9]+$/.test(extension) ? extension : '.png';
+    const storagePath = `sponsors/tournament-${tournamentId}/${Date.now()}-${crypto.randomUUID()}${safeExt}`;
+    const { error: storageError } = await supabase.storage
+      .from('tournament-gallery')
+      .upload(storagePath, req.file.buffer, { contentType: req.file.mimetype || 'image/png', upsert: false });
+    if (storageError) throw storageError;
+    const { data: publicData } = supabase.storage.from('tournament-gallery').getPublicUrl(storagePath);
+    routeLog(route, 'db_action', { action: 'upload_sponsor_logo', storagePath });
+    return res.json({ success: true, logo_path: publicData?.publicUrl || null, storage_path: storagePath });
+  } catch (error) {
+    routeLog(route, 'error', { error: error?.message || String(error) });
+    return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke laste opp sponsorlogo' });
+  }
+});
+
+app.get('/api/admin/tournament/:id/award-claims', async (req, res) => {
+  const route = '/api/admin/tournament/:id/award-claims';
+  try {
+    const tournamentId = asInt(req.params.id);
+    routeLog(route, 'hit', { payload: { tournamentId } });
+    if (!tournamentId) return res.status(400).json({ success: false, error: 'Invalid tournament id' });
+    const { data, error } = await supabase.from('award_claims').select('*').eq('tournament_id', tournamentId).order('claimed_at', { ascending: false });
+    if (error) throw error;
+    routeLog(route, 'db_action', { action: 'fetch_award_claims', count: data?.length || 0, tournamentId });
+    return res.json({ success: true, claims: data || [] });
+  } catch (error) {
+    routeLog(route, 'error', { error: error?.message || String(error) });
+    return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke hente kandidater' });
+  }
+});
+
+app.get('/api/admin/tournament/:id/awards', async (req, res) => {
+  const route = '/api/admin/tournament/:id/awards';
+  try {
+    const tournamentId = asInt(req.params.id);
+    routeLog(route, 'hit', { payload: { tournamentId } });
+    if (!tournamentId) return res.status(400).json({ success: false, error: 'Invalid tournament id' });
+    const { data, error } = await supabase.from('awards').select('*').eq('tournament_id', tournamentId).order('created_at', { ascending: false });
+    if (error) throw error;
+    routeLog(route, 'db_action', { action: 'fetch_awards', count: data?.length || 0, tournamentId });
+    return res.json({ success: true, awards: data || [] });
+  } catch (error) {
+    routeLog(route, 'error', { error: error?.message || String(error) });
+    return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke hente utmerkelser' });
+  }
+});
+
+app.post('/api/admin/award', async (req, res) => {
+  const route = '/api/admin/award';
+  try {
+    const payload = {
+      tournament_id: asInt(req.body?.tournament_id),
+      team_id: asInt(req.body?.team_id),
+      award_type: String(req.body?.award_type || '').trim(),
+      player_name: String(req.body?.player_name || '').trim(),
+      hole_number: asInt(req.body?.hole_number),
+      detail: String(req.body?.detail || '').trim() || null
+    };
+    routeLog(route, 'hit', { payload });
+    if (!payload.tournament_id || !payload.team_id || !payload.award_type || !payload.player_name) {
+      return res.status(400).json({ success: false, error: 'tournament_id, team_id, award_type og player_name er påkrevd' });
+    }
+    const { data: team, error: teamError } = await supabase.from('teams').select('id,name,team_name').eq('id', payload.team_id).maybeSingle();
+    if (teamError) throw teamError;
+    const { data, error } = await supabase.from('awards').insert({ ...payload, team_name: normalizeTeamRow(team || {}).team_name }).select('*').single();
+    if (error) throw error;
+    routeLog(route, 'db_action', { action: 'insert_award', awardId: data?.id });
+    return res.json({ success: true, award: data });
+  } catch (error) {
+    routeLog(route, 'error', { error: error?.message || String(error) });
+    return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke lagre utmerkelse' });
+  }
+});
+
+app.delete('/api/admin/award/:id', async (req, res) => {
+  const route = '/api/admin/award/:id';
+  try {
+    const awardId = asInt(req.params.id);
+    routeLog(route, 'hit', { payload: { awardId } });
+    if (!awardId) return res.status(400).json({ success: false, error: 'Invalid award id' });
+    const { error } = await supabase.from('awards').delete().eq('id', awardId);
+    if (error) throw error;
+    routeLog(route, 'db_action', { action: 'delete_award', awardId });
+    return res.json({ success: true });
+  } catch (error) {
+    routeLog(route, 'error', { error: error?.message || String(error) });
+    return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke slette utmerkelse' });
+  }
+});
+
+app.get('/api/admin/coin-back', async (_req, res) => forwardTo(_req, res, 'GET', '/api/coin-back'));
+
+app.post('/api/admin/coin-back', upload.single('photo'), async (req, res) => {
+  const route = '/api/admin/coin-back';
+  try {
+    routeLog(route, 'hit', { payload: { hasFile: !!req.file } });
+    if (!req.file) return res.status(400).json({ success: false, error: 'Mangler bildefil (photo)' });
+    const extension = path.extname(req.file.originalname || '').toLowerCase() || '.png';
+    const safeExt = /^[.][a-z0-9]+$/.test(extension) ? extension : '.png';
+    const storagePath = `coin-back/${Date.now()}-${crypto.randomUUID()}${safeExt}`;
+    const { error: storageError } = await supabase.storage.from('tournament-gallery')
+      .upload(storagePath, req.file.buffer, { contentType: req.file.mimetype || 'image/png', upsert: false });
+    if (storageError) throw storageError;
+    const { data: publicData } = supabase.storage.from('tournament-gallery').getPublicUrl(storagePath);
+    const photoPath = publicData?.publicUrl || null;
+    const { data, error } = await supabase
+      .from('coin_back_images')
+      .insert({ photo_path: photoPath, storage_path: storagePath, focal_point: '50% 50%', is_active: false })
+      .select('*')
+      .single();
+    if (error) throw error;
+    routeLog(route, 'db_action', { action: 'insert_coin_back', imageId: data?.id, storagePath });
+    return res.json({ success: true, image: data });
+  } catch (error) {
+    routeLog(route, 'error', { error: error?.message || String(error) });
+    return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke laste opp myntbakside' });
+  }
+});
+
+app.put('/api/admin/coin-back/:id/active', async (req, res) => {
+  const route = '/api/admin/coin-back/:id/active';
+  try {
+    const imageId = asInt(req.params.id);
+    const isActive = !!req.body?.is_active;
+    routeLog(route, 'hit', { payload: { imageId, isActive } });
+    if (!imageId) return res.status(400).json({ success: false, error: 'Invalid image id' });
+    if (isActive) await supabase.from('coin_back_images').update({ is_active: false }).neq('id', imageId);
+    const { data, error } = await supabase.from('coin_back_images').update({ is_active: isActive }).eq('id', imageId).select('*').maybeSingle();
+    if (error) throw error;
+    routeLog(route, 'db_action', { action: 'toggle_coin_back_active', imageId, isActive });
+    return res.json({ success: true, image: data });
+  } catch (error) {
+    routeLog(route, 'error', { error: error?.message || String(error) });
+    return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke oppdatere aktiv status' });
+  }
+});
+
+app.put('/api/admin/coin-back/focus', async (req, res) => {
+  const route = '/api/admin/coin-back/focus';
+  try {
+    const imageId = asInt(req.body?.image_id);
+    const focalPoint = String(req.body?.focal_point || '').trim();
+    routeLog(route, 'hit', { payload: { imageId, focalPoint } });
+    if (!imageId || !focalPoint) return res.status(400).json({ success: false, error: 'image_id og focal_point er påkrevd' });
+    const { data, error } = await supabase.from('coin_back_images').update({ focal_point: focalPoint }).eq('id', imageId).select('*').maybeSingle();
+    if (error) throw error;
+    routeLog(route, 'db_action', { action: 'update_coin_back_focus', imageId });
+    return res.json({ success: true, image: data });
+  } catch (error) {
+    routeLog(route, 'error', { error: error?.message || String(error) });
+    return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke lagre fokuspunkt' });
+  }
+});
+
 app.get('/api/admin/legacy', async (_req, res) => {
   const route = '/api/admin/legacy:GET';
   try {
@@ -1520,7 +2250,56 @@ app.delete('/api/admin/legacy/:id', async (req, res) => {
   }
 });
 
+app.post('/api/admin/legacy/:id/photo', upload.single('photo'), async (req, res) => {
+  const route = '/api/admin/legacy/:id/photo';
+  try {
+    const legacyId = asInt(req.params.id);
+    routeLog(route, 'hit', { payload: { legacyId, hasFile: !!req.file } });
+    if (!legacyId) return res.status(400).json({ success: false, error: 'Invalid legacy id' });
+    if (!req.file) return res.status(400).json({ success: false, error: 'Mangler bildefil (photo)' });
+    const extension = path.extname(req.file.originalname || '').toLowerCase() || '.jpg';
+    const safeExt = /^[.][a-z0-9]+$/.test(extension) ? extension : '.jpg';
+    const storagePath = `legacy/${legacyId}/${Date.now()}-${crypto.randomUUID()}${safeExt}`;
+    const { error: storageError } = await supabase.storage.from('tournament-gallery')
+      .upload(storagePath, req.file.buffer, { contentType: req.file.mimetype || 'image/jpeg', upsert: false });
+    if (storageError) throw storageError;
+    const { data: publicData } = supabase.storage.from('tournament-gallery').getPublicUrl(storagePath);
+    const { data, error } = await supabase
+      .from('legacy_entries')
+      .update({ winner_photo: publicData?.publicUrl || null })
+      .eq('id', legacyId)
+      .select('*')
+      .maybeSingle();
+    if (error) throw error;
+    routeLog(route, 'db_action', { action: 'update_legacy_photo', legacyId, storagePath });
+    return res.json({ success: true, legacy: data });
+  } catch (error) {
+    routeLog(route, 'error', { error: error?.message || String(error) });
+    return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke lagre vinnerbilde' });
+  }
+});
+
+app.put('/api/admin/legacy/:id/photo-focus', async (req, res) => {
+  const route = '/api/admin/legacy/:id/photo-focus';
+  try {
+    const legacyId = asInt(req.params.id);
+    const focus = String(req.body?.focus || '').trim();
+    routeLog(route, 'hit', { payload: { legacyId, focus } });
+    if (!legacyId || !focus) return res.status(400).json({ success: false, error: 'legacy id og focus er påkrevd' });
+    const { data, error } = await supabase.from('legacy_entries').update({ winner_photo_focus: focus }).eq('id', legacyId).select('*').maybeSingle();
+    if (error) throw error;
+    routeLog(route, 'db_action', { action: 'update_legacy_photo_focus', legacyId });
+    return res.json({ success: true, legacy: data });
+  } catch (error) {
+    routeLog(route, 'error', { error: error?.message || String(error) });
+    return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke oppdatere fokuspunkt' });
+  }
+});
+
+app.get('/admin/legacy', (req, res) => forwardTo(req, res, 'GET', '/api/admin/legacy'));
 app.post('/admin/legacy', (req, res) => forwardTo(req, res, 'POST', '/api/admin/legacy'));
+app.post('/chat/send', (req, res) => forwardTo(req, res, 'POST', '/api/chat/send'));
+app.get('/chat/messages', (req, res) => forwardTo(req, res, 'GET', '/api/chat/messages'));
 
 app.use('/api', (req, res) => {
   res.status(404).json({ error: `API route not found: ${req.method} ${req.path}` });

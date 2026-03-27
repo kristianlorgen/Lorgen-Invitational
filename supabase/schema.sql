@@ -135,6 +135,52 @@ CREATE TABLE IF NOT EXISTS legacy_entries (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS award_claims (
+  id BIGSERIAL PRIMARY KEY,
+  tournament_id BIGINT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+  team_id BIGINT REFERENCES teams(id) ON DELETE SET NULL,
+  team_name TEXT,
+  hole_number INTEGER NOT NULL,
+  award_type TEXT NOT NULL,
+  player_name TEXT NOT NULL,
+  detail TEXT,
+  claimed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS sponsors (
+  id BIGSERIAL PRIMARY KEY,
+  tournament_id BIGINT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+  placement TEXT NOT NULL CHECK (placement IN ('home', 'hole')),
+  spot_number INTEGER,
+  hole_number INTEGER,
+  sponsor_name TEXT,
+  description TEXT,
+  logo_path TEXT,
+  is_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS awards (
+  id BIGSERIAL PRIMARY KEY,
+  tournament_id BIGINT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+  team_id BIGINT REFERENCES teams(id) ON DELETE SET NULL,
+  team_name TEXT,
+  award_type TEXT NOT NULL,
+  player_name TEXT NOT NULL,
+  hole_number INTEGER,
+  detail TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS coin_back_images (
+  id BIGSERIAL PRIMARY KEY,
+  photo_path TEXT NOT NULL,
+  storage_path TEXT,
+  focal_point TEXT DEFAULT '50% 50%',
+  is_active BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 ALTER TABLE tournaments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE courses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE course_holes ENABLE ROW LEVEL SECURITY;
@@ -147,3 +193,7 @@ ALTER TABLE scores ENABLE ROW LEVEL SECURITY;
 ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tournament_gallery_images ENABLE ROW LEVEL SECURITY;
 ALTER TABLE legacy_entries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE award_claims ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sponsors ENABLE ROW LEVEL SECURITY;
+ALTER TABLE awards ENABLE ROW LEVEL SECURITY;
+ALTER TABLE coin_back_images ENABLE ROW LEVEL SECURITY;
