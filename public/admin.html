@@ -2228,23 +2228,13 @@ async function importCourseHoles() {
   if (!tid) { showToast('Velg en turnering først', 'error'); return; }
   if (!confirm('Overskriv gjeldende hullkonfigurasjon med malen fra valgt bane?')) return;
   try {
-    const d = await api(`/api/admin/course/${courseId}/holes`);
-    const importedHoles = d.holes;
-    // Apply hole config to tournament
-    await api('/api/admin/tournament/' + tid + '/holes', {
+    await api('/api/admin/tournaments/' + tid + '/import-course-template', {
       method: 'POST',
-      body: JSON.stringify({ holes: importedHoles })
+      body: JSON.stringify({ course_id: courseId })
     });
-    // Also copy slope_rating from course to tournament
-    const course = _allCourses.find(c => c.id === parseInt(courseId));
-    if (course) {
-      await api('/api/admin/tournament/' + tid + '/slope', {
-        method: 'PUT',
-        body: JSON.stringify({ slope_rating: course.slope_rating })
-      });
-    }
     showToast('Hull-mal og slope importert!');
     await loadHoles();
+    await loadTournaments();
   } catch(e) { showToast(e.message, 'error'); }
 }
 
