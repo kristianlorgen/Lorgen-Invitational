@@ -765,8 +765,15 @@ function showToast(msg, type='success') {
 
 async function api(url, options={}) {
   const r = await fetch(url, { headers:{'Content-Type':'application/json'}, ...options });
-  const d = await r.json();
-  if (!r.ok) throw new Error(d.error || 'Forespørsel mislyktes');
+  const contentType = (r.headers.get('content-type') || '').toLowerCase();
+  let d = {};
+  if (contentType.includes('application/json')) {
+    d = await r.json().catch(() => ({}));
+  } else {
+    const text = await r.text().catch(() => '');
+    d = { error: text ? text.slice(0, 160) : 'Serveren svarte ikke med JSON' };
+  }
+  if (!r.ok) throw new Error(d.error || d.message || 'Forespørsel mislyktes');
   return d;
 }
 

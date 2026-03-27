@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
+const crypto = require('crypto');
 const { supabase } = require('./lib/supabaseClient');
 const { getTournamentFormat, getTeamSizeForFormat } = require('./services/tournamentFormat');
 
@@ -22,6 +23,100 @@ function asInt(value) {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) ? parsed : null;
 }
+
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
+const ADMIN_COOKIE_NAME = 'admin_auth';
+const ADMIN_COOKIE_TTL_SECONDS = 60 * 60 * 12; // 12 timer
+const ADMIN_SIGNING_SECRET = process.env.SESSION_SECRET || process.env.ADMIN_SIGNING_SECRET || ADMIN_PASSWORD || 'lorgen-admin';
+
+function signAdminCookieValue(payload) {
+  const hmac = crypto
+    .createHmac('sha256', ADMIN_SIGNING_SECRET)
+    .update(payload)
+    .digest('hex');
+  return `${payload}.${hmac}`;
+}
+
+function verifyAdminCookieValue(value) {
+  if (!value || !value.includes('.')) return false;
+  const idx = value.lastIndexOf('.');
+  const payload = value.slice(0, idx);
+  const sig = value.slice(idx + 1);
+  const expected = crypto
+    .createHmac('sha256', ADMIN_SIGNING_SECRET)
+    .update(payload)
+    .digest('hex');
+  if (sig.length !== expected.length) return false;
+  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return false;
+  const [issuedAtRaw] = payload.split(':');
+  const issuedAt = Number.parseInt(issuedAtRaw, 10);
+  if (!Number.isFinite(issuedAt)) return false;
+  const ageSeconds = Math.floor(Date.now() / 1000) - issuedAt;
+  return ageSeconds >= 0 && ageSeconds <= ADMIN_COOKIE_TTL_SECONDS;
+}
+
+function readCookies(req) {
+  const raw = req.headers.cookie || '';
+  return raw.split(';').reduce((acc, pair) => {
+    const [key, ...parts] = pair.trim().split('=');
+    if (!key) return acc;
+    acc[key] = decodeURIComponent(parts.join('='));
+    return acc;
+  }, {});
+}
+
+function setAdminAuthCookie(res) {
+  const issuedAt = Math.floor(Date.now() / 1000);
+  const token = signAdminCookieValue(`${issuedAt}:admin`);
+  const secureFlag = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  res.setHeader('Set-Cookie', `${ADMIN_COOKIE_NAME}=${encodeURIComponent(token)}; HttpOnly; Path=/; Max-Age=${ADMIN_COOKIE_TTL_SECONDS}; SameSite=Lax${secureFlag}`);
+}
+
+function clearAdminAuthCookie(res) {
+  const secureFlag = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  res.setHeader('Set-Cookie', `${ADMIN_COOKIE_NAME}=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax${secureFlag}`);
+}
+
+function isAdminAuthenticated(req) {
+  const cookies = readCookies(req);
+  return verifyAdminCookieValue(cookies[ADMIN_COOKIE_NAME]);
+}
+
+app.post('/api/auth/admin-login', async (req, res) => {
+  try {
+    const password = String(req.body?.password || '');
+    if (!ADMIN_PASSWORD) {
+      return res.status(500).json({ error: 'ADMIN_PASSWORD mangler i miljøvariabler.' });
+    }
+    if (!password || password !== ADMIN_PASSWORD) {
+      return res.status(401).json({ error: 'Ugyldig passord' });
+    }
+    setAdminAuthCookie(res);
+    res.json({ success: true, type: 'admin' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/auth/status', (req, res) => {
+  if (isAdminAuthenticated(req)) {
+    return res.json({ type: 'admin' });
+  }
+  res.json({ type: null });
+});
+
+app.post('/api/auth/logout', (_, res) => {
+  clearAdminAuthCookie(res);
+  res.json({ success: true });
+});
+
+app.get('/api/auth/github-url', (_, res) => {
+  res.status(501).json({ error: 'GitHub-innlogging er ikke aktivert i denne deployen.' });
+});
+
+app.post('/api/auth/github-token', (_, res) => {
+  res.status(501).json({ error: 'GitHub-innlogging er ikke aktivert i denne deployen.' });
+});
 
 async function resolveTournamentId(tournamentId) {
   const parsed = asInt(tournamentId);
