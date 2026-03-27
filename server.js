@@ -32,16 +32,12 @@ function asInt(value) {
 
 function ensureSupabaseEnv() {
   const hasUrl = !!(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL);
-  const hasKey = !!(
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_ANON_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  );
+  const hasKey = !!process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!hasUrl || !hasKey) {
     const missing = [];
     if (!hasUrl) missing.push('SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL)');
-    if (!hasKey) missing.push('SUPABASE_SERVICE_ROLE_KEY / SUPABASE_ANON_KEY (or NEXT_PUBLIC_SUPABASE_ANON_KEY)');
+    if (!hasKey) missing.push('SUPABASE_SERVICE_ROLE_KEY');
     const message = `Missing Supabase environment variables: ${missing.join(', ')}`;
     console.error('[api:admin:tournaments] env check failed', {
       hasUrl,
@@ -53,6 +49,11 @@ function ensureSupabaseEnv() {
   }
 
   return null;
+}
+
+function handleSupabaseError(res, error, context) {
+  console.error(`Supabase error${context ? ` (${context})` : ''}:`, error);
+  return res.status(500).json({ error: error?.message || 'Supabase request failed' });
 }
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
@@ -357,7 +358,7 @@ app.put('/api/admin/tournament/:id', async (req, res) => {
 
     res.json({ tournament: data });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleSupabaseError(res, error, 'PUT /api/admin/tournament/:id');
   }
 });
 
@@ -374,7 +375,7 @@ app.delete('/api/admin/tournament/:id', async (req, res) => {
 
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleSupabaseError(res, error, 'DELETE /api/admin/tournament/:id');
   }
 });
 
@@ -408,7 +409,7 @@ app.get('/api/admin/courses', async (_, res) => {
     if (error) throw error;
     res.json({ courses: data || [] });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleSupabaseError(res, error, 'GET /api/admin/courses');
   }
 });
 
@@ -424,7 +425,7 @@ app.post('/api/admin/courses', async (req, res) => {
     if (hResp.error) throw hResp.error;
     res.status(201).json({ course: data, holes });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleSupabaseError(res, error, 'POST /api/admin/courses');
   }
 });
 
@@ -438,7 +439,7 @@ app.get('/api/admin/courses/:id', async (req, res) => {
     if (!response.course) return res.status(404).json({ error: 'Course not found' });
     res.json(response);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleSupabaseError(res, error, 'GET /api/admin/courses/:id');
   }
 });
 
@@ -458,7 +459,7 @@ app.patch('/api/admin/courses/:id', async (req, res) => {
     if (!data) return res.status(404).json({ error: 'Course not found' });
     res.json({ course: data });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleSupabaseError(res, error, 'PATCH /api/admin/courses/:id');
   }
 });
 
@@ -473,7 +474,7 @@ app.delete('/api/admin/courses/:id', async (req, res) => {
     if (error) throw error;
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleSupabaseError(res, error, 'DELETE /api/admin/courses/:id');
   }
 });
 
@@ -486,7 +487,7 @@ app.get('/api/admin/courses/:id/holes', async (req, res) => {
     const { holes } = await getCourseWithHoles(courseId);
     res.json({ holes });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleSupabaseError(res, error, 'GET /api/admin/courses/:id/holes');
   }
 });
 
@@ -503,7 +504,7 @@ app.post('/api/admin/courses/:id/holes', async (req, res) => {
     if (error) throw error;
     res.json({ success: true, holes });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleSupabaseError(res, error, 'POST /api/admin/courses/:id/holes');
   }
 });
 
@@ -517,7 +518,7 @@ app.get('/api/admin/tournaments/:id', async (req, res) => {
     if (!tournament) return res.status(404).json({ error: 'Tournament not found' });
     res.json({ tournament });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleSupabaseError(res, error, 'GET /api/admin/tournaments/:id');
   }
 });
 
@@ -532,7 +533,7 @@ app.get('/api/admin/tournaments/:id/holes', async (req, res) => {
     if (error) throw error;
     res.json({ holes: normalizeHoles(data) });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleSupabaseError(res, error, 'GET /api/admin/tournaments/:id/holes');
   }
 });
 
@@ -549,7 +550,7 @@ app.post('/api/admin/tournaments/:id/holes', async (req, res) => {
     if (error) throw error;
     res.json({ success: true, holes });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleSupabaseError(res, error, 'POST /api/admin/tournaments/:id/holes');
   }
 });
 
@@ -570,7 +571,7 @@ app.post('/api/admin/tournaments/:id/import-course-template', async (req, res) =
     if (updateResp.error) throw updateResp.error;
     res.json({ success: true, tournament: updateResp.data, holes });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleSupabaseError(res, error, 'POST /api/admin/tournaments/:id/import-course-template');
   }
 });
 
@@ -583,7 +584,7 @@ app.put('/api/admin/tournament/:id/slope', async (req, res) => {
     if (error) throw error;
     res.json({ tournament: data });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleSupabaseError(res, error, 'PUT /api/admin/tournament/:id/slope');
   }
 });
 
@@ -724,7 +725,7 @@ app.get('/api/admin/teams', async (req, res) => {
     const teams = await fetchTeamsWithPlayers(tournamentId);
     res.json({ teams });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleSupabaseError(res, error, 'GET /api/admin/teams');
   }
 });
 
@@ -741,7 +742,7 @@ app.get('/api/admin/teams/:id', async (req, res) => {
     if (mErr) throw mErr;
     res.json({ team: { ...team, players: (members || []).map((m) => m.players).filter(Boolean) } });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleSupabaseError(res, error, 'GET /api/admin/teams/:id');
   }
 });
 
@@ -759,7 +760,7 @@ app.patch('/api/admin/teams/:id', async (req, res) => {
     if (!data) return res.status(404).json({ error: 'Team not found' });
     res.json({ team: data });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleSupabaseError(res, error, 'PATCH /api/admin/teams/:id');
   }
 });
 
@@ -776,7 +777,7 @@ app.delete('/api/admin/teams/:id', async (req, res) => {
     if (error) throw error;
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleSupabaseError(res, error, 'DELETE /api/admin/teams/:id');
   }
 });
 
@@ -789,7 +790,7 @@ app.post('/api/admin/teams/:id/players', async (req, res) => {
     if (error) throw error;
     res.status(201).json({ membership: data });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleSupabaseError(res, error, 'POST /api/admin/teams/:id/players');
   }
 });
 
