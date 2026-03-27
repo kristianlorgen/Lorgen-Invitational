@@ -6,11 +6,49 @@ CREATE TABLE IF NOT EXISTS tournaments (
   name TEXT NOT NULL,
   date TIMESTAMPTZ NOT NULL,
   course TEXT DEFAULT '',
+  slope_rating INTEGER DEFAULT 113,
   description TEXT DEFAULT '',
   gameday_info TEXT DEFAULT '',
   status TEXT NOT NULL DEFAULT 'upcoming',
   format TEXT NOT NULL DEFAULT 'scramble',
+  mode TEXT,
+  handicap_percent NUMERIC,
+  is_published BOOLEAN NOT NULL DEFAULT FALSE,
+  is_active BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS courses (
+  id BIGSERIAL PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  slope_rating INTEGER NOT NULL DEFAULT 113,
+  location TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS course_holes (
+  id BIGSERIAL PRIMARY KEY,
+  course_id BIGINT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  hole_number INTEGER NOT NULL,
+  par INTEGER NOT NULL DEFAULT 4,
+  stroke_index INTEGER NOT NULL DEFAULT 0,
+  requires_photo BOOLEAN NOT NULL DEFAULT FALSE,
+  is_longest_drive BOOLEAN NOT NULL DEFAULT FALSE,
+  is_closest_to_pin BOOLEAN NOT NULL DEFAULT FALSE,
+  UNIQUE (course_id, hole_number)
+);
+
+CREATE TABLE IF NOT EXISTS tournament_holes (
+  id BIGSERIAL PRIMARY KEY,
+  tournament_id BIGINT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+  hole_number INTEGER NOT NULL,
+  par INTEGER NOT NULL DEFAULT 4,
+  stroke_index INTEGER NOT NULL DEFAULT 0,
+  requires_photo BOOLEAN NOT NULL DEFAULT FALSE,
+  is_longest_drive BOOLEAN NOT NULL DEFAULT FALSE,
+  is_closest_to_pin BOOLEAN NOT NULL DEFAULT FALSE,
+  UNIQUE (tournament_id, hole_number)
 );
 
 CREATE TABLE IF NOT EXISTS players (
@@ -26,6 +64,7 @@ CREATE TABLE IF NOT EXISTS teams (
   tournament_id BIGINT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   pin TEXT NOT NULL,
+  locked BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (tournament_id, name)
 );
@@ -53,12 +92,17 @@ CREATE TABLE IF NOT EXISTS scores (
   round_id BIGINT REFERENCES rounds(id) ON DELETE SET NULL,
   team_id BIGINT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
   hole_number INTEGER NOT NULL,
+  par INTEGER,
+  photo_path TEXT,
   score INTEGER NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(team_id, round_id, hole_number)
 );
 
 ALTER TABLE tournaments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE courses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE course_holes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tournament_holes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE players ENABLE ROW LEVEL SECURITY;
 ALTER TABLE teams ENABLE ROW LEVEL SECURITY;
 ALTER TABLE team_members ENABLE ROW LEVEL SECURITY;

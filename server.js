@@ -12,6 +12,12 @@ if (!supabase) {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+function forwardTo(req, res, method, url) {
+  req.method = method;
+  req.url = url;
+  return app.handle(req, res);
+}
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
@@ -202,7 +208,7 @@ async function createTournamentHandler(req, res) {
   const payload = req.body || {};
   console.info('[api:createTournament] incoming payload', payload);
   try {
-    const { year, name, date, course = '', description = '', status = 'upcoming', format = 'scramble' } = payload;
+    const { year, name, date, course = '', description = '', status = 'upcoming', format = 'scramble', mode = null, handicap_percent = null, slope_rating = null, is_published = false, is_active = false } = payload;
     console.info('[api:createTournament] create start', { path: req.path, year, name, date });
     if (!year || !name || !date) {
       return res.status(400).json({ error: 'year, name and date are required' });
@@ -210,7 +216,7 @@ async function createTournamentHandler(req, res) {
 
     const { data, error } = await supabase
       .from('tournaments')
-      .insert({ year, name, date, course, description, status, format })
+      .insert({ year, name, date, course, description, status, format, mode, handicap_percent, slope_rating, is_published, is_active })
       .select('*')
       .single();
     if (error) throw error;
@@ -232,7 +238,7 @@ app.put('/api/admin/tournament/:id', async (req, res) => {
     if (!tournamentId) return res.status(400).json({ error: 'Invalid tournament id' });
 
     const updates = {};
-    const allowedFields = ['year', 'name', 'date', 'course', 'description', 'status', 'format'];
+    const allowedFields = ['year', 'name', 'date', 'course', 'description', 'status', 'format', 'mode', 'handicap_percent', 'slope_rating', 'is_published', 'is_active', 'gameday_info'];
     for (const field of allowedFields) {
       if (req.body[field] !== undefined) updates[field] = req.body[field];
     }
@@ -267,6 +273,215 @@ app.delete('/api/admin/tournament/:id', async (req, res) => {
     if (error) throw error;
 
     res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+function normalizeHoles(rawHoles) {
+  return Array.from({ length: 18 }, (_, idx) => {
+    const holeNumber = idx + 1;
+    const source = (rawHoles || []).find((h) => Number(h.hole_number) === holeNumber) || {};
+    return {
+      hole_number: holeNumber,
+      par: Number(source.par) || 4,
+      stroke_index: Number(source.stroke_index) || 0,
+      requires_photo: !!source.requires_photo,
+      is_longest_drive: !!source.is_longest_drive,
+      is_closest_to_pin: !!source.is_closest_to_pin
+    };
+  });
+}
+
+async function getCourseWithHoles(courseId) {
+  const { data: course, error: cErr } = await supabase.from('courses').select('*').eq('id', courseId).maybeSingle();
+  if (cErr) throw cErr;
+  if (!course) return { course: null, holes: [] };
+  const { data: holes, error: hErr } = await supabase.from('course_holes').select('*').eq('course_id', courseId).order('hole_number', { ascending: true });
+  if (hErr) throw hErr;
+  return { course, holes: normalizeHoles(holes) };
+}
+
+app.get('/api/admin/courses', async (_, res) => {
+  try {
+    const { data, error } = await supabase.from('courses').select('*').order('name', { ascending: true });
+    if (error) throw error;
+    res.json({ courses: data || [] });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/courses', async (req, res) => {
+  try {
+    const { name, slope_rating = 113, location = '', notes = '' } = req.body || {};
+    if (!name) return res.status(400).json({ error: 'name is required' });
+    const { data, error } = await supabase.from('courses').insert({ name, slope_rating, location, notes }).select('*').single();
+    if (error) throw error;
+    const holes = normalizeHoles([]);
+    const payload = holes.map((h) => ({ ...h, course_id: data.id }));
+    const hResp = await supabase.from('course_holes').insert(payload).select('*');
+    if (hResp.error) throw hResp.error;
+    res.status(201).json({ course: data, holes });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/course', (req, res) => forwardTo(req, res, 'POST', '/api/admin/courses'));
+
+app.get('/api/admin/courses/:id', async (req, res) => {
+  try {
+    const courseId = asInt(req.params.id);
+    if (!courseId) return res.status(400).json({ error: 'Invalid course id' });
+    const response = await getCourseWithHoles(courseId);
+    if (!response.course) return res.status(404).json({ error: 'Course not found' });
+    res.json(response);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/admin/course/:id', (req, res) => forwardTo(req, res, 'GET', `/api/admin/courses/${req.params.id}`));
+
+app.patch('/api/admin/courses/:id', async (req, res) => {
+  try {
+    const courseId = asInt(req.params.id);
+    if (!courseId) return res.status(400).json({ error: 'Invalid course id' });
+    const updates = {};
+    for (const field of ['name', 'slope_rating', 'location', 'notes']) {
+      if (req.body[field] !== undefined) updates[field] = req.body[field];
+    }
+    if (!Object.keys(updates).length) return res.status(400).json({ error: 'No valid fields to update' });
+    const { data, error } = await supabase.from('courses').update(updates).eq('id', courseId).select('*').maybeSingle();
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Course not found' });
+    res.json({ course: data });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/admin/course/:id', (req, res) => forwardTo(req, res, 'PATCH', `/api/admin/courses/${req.params.id}`));
+
+app.delete('/api/admin/courses/:id', async (req, res) => {
+  try {
+    const courseId = asInt(req.params.id);
+    if (!courseId) return res.status(400).json({ error: 'Invalid course id' });
+    await supabase.from('course_holes').delete().eq('course_id', courseId);
+    const { error } = await supabase.from('courses').delete().eq('id', courseId);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/admin/course/:id', (req, res) => forwardTo(req, res, 'DELETE', `/api/admin/courses/${req.params.id}`));
+
+app.get('/api/admin/courses/:id/holes', async (req, res) => {
+  try {
+    const courseId = asInt(req.params.id);
+    if (!courseId) return res.status(400).json({ error: 'Invalid course id' });
+    const { holes } = await getCourseWithHoles(courseId);
+    res.json({ holes });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/admin/course/:id/holes', (req, res) => forwardTo(req, res, 'GET', `/api/admin/courses/${req.params.id}/holes`));
+
+app.post('/api/admin/courses/:id/holes', async (req, res) => {
+  try {
+    const courseId = asInt(req.params.id);
+    if (!courseId) return res.status(400).json({ error: 'Invalid course id' });
+    const holes = normalizeHoles(req.body?.holes || []);
+    await supabase.from('course_holes').delete().eq('course_id', courseId);
+    const payload = holes.map((h) => ({ ...h, course_id: courseId }));
+    const { error } = await supabase.from('course_holes').insert(payload);
+    if (error) throw error;
+    res.json({ success: true, holes });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/course/:id/holes', (req, res) => forwardTo(req, res, 'POST', `/api/admin/courses/${req.params.id}/holes`));
+
+app.get('/api/admin/tournaments/:id', async (req, res) => {
+  try {
+    const tournamentId = asInt(req.params.id);
+    if (!tournamentId) return res.status(400).json({ error: 'Invalid tournament id' });
+    const tournament = await getTournament(tournamentId);
+    if (!tournament) return res.status(404).json({ error: 'Tournament not found' });
+    res.json({ tournament });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.patch('/api/admin/tournaments/:id', (req, res) => forwardTo(req, res, 'PUT', `/api/admin/tournament/${req.params.id}`));
+app.delete('/api/admin/tournaments/:id', (req, res) => forwardTo(req, res, 'DELETE', `/api/admin/tournament/${req.params.id}`));
+
+app.get('/api/admin/tournaments/:id/holes', async (req, res) => {
+  try {
+    const tournamentId = asInt(req.params.id);
+    if (!tournamentId) return res.status(400).json({ error: 'Invalid tournament id' });
+    const { data, error } = await supabase.from('tournament_holes').select('*').eq('tournament_id', tournamentId).order('hole_number', { ascending: true });
+    if (error) throw error;
+    res.json({ holes: normalizeHoles(data) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/admin/tournament/:id/holes', (req, res) => forwardTo(req, res, 'GET', `/api/admin/tournaments/${req.params.id}/holes`));
+
+app.post('/api/admin/tournaments/:id/holes', async (req, res) => {
+  try {
+    const tournamentId = asInt(req.params.id);
+    if (!tournamentId) return res.status(400).json({ error: 'Invalid tournament id' });
+    const holes = normalizeHoles(req.body?.holes || []);
+    await supabase.from('tournament_holes').delete().eq('tournament_id', tournamentId);
+    const payload = holes.map((h) => ({ ...h, tournament_id: tournamentId }));
+    const { error } = await supabase.from('tournament_holes').insert(payload);
+    if (error) throw error;
+    res.json({ success: true, holes });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/tournament/:id/holes', (req, res) => forwardTo(req, res, 'POST', `/api/admin/tournaments/${req.params.id}/holes`));
+
+app.post('/api/admin/tournaments/:id/import-course-template', async (req, res) => {
+  try {
+    const tournamentId = asInt(req.params.id);
+    const courseId = asInt(req.body?.course_id || req.body?.courseId);
+    if (!tournamentId || !courseId) return res.status(400).json({ error: 'tournament id and course_id are required' });
+    const { course, holes } = await getCourseWithHoles(courseId);
+    if (!course) return res.status(404).json({ error: 'Course not found' });
+    await supabase.from('tournament_holes').delete().eq('tournament_id', tournamentId);
+    const payload = holes.map((h) => ({ ...h, tournament_id: tournamentId }));
+    const insertResp = await supabase.from('tournament_holes').insert(payload);
+    if (insertResp.error) throw insertResp.error;
+    const updateResp = await supabase.from('tournaments').update({ course: course.name, slope_rating: course.slope_rating }).eq('id', tournamentId).select('*').single();
+    if (updateResp.error) throw updateResp.error;
+    res.json({ success: true, tournament: updateResp.data, holes });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/admin/tournament/:id/slope', async (req, res) => {
+  try {
+    const tournamentId = asInt(req.params.id);
+    const slope_rating = Number(req.body?.slope_rating);
+    if (!tournamentId || !Number.isFinite(slope_rating)) return res.status(400).json({ error: 'Invalid input' });
+    const { data, error } = await supabase.from('tournaments').update({ slope_rating }).eq('id', tournamentId).select('*').single();
+    if (error) throw error;
+    res.json({ tournament: data });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -309,6 +524,65 @@ app.post('/api/players', async (req, res) => {
   }
 });
 
+app.get('/api/admin/players', async (req, res) => {
+  try {
+    const tournamentId = asInt(req.query.tournamentId);
+    let query = supabase.from('players').select('*').order('name', { ascending: true });
+    if (tournamentId) query = query.eq('tournament_id', tournamentId);
+    const { data, error } = await query;
+    if (error) throw error;
+    res.json({ players: data || [] });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/players', (req, res) => forwardTo(req, res, 'POST', '/api/players'));
+
+app.get('/api/admin/players/:id', async (req, res) => {
+  try {
+    const playerId = asInt(req.params.id);
+    if (!playerId) return res.status(400).json({ error: 'Invalid player id' });
+    const { data, error } = await supabase.from('players').select('*').eq('id', playerId).maybeSingle();
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Player not found' });
+    res.json({ player: data });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.patch('/api/admin/players/:id', async (req, res) => {
+  try {
+    const playerId = asInt(req.params.id);
+    if (!playerId) return res.status(400).json({ error: 'Invalid player id' });
+    const updates = {};
+    for (const field of ['name', 'handicap']) {
+      if (req.body[field] !== undefined) updates[field] = req.body[field];
+    }
+    if (!Object.keys(updates).length) return res.status(400).json({ error: 'No valid fields to update' });
+    const { data, error } = await supabase.from('players').update(updates).eq('id', playerId).select('*').maybeSingle();
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Player not found' });
+    res.json({ player: data });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/admin/players/:id', async (req, res) => {
+  try {
+    const playerId = asInt(req.params.id);
+    if (!playerId) return res.status(400).json({ error: 'Invalid player id' });
+    await supabase.from('team_members').delete().eq('player_id', playerId);
+    const { error } = await supabase.from('players').delete().eq('id', playerId);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/teams', async (req, res) => {
   try {
     const tournamentId = await resolveTournamentId(req.query.tournamentId);
@@ -338,6 +612,82 @@ app.post('/api/teams', async (req, res) => {
     if (error) throw error;
 
     res.status(201).json({ team: data });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/admin/teams', async (req, res) => {
+  try {
+    const tournamentId = asInt(req.query.tournamentId);
+    if (!tournamentId) return res.status(400).json({ error: 'tournamentId is required' });
+    const teams = await fetchTeamsWithPlayers(tournamentId);
+    res.json({ teams });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/teams', (req, res) => forwardTo(req, res, 'POST', '/api/teams'));
+
+app.get('/api/admin/teams/:id', async (req, res) => {
+  try {
+    const teamId = asInt(req.params.id);
+    if (!teamId) return res.status(400).json({ error: 'Invalid team id' });
+    const { data: team, error: teamError } = await supabase.from('teams').select('*').eq('id', teamId).maybeSingle();
+    if (teamError) throw teamError;
+    if (!team) return res.status(404).json({ error: 'Team not found' });
+    const { data: members, error: mErr } = await supabase.from('team_members').select('player_id, players (*)').eq('team_id', teamId);
+    if (mErr) throw mErr;
+    res.json({ team: { ...team, players: (members || []).map((m) => m.players).filter(Boolean) } });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.patch('/api/admin/teams/:id', async (req, res) => {
+  try {
+    const teamId = asInt(req.params.id);
+    if (!teamId) return res.status(400).json({ error: 'Invalid team id' });
+    const updates = {};
+    if (req.body.name !== undefined || req.body.team_name !== undefined) updates.name = req.body.name || req.body.team_name;
+    if (req.body.pin !== undefined || req.body.pin_code !== undefined) updates.pin = req.body.pin || req.body.pin_code;
+    if (req.body.locked !== undefined) updates.locked = !!req.body.locked;
+    if (!Object.keys(updates).length) return res.status(400).json({ error: 'No valid fields to update' });
+    const { data, error } = await supabase.from('teams').update(updates).eq('id', teamId).select('*').maybeSingle();
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Team not found' });
+    res.json({ team: data });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/admin/team/:id', (req, res) => forwardTo(req, res, 'PATCH', `/api/admin/teams/${req.params.id}`));
+app.put('/api/admin/team/:id/lock', (req, res) => forwardTo(req, res, 'PATCH', `/api/admin/teams/${req.params.id}`));
+
+app.delete('/api/admin/teams/:id', async (req, res) => {
+  try {
+    const teamId = asInt(req.params.id);
+    if (!teamId) return res.status(400).json({ error: 'Invalid team id' });
+    await supabase.from('team_members').delete().eq('team_id', teamId);
+    await supabase.from('scores').delete().eq('team_id', teamId);
+    const { error } = await supabase.from('teams').delete().eq('id', teamId);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/teams/:id/players', async (req, res) => {
+  try {
+    const teamId = asInt(req.params.id);
+    const playerId = asInt(req.body?.player_id || req.body?.playerId);
+    if (!teamId || !playerId) return res.status(400).json({ error: 'team id and player id are required' });
+    const { data, error } = await supabase.from('team_members').insert({ team_id: teamId, player_id: playerId }).select('*').single();
+    if (error) throw error;
+    res.status(201).json({ membership: data });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -460,30 +810,110 @@ app.get('/api/admin/tournament/:id/scores', async (req, res) => {
   }
 });
 
+app.get('/api/admin/scores', async (req, res) => {
+  try {
+    const tournamentId = asInt(req.query.tournamentId);
+    let query = supabase.from('scores').select('*').order('hole_number', { ascending: true });
+    if (tournamentId) query = query.eq('tournament_id', tournamentId);
+    const { data, error } = await query;
+    if (error) throw error;
+    res.json({ scores: data || [] });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/scores', async (req, res) => {
+  try {
+    const { tournament_id, team_id, hole_number, score, par = null, photo_path = null } = req.body || {};
+    if (!tournament_id || !team_id || !hole_number || !score) return res.status(400).json({ error: 'tournament_id, team_id, hole_number and score are required' });
+    const { data, error } = await supabase.from('scores').insert({ tournament_id, team_id, hole_number, score, par, photo_path }).select('*').single();
+    if (error) throw error;
+    res.status(201).json({ score: data });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/admin/scores/:id', async (req, res) => {
+  try {
+    const scoreId = asInt(req.params.id);
+    if (!scoreId) return res.status(400).json({ error: 'Invalid score id' });
+    const { data, error } = await supabase.from('scores').select('*').eq('id', scoreId).maybeSingle();
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Score not found' });
+    res.json({ score: data });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.patch('/api/admin/scores/:id', async (req, res) => {
+  try {
+    const scoreId = asInt(req.params.id);
+    if (!scoreId) return res.status(400).json({ error: 'Invalid score id' });
+    const updates = {};
+    for (const field of ['score', 'par', 'photo_path']) {
+      if (req.body[field] !== undefined) updates[field] = req.body[field];
+    }
+    if (!Object.keys(updates).length) return res.status(400).json({ error: 'No valid fields to update' });
+    const { data, error } = await supabase.from('scores').update(updates).eq('id', scoreId).select('*').maybeSingle();
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Score not found' });
+    res.json({ score: data });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/admin/score/:id', (req, res) => forwardTo(req, res, 'PATCH', `/api/admin/scores/${req.params.id}`));
+
+app.delete('/api/admin/scores/:id', async (req, res) => {
+  try {
+    const scoreId = asInt(req.params.id);
+    if (!scoreId) return res.status(400).json({ error: 'Invalid score id' });
+    const { error } = await supabase.from('scores').delete().eq('id', scoreId);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/admin/score/:id', (req, res) => forwardTo(req, res, 'DELETE', `/api/admin/scores/${req.params.id}`));
+
 app.post('/api/admin/team', async (req, res) => {
   try {
-    const { tournament_id, team_name, pin_code, player1, player2 } = req.body;
-
-    const teamResp = await fetch(`http://127.0.0.1:${PORT}/api/teams`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tournament_id, name: team_name, pin: pin_code })
-    });
-    const teamBody = await teamResp.json();
-    if (!teamResp.ok) return res.status(teamResp.status).json(teamBody);
-
-    const players = [player1, player2].filter(Boolean);
-    for (const p of players) {
-      const pr = await supabase.from('players').insert({ tournament_id, name: p }).select('*').single();
-      if (pr.error) throw pr.error;
-      const linkResp = await fetch(`http://127.0.0.1:${PORT}/api/teams/${teamBody.team.id}/add-player`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ player_id: pr.data.id })
-      });
-      const linkBody = await linkResp.json();
-      if (!linkResp.ok) return res.status(linkResp.status).json(linkBody);
+    const { tournament_id, team_name, pin_code, player1, player2 } = req.body || {};
+    if (!tournament_id || !team_name || !pin_code) {
+      return res.status(400).json({ error: 'tournament_id, team_name and pin_code are required' });
     }
 
-    res.status(201).json({ team: teamBody.team });
+    const createTeam = await supabase
+      .from('teams')
+      .insert({ tournament_id, name: team_name, pin: pin_code })
+      .select('*')
+      .single();
+    if (createTeam.error) throw createTeam.error;
+
+    const players = [player1, player2].filter(Boolean);
+    for (const playerName of players) {
+      const createPlayer = await supabase
+        .from('players')
+        .insert({ tournament_id, name: playerName })
+        .select('*')
+        .single();
+      if (createPlayer.error) throw createPlayer.error;
+
+      const linkPlayer = await supabase
+        .from('team_members')
+        .insert({ team_id: createTeam.data.id, player_id: createPlayer.data.id })
+        .select('*')
+        .single();
+      if (linkPlayer.error) throw linkPlayer.error;
+    }
+
+    res.status(201).json({ team: createTeam.data });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -557,6 +987,22 @@ app.get('/api/events', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   res.write('event: ping\\ndata: {}\\n\\n');
+});
+
+app.put('/api/admin/tournament/:id/gameday', async (req, res) => {
+  try {
+    const tournamentId = asInt(req.params.id);
+    if (!tournamentId) return res.status(400).json({ error: 'Invalid tournament id' });
+    const { data, error } = await supabase.from('tournaments').update({ gameday_info: req.body?.gameday_info || '' }).eq('id', tournamentId).select('*').single();
+    if (error) throw error;
+    res.json({ tournament: data });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: `API route not found: ${req.method} ${req.path}` });
 });
 
 if (require.main === module) {
