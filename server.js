@@ -293,25 +293,52 @@ async function createTournamentHandler(req, res) {
       return res.status(400).json({ success: false, error: 'Missing or invalid tournament year' });
     }
 
-    console.info('[api:createTournament] supabase query start', { action: 'insert tournament' });
-    const { data, error } = await supabase
+    const extendedInsertPayload = {
+      year,
+      name: rawName,
+      date,
+      course,
+      slope_rating,
+      description,
+      status,
+      format,
+      mode,
+      handicap_percent,
+      is_published,
+      is_active
+    };
+
+    const compatibilityInsertPayload = {
+      year,
+      name: rawName,
+      date,
+      course,
+      slope_rating,
+      description,
+      status
+    };
+
+    console.info('[api:createTournament] supabase query start', { action: 'insert tournament', mode: 'extended' });
+    let { data, error } = await supabase
       .from('tournaments')
-      .insert([{
-        year,
-        name: rawName,
-        date,
-        course,
-        slope_rating,
-        description,
-        status,
-        format,
-        mode,
-        handicap_percent,
-        is_published,
-        is_active
-      }])
+      .insert([extendedInsertPayload])
       .select('*')
       .single();
+
+    const undefinedColumn = error?.code === '42703' || /column .* does not exist/i.test(error?.message || '');
+    if (error && undefinedColumn) {
+      console.warn('[api:createTournament] falling back to compatibility insert due to missing column', {
+        error: error.message,
+        code: error.code || null
+      });
+      const fallbackResponse = await supabase
+        .from('tournaments')
+        .insert([compatibilityInsertPayload])
+        .select('*')
+        .single();
+      data = fallbackResponse.data;
+      error = fallbackResponse.error;
+    }
 
     console.info('[api:createTournament] supabase response', {
       error: error ? error.message : null,
