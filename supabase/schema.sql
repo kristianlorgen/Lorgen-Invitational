@@ -99,6 +99,42 @@ CREATE TABLE IF NOT EXISTS scores (
   UNIQUE(team_id, round_id, hole_number)
 );
 
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id BIGSERIAL PRIMARY KEY,
+  tournament_id BIGINT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+  team_id BIGINT REFERENCES teams(id) ON DELETE SET NULL,
+  team_name TEXT,
+  message TEXT,
+  note TEXT,
+  image_path TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS tournament_gallery_images (
+  id BIGSERIAL PRIMARY KEY,
+  tournament_id BIGINT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+  photo_path TEXT NOT NULL,
+  storage_path TEXT,
+  caption TEXT,
+  is_published BOOLEAN NOT NULL DEFAULT TRUE,
+  uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS legacy_entries (
+  id BIGSERIAL PRIMARY KEY,
+  year INTEGER NOT NULL UNIQUE,
+  winner_team TEXT NOT NULL,
+  player1 TEXT NOT NULL,
+  player2 TEXT NOT NULL,
+  score TEXT,
+  score_to_par TEXT,
+  course TEXT,
+  notes TEXT,
+  winner_photo TEXT,
+  winner_photo_focus TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 ALTER TABLE tournaments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE courses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE course_holes ENABLE ROW LEVEL SECURITY;
@@ -108,3 +144,6 @@ ALTER TABLE teams ENABLE ROW LEVEL SECURITY;
 ALTER TABLE team_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE rounds ENABLE ROW LEVEL SECURITY;
 ALTER TABLE scores ENABLE ROW LEVEL SECURITY;
+ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tournament_gallery_images ENABLE ROW LEVEL SECURITY;
+ALTER TABLE legacy_entries ENABLE ROW LEVEL SECURITY;
