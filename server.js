@@ -559,9 +559,11 @@ app.get('/api/events', (req, res) => {
   res.write('event: ping\\ndata: {}\\n\\n');
 });
 
-app.listen(PORT, () => {
-  // eslint-disable-next-line no-console
-  console.log(`Lorgen Invitational listening on ${PORT}`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    // eslint-disable-next-line no-console
+    console.log(`Lorgen Invitational listening on ${PORT}`);
+  });
+}
 
 module.exports = app;
