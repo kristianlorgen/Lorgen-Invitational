@@ -326,19 +326,9 @@ app.post('/api/team/birdie-shot', async (req, res) => {
   const route = '/api/team/birdie-shot';
   try {
     const note = String(req.body?.note || '').trim();
-    const pin = String(req.body?.pin || '').trim();
-    const requestedTournamentId = asInt(req.body?.tournament_id);
-    routeLog(route, 'hit', { payload: { noteLength: note.length, pinLength: pin.length, requestedTournamentId } });
-
-    const tournamentId = requestedTournamentId || await resolveTournamentId(null);
-    if (!tournamentId) {
-      return res.status(404).json({ success: false, error: 'Ingen aktiv turnering funnet' });
-    }
-
-    const team = pin ? await resolveTeamByTournamentAndPin(tournamentId, pin) : null;
-    if (!team) {
-      return res.status(401).json({ success: false, error: 'Kunne ikke verifisere lag for birdie shoutout' });
-    }
+    routeLog(route, 'hit', { payload: { noteLength: note.length } });
+    const { team, tournamentId } = await requireTeamContext(req);
+    if (!team || !tournamentId) return res.status(401).json({ success: false, error: 'Team session mangler. Logg inn på nytt.' });
 
     const payload = {
       tournament_id: tournamentId,
@@ -1396,10 +1386,20 @@ app.get('/api/scoreboard', async (req, res) => {
 });
 
 app.get('/api/events', (req, res) => {
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.write('event: ping\\ndata: {}\\n\\n');
+  requireTeamContext(req)
+    .then(({ team, tournamentId }) => {
+      if (!team || !tournamentId) {
+        res.status(401).json({ success: false, error: 'Team session mangler. Logg inn på nytt.' });
+        return;
+      }
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.write('event: ping\\ndata: {}\\n\\n');
+    })
+    .catch((error) => {
+      res.status(500).json({ success: false, error: error?.message || 'Kunne ikke åpne event-strøm' });
+    });
 });
 
 async function requireTeamContext(req, { allowPinFallback = false } = {}) {
@@ -1560,10 +1560,9 @@ app.post('/api/team/claim-award', async (req, res) => {
 app.get('/api/chat/messages', async (req, res) => {
   const route = '/api/chat/messages';
   try {
-    const requestedTournamentId = asInt(req.query?.tournament_id);
-    const tournamentId = requestedTournamentId || await resolveTournamentId(null);
-    routeLog(route, 'hit', { payload: { requestedTournamentId, tournamentId } });
-    if (!tournamentId) return res.json({ success: true, messages: [] });
+    const { team, tournamentId } = await requireTeamContext(req);
+    routeLog(route, 'hit', { payload: { tournamentId, hasTeam: !!team } });
+    if (!team || !tournamentId) return res.status(401).json({ success: false, error: 'Team session mangler. Logg inn på nytt.' });
     const { data, error } = await supabase
       .from('chat_messages')
       .select('id, tournament_id, team_id, team_name, message, image_path, note, created_at')
@@ -1585,7 +1584,7 @@ app.post('/api/chat/send', upload.single('image'), async (req, res) => {
     const message = String(req.body?.message || '').trim();
     const note = String(req.body?.note || '').trim() || null;
     routeLog(route, 'hit', { payload: { messageLength: message.length, hasImage: !!req.file } });
-    const { team, tournamentId } = await requireTeamContext(req, { allowPinFallback: true });
+    const { team, tournamentId } = await requireTeamContext(req);
     if (!team || !tournamentId) return res.status(401).json({ success: false, error: 'Team session mangler. Logg inn på nytt.' });
     if (!message && !req.file) return res.status(400).json({ success: false, error: 'Melding eller bilde må sendes' });
 
