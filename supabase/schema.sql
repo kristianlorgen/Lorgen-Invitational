@@ -110,6 +110,10 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   image_path TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE INDEX IF NOT EXISTS chat_messages_tournament_created_idx ON chat_messages(tournament_id, created_at);
+
+-- Supabase Storage (manual step if missing):
+-- Create bucket: tournament-gallery
 
 CREATE TABLE IF NOT EXISTS tournament_gallery_images (
   id BIGSERIAL PRIMARY KEY,

@@ -5,6 +5,9 @@
 - **Canonical bucket used by backend upload routes:** `tournament-gallery`
 - **If missing, create it in Supabase Storage:**
   - `Create Supabase Storage bucket: tournament-gallery`
+- **Error contract when missing bucket:** API now returns:
+  - `code: STORAGE_BUCKET_NOT_FOUND`
+  - `action: Create bucket: tournament-gallery`
 
 ## API routes involved
 
@@ -123,9 +126,10 @@
 
 ## Storage paths used in the canonical bucket
 
-- Scorecard hole photos: `score-photos/tournament-<id>/team-<id>/hole-...`
-- Chat photos: `chat/tournament-<id>/team-<id>/...`
-- Tournament gallery images: `tournament/<id>/...`
+- Canonical upload path (scorecard/chat/gallery): `tournament/<id>/team/<id>/hole/<holeOrContext>/<filename>`
+- Scorecard hole photos: `tournament/<id>/team/<teamId>/hole/<holeNumber>/<filename>`
+- Chat photos: `tournament/<id>/team/<teamId>/hole/chat/<filename>`
+- Tournament gallery images: `tournament/<id>/team/0/hole/0/<filename>`
 - Sponsor logos: `sponsors/tournament-<id>/...`
 - Coin-back images: `coin-back/...`
 - Legacy photos: `legacy/<id>/...`

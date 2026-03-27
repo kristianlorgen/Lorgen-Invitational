@@ -15,6 +15,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 12 * 1024 * 1024 } });
 const MEDIA_BUCKET = process.env.SUPABASE_MEDIA_BUCKET || 'tournament-gallery';
+const CHAT_BASE_COLUMNS = ['id', 'tournament_id', 'team_id', 'team_name', 'message', 'created_at'];
+const CHAT_OPTIONAL_COLUMNS = ['note', 'image_path'];
 
 function forwardTo(req, res, method, url) {
   req.method = method;
@@ -80,6 +82,81 @@ function detectMissingColumn(error) {
 function isMissingBucketError(error) {
   const message = `${error?.message || ''} ${error?.details || ''}`.toLowerCase();
   return message.includes('bucket not found') || (message.includes('bucket') && message.includes('not') && message.includes('found'));
+}
+
+function buildTournamentStoragePath({ tournamentId, teamId, holeNumber, extension }) {
+  const safeTournamentId = Number.isFinite(Number(tournamentId)) ? Number(tournamentId) : 0;
+  const safeTeamId = Number.isFinite(Number(teamId)) ? Number(teamId) : 0;
+  const holeSegment = String(holeNumber ?? 0).trim() || '0';
+  return `tournament/${safeTournamentId}/team/${safeTeamId}/hole/${holeSegment}/${Date.now()}-${crypto.randomUUID()}${extension}`;
+}
+
+function buildBucketMissingError() {
+  return {
+    success: false,
+    error: `Supabase Storage bucket mangler: ${MEDIA_BUCKET}. Create bucket: tournament-gallery`,
+    code: 'STORAGE_BUCKET_NOT_FOUND',
+    bucket: MEDIA_BUCKET,
+    action: 'Create bucket: tournament-gallery'
+  };
+}
+
+function mapChatRow(row) {
+  return {
+    id: row?.id ?? null,
+    tournament_id: row?.tournament_id ?? null,
+    team_id: row?.team_id ?? null,
+    team_name: row?.team_name ?? null,
+    message: row?.message ?? null,
+    note: row?.note ?? null,
+    image_path: row?.image_path ?? null,
+    created_at: row?.created_at ?? null
+  };
+}
+
+async function selectChatMessagesCompat({ tournamentId, teamId }) {
+  const requestedColumns = [...CHAT_BASE_COLUMNS, ...CHAT_OPTIONAL_COLUMNS];
+  let columns = [...requestedColumns];
+  let missingColumn = null;
+  while (columns.length) {
+    let query = supabase
+      .from('chat_messages')
+      .select(columns.join(', '))
+      .eq('tournament_id', tournamentId);
+    if (teamId) query = query.eq('team_id', teamId);
+    query = query.order('created_at', { ascending: true }).limit(100);
+    const { data, error } = await query;
+    if (!error) {
+      return {
+        rows: (data || []).map(mapChatRow),
+        missingOptionalColumn: missingColumn
+      };
+    }
+    const detected = detectMissingColumn(error);
+    if (detected && columns.includes(detected)) {
+      columns = columns.filter((col) => col !== detected);
+      if (CHAT_OPTIONAL_COLUMNS.includes(detected)) {
+        missingColumn = detected;
+        continue;
+      }
+    }
+    throw error;
+  }
+  return { rows: [], missingOptionalColumn: missingColumn };
+}
+
+async function insertChatMessageCompat(payload) {
+  let insertPayload = { ...payload };
+  while (true) {
+    const { data, error } = await supabase.from('chat_messages').insert(insertPayload).select('*').single();
+    if (!error) return mapChatRow(data);
+    const missingColumn = detectMissingColumn(error);
+    if (missingColumn && Object.hasOwn(insertPayload, missingColumn) && CHAT_OPTIONAL_COLUMNS.includes(missingColumn)) {
+      delete insertPayload[missingColumn];
+      continue;
+    }
+    throw error;
+  }
 }
 
 function detectMissingTable(error) {
@@ -364,14 +441,10 @@ app.post('/api/team/birdie-shot', async (req, res) => {
       tournament_id: tournamentId,
       team_id: team.id,
       team_name: team.team_name,
+      message: '⛳ Birdie shoutout!',
       note: note || null
     };
-    const { data, error } = await supabase
-      .from('chat_messages')
-      .insert(payload)
-      .select('*')
-      .single();
-    if (error) throw error;
+    const data = await insertChatMessageCompat(payload);
 
     routeLog(route, 'db_action', { action: 'insert_shoutout', id: data?.id, tournamentId, teamId: team.id });
     return res.json({ success: true, shoutout: data });
@@ -1595,17 +1668,17 @@ app.post('/api/team/upload-photo/:holeNum', upload.single('photo'), async (req, 
 
     const extension = path.extname(req.file.originalname || '').toLowerCase() || '.jpg';
     const safeExt = /^[.][a-z0-9]+$/.test(extension) ? extension : '.jpg';
-    const storagePath = `score-photos/tournament-${tournamentId}/team-${team.id}/hole-${holeNum}-${Date.now()}-${crypto.randomUUID()}${safeExt}`;
+    const storagePath = buildTournamentStoragePath({
+      tournamentId,
+      teamId: team.id,
+      holeNumber: holeNum,
+      extension: safeExt
+    });
     const { error: uploadError } = await supabase.storage.from(MEDIA_BUCKET)
       .upload(storagePath, req.file.buffer, { contentType: req.file.mimetype || 'image/jpeg', upsert: false });
     if (uploadError) {
       if (isMissingBucketError(uploadError)) {
-        return res.status(500).json({
-          success: false,
-          error: `Supabase Storage bucket mangler: ${MEDIA_BUCKET}`,
-          code: 'STORAGE_BUCKET_NOT_FOUND',
-          bucket: MEDIA_BUCKET
-        });
+        return res.status(500).json(buildBucketMissingError());
       }
       throw uploadError;
     }
@@ -1620,7 +1693,7 @@ app.post('/api/team/upload-photo/:holeNum', upload.single('photo'), async (req, 
     return res.json({ success: true, photo_path: photoPath, score: data });
   } catch (error) {
     if (isMissingBucketError(error)) {
-      return res.status(500).json({ success: false, error: `Supabase Storage bucket mangler: ${MEDIA_BUCKET}`, code: 'STORAGE_BUCKET_NOT_FOUND', bucket: MEDIA_BUCKET });
+      return res.status(500).json(buildBucketMissingError());
     }
     routeLog(route, 'error', { error: error?.message || String(error) });
     return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke laste opp bilde' });
@@ -1684,15 +1757,17 @@ app.get('/api/chat/messages', async (req, res) => {
     const { team, tournamentId } = await requireTeamContext(req);
     routeLog(route, 'hit', { payload: { tournamentId, hasTeam: !!team } });
     if (!team || !tournamentId) return res.status(401).json({ success: false, error: 'Team session mangler. Logg inn på nytt.' });
-    const { data, error } = await supabase
-      .from('chat_messages')
-      .select('id, tournament_id, team_id, team_name, message, image_path, note, created_at')
-      .eq('tournament_id', tournamentId)
-      .order('created_at', { ascending: true })
-      .limit(100);
-    if (error) throw error;
-    routeLog(route, 'db_action', { action: 'fetch_chat_messages', count: data?.length || 0, tournamentId });
-    return res.json({ success: true, messages: data || [] });
+    const privateChat = String(req.query?.private || '').toLowerCase();
+    const teamFilter = privateChat === '1' || privateChat === 'true' ? team.id : null;
+    const { rows, missingOptionalColumn } = await selectChatMessagesCompat({ tournamentId, teamId: teamFilter });
+    routeLog(route, 'db_action', {
+      action: 'fetch_chat_messages',
+      count: rows?.length || 0,
+      tournamentId,
+      filteredByTeam: !!teamFilter,
+      missingOptionalColumn: missingOptionalColumn || null
+    });
+    return res.json({ success: true, messages: rows || [] });
   } catch (error) {
     const missingColumn = detectMissingColumn(error);
     if (missingColumn) {
@@ -1720,17 +1795,17 @@ app.post('/api/chat/send', upload.single('image'), async (req, res) => {
     if (req.file) {
       const extension = path.extname(req.file.originalname || '').toLowerCase() || '.jpg';
       const safeExt = /^[.][a-z0-9]+$/.test(extension) ? extension : '.jpg';
-      const storagePath = `chat/tournament-${tournamentId}/team-${team.id}/${Date.now()}-${crypto.randomUUID()}${safeExt}`;
+      const storagePath = buildTournamentStoragePath({
+        tournamentId,
+        teamId: team.id,
+        holeNumber: 'chat',
+        extension: safeExt
+      });
       const { error: uploadError } = await supabase.storage.from(MEDIA_BUCKET)
         .upload(storagePath, req.file.buffer, { contentType: req.file.mimetype || 'image/jpeg', upsert: false });
       if (uploadError) {
         if (isMissingBucketError(uploadError)) {
-          return res.status(500).json({
-            success: false,
-            error: `Supabase Storage bucket mangler: ${MEDIA_BUCKET}`,
-            code: 'STORAGE_BUCKET_NOT_FOUND',
-            bucket: MEDIA_BUCKET
-          });
+          return res.status(500).json(buildBucketMissingError());
         }
         throw uploadError;
       }
@@ -1739,8 +1814,7 @@ app.post('/api/chat/send', upload.single('image'), async (req, res) => {
     }
 
     const payload = { tournament_id: tournamentId, team_id: team.id, team_name: team.team_name, message: message || null, note, image_path: imagePath };
-    const { data, error } = await supabase.from('chat_messages').insert(payload).select('*').single();
-    if (error) throw error;
+    const data = await insertChatMessageCompat(payload);
     routeLog(route, 'db_action', { action: 'insert_chat_message', messageId: data?.id, teamId: team.id, tournamentId });
     return res.json({ success: true, message: data });
   } catch (error) {
@@ -1973,7 +2047,12 @@ app.post('/api/admin/tournament/:id/gallery', upload.single('photo'), async (req
 
     const extension = path.extname(req.file.originalname || '').toLowerCase() || '.jpg';
     const safeExt = /^[.][a-z0-9]+$/.test(extension) ? extension : '.jpg';
-    const storagePath = `tournament/${tournamentId}/${Date.now()}-${crypto.randomUUID()}${safeExt}`;
+    const storagePath = buildTournamentStoragePath({
+      tournamentId,
+      teamId: 0,
+      holeNumber: 0,
+      extension: safeExt
+    });
 
     const { error: storageError } = await supabase
       .storage
@@ -2000,7 +2079,7 @@ app.post('/api/admin/tournament/:id/gallery', upload.single('photo'), async (req
     return res.json({ success: true, photo: data });
   } catch (error) {
     if (isMissingBucketError(error)) {
-      return res.status(500).json({ success: false, error: `Supabase Storage bucket mangler: ${MEDIA_BUCKET}`, code: 'STORAGE_BUCKET_NOT_FOUND', bucket: MEDIA_BUCKET });
+      return res.status(500).json(buildBucketMissingError());
     }
     routeLog(route, 'error', { error: error?.message || String(error) });
     return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke laste opp galleri-bilde' });
