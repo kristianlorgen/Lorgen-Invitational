@@ -156,7 +156,8 @@ CREATE TABLE IF NOT EXISTS award_claims (
   value TEXT,
   claimed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  CONSTRAINT award_claims_unique UNIQUE (round_id, hole_number, award_type, player_id)
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT award_claims_round_hole_award_player_unique UNIQUE (round_id, hole_number, award_type, player_id)
 );
 
 CREATE TABLE IF NOT EXISTS sponsors (

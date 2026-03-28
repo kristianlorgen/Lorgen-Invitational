@@ -1734,6 +1734,7 @@ app.post('/api/team/lock-scorecard', async (req, res) => {
 
 app.post('/api/team/claim-award', async (req, res) => {
   const route = '/api/team/claim-award';
+  let logContext = {};
   try {
     const rawValue = String(req.body?.value ?? req.body?.detail ?? req.body?.distance ?? '').trim();
     const parsedDistance = req.body?.distance === undefined || req.body?.distance === null || req.body?.distance === ''
@@ -1759,21 +1760,57 @@ app.post('/api/team/claim-award', async (req, res) => {
     if (!payload.hole_number || !payload.award_type || !(payload.player_name || payload.player_id)) {
       return res.status(400).json({ success: false, error: 'hole_number, award_type og player_name/player_id er påkrevd' });
     }
-    const fallbackRoundId = asInt(req.body?.hole_round_id ?? req.body?.score_round_id) || payload.hole_number;
+    let resolvedPlayerId = payload.player_id || null;
+    if (!resolvedPlayerId && payload.player_name) {
+      const { data: matchedPlayers, error: playerLookupError } = await supabase
+        .from('players')
+        .select('id')
+        .eq('tournament_id', tournamentId)
+        .eq('name', payload.player_name)
+        .limit(1);
+      if (playerLookupError) throw playerLookupError;
+      resolvedPlayerId = Array.isArray(matchedPlayers) && matchedPlayers[0]?.id ? Number(matchedPlayers[0].id) : null;
+    }
+    if (!resolvedPlayerId) {
+      return res.status(400).json({ success: false, error: 'Kunne ikke finne player_id for valgt spiller. Oppdater laget eller send player_id.' });
+    }
+    const fallbackRoundId = asInt(req.body?.hole_round_id ?? req.body?.score_round_id);
+    let resolvedRoundId = payload.round_id || fallbackRoundId || null;
+    if (!resolvedRoundId) {
+      const { data: roundsData, error: roundLookupError } = await supabase
+        .from('rounds')
+        .select('id')
+        .eq('tournament_id', tournamentId)
+        .order('round_order', { ascending: true })
+        .limit(1);
+      if (roundLookupError) throw roundLookupError;
+      resolvedRoundId = Array.isArray(roundsData) && roundsData[0]?.id ? Number(roundsData[0].id) : null;
+    }
+    if (!resolvedRoundId) {
+      return res.status(400).json({ success: false, error: 'Kunne ikke finne round_id for turneringen.' });
+    }
+    const nowIso = new Date().toISOString();
     const conflictPayload = {
-      round_id: payload.round_id || fallbackRoundId || payload.hole_number,
+      round_id: resolvedRoundId,
       hole_number: payload.hole_number,
       award_type: payload.award_type,
-      player_id: payload.player_id || team.id,
-      player_name: payload.player_name || team.team_name || null,
-      tournament_id: tournamentId,
-      team_id: team.id,
-      team_name: team.team_name,
+      player_id: resolvedPlayerId,
       distance: payload.distance,
       detail: payload.detail,
       image_url: payload.image_url,
+      updated_at: nowIso,
+      tournament_id: tournamentId,
+      team_id: team.id,
+      team_name: team.team_name,
+      player_name: payload.player_name || team.team_name || null,
       value: payload.value,
-      claimed_at: new Date().toISOString()
+      claimed_at: nowIso
+    };
+    logContext = {
+      teamId: team.id,
+      tournamentId,
+      conflictTarget: 'round_id,hole_number,award_type,player_id',
+      conflictPayload
     };
     const { data, error } = await supabase
       .from('award_claims')
@@ -1786,12 +1823,32 @@ app.post('/api/team/claim-award', async (req, res) => {
   } catch (error) {
     const missingColumn = detectMissingColumn(error);
     if (missingColumn) {
+      routeLog(route, 'error', {
+        error: error?.message || String(error),
+        code: error?.code || null,
+        details: error?.details || null,
+        hint: error?.hint || null,
+        ...logContext
+      });
       return res.status(500).json({ success: false, error: `Manglende kolonne i award_claims: ${missingColumn}`, code: 'SCHEMA_COLUMN_NOT_FOUND', table: 'award_claims', column: missingColumn });
     }
     if (isMissingTableError(error, 'award_claims')) {
+      routeLog(route, 'error', {
+        error: error?.message || String(error),
+        code: error?.code || null,
+        details: error?.details || null,
+        hint: error?.hint || null,
+        ...logContext
+      });
       return res.status(500).json({ success: false, error: 'Manglende tabell: award_claims', code: 'SCHEMA_TABLE_NOT_FOUND', table: 'award_claims' });
     }
-    routeLog(route, 'error', { error: error?.message || String(error) });
+    routeLog(route, 'error', {
+      error: error?.message || String(error),
+      code: error?.code || null,
+      details: error?.details || null,
+      hint: error?.hint || null,
+      ...logContext
+    });
     return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke melde inn kandidat' });
   }
 });
