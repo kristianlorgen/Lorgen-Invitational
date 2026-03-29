@@ -629,6 +629,15 @@ let unreadChatCount = 0;
 let lastSeenChatId = 0;
 let chatUiMounted = false;
 let chatSyntheticIdCounter = 0;
+const seenBirdieMessageIds = new Set();
+
+function getBirdieMessageId(payload) {
+  if (!payload || typeof payload !== 'object') return '';
+  const rawId = payload.id;
+  if (rawId !== null && rawId !== undefined && String(rawId).trim()) return String(rawId).trim();
+  const fallback = [payload.team_id || '', payload.team_name || '', payload.created_at || '', payload.note || ''].join('|').trim();
+  return fallback;
+}
 
 function normalizeChatMessage(message, fallbackPrefix = 'msg') {
   if (!message || typeof message !== 'object') return null;
@@ -1061,6 +1070,12 @@ function startChatEvents() {
         renderChatMessages();
       }
       if (payload.type === 'birdie_shot' && payload.data) {
+        const birdieMessageId = getBirdieMessageId(payload.data);
+        if (birdieMessageId && seenBirdieMessageIds.has(birdieMessageId)) {
+          return;
+        }
+        if (birdieMessageId) seenBirdieMessageIds.add(birdieMessageId);
+
         const shoutBtn = document.getElementById('birdieShoutBtn');
         if (shoutBtn) {
           shoutBtn.classList.add('is-celebrating');
@@ -1101,7 +1116,7 @@ async function sendBirdieShoutout() {
     if (!d.success) {
       showToast(d.error || 'Kunne ikke sende birdie shoutout', 'error');
     } else {
-      showToast('Birdie shoutout sendt! Alle spillere må ta birdie shots! 🥃', 'success');
+      // Realtime birdie_shot event is the single source of truth for user-visible shoutout alerts.
     }
   } catch (_) {
     showToast('Tilkoblingsfeil ved birdie shoutout', 'error');
