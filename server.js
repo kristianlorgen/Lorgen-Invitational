@@ -1842,7 +1842,8 @@ app.post('/api/team/claim-award', async (req, res) => {
       team_id: team.id,
       player_name: payload.player_name,
       value: payload.value,
-      detail: payload.detail
+      detail: payload.detail,
+      claimed_at: new Date().toISOString()
     };
     logContext = {
       teamId: team.id,
@@ -1851,7 +1852,9 @@ app.post('/api/team/claim-award', async (req, res) => {
     };
     const { data, error } = await supabase
       .from('award_claims')
-      .insert(awardClaimInsert)
+      .upsert(awardClaimInsert, {
+        onConflict: 'round_id,hole_number,award_type,team_id,player_name'
+      })
       .select('*')
       .single();
     if (error) throw error;
