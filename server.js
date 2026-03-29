@@ -159,6 +159,84 @@ async function insertChatMessageCompat(payload) {
   }
 }
 
+async function saveScoreCompat(payload) {
+  const keyFilters = {
+    tournament_id: payload.tournament_id,
+    team_id: payload.team_id,
+    hole_number: payload.hole_number
+  };
+
+  const existingResp = await supabase
+    .from('scores')
+    .select('id')
+    .eq('tournament_id', keyFilters.tournament_id)
+    .eq('team_id', keyFilters.team_id)
+    .eq('hole_number', keyFilters.hole_number)
+    .order('id', { ascending: false })
+    .limit(1);
+  if (existingResp.error) throw existingResp.error;
+
+  const existingId = Array.isArray(existingResp.data) && existingResp.data[0]?.id
+    ? Number(existingResp.data[0].id)
+    : null;
+
+  if (existingId) {
+    const { data, error } = await supabase
+      .from('scores')
+      .update(payload)
+      .eq('id', existingId)
+      .select('*')
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
+  const { data, error } = await supabase
+    .from('scores')
+    .insert(payload)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+async function saveAwardClaimCompat(payload) {
+  const existingResp = await supabase
+    .from('award_claims')
+    .select('id')
+    .eq('round_id', payload.round_id)
+    .eq('hole_number', payload.hole_number)
+    .eq('award_type', payload.award_type)
+    .eq('team_id', payload.team_id)
+    .eq('player_name', payload.player_name)
+    .order('id', { ascending: false })
+    .limit(1);
+  if (existingResp.error) throw existingResp.error;
+
+  const existingId = Array.isArray(existingResp.data) && existingResp.data[0]?.id
+    ? Number(existingResp.data[0].id)
+    : null;
+
+  if (existingId) {
+    const { data, error } = await supabase
+      .from('award_claims')
+      .update(payload)
+      .eq('id', existingId)
+      .select('*')
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
+  const { data, error } = await supabase
+    .from('award_claims')
+    .insert(payload)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data;
+}
+
 function detectMissingTable(error) {
   if (!isMissingTableError(error)) return null;
   const message = `${error?.message || ''} ${error?.details || ''}`;
@@ -1702,14 +1780,9 @@ app.post('/api/team/submit-score', async (req, res) => {
     if (!holeNumber || !score) return res.status(400).json({ success: false, error: 'hole_number og score er påkrevd' });
 
     const payload = { tournament_id: tournamentId, team_id: team.id, hole_number: holeNumber, score };
-    const { data, error } = await supabase
-      .from('scores')
-      .upsert(payload, { onConflict: 'team_id,tournament_id,hole_number' })
-      .select('*')
-      .single();
-    if (error) throw error;
+    const data = await saveScoreCompat(payload);
 
-    routeLog(route, 'db_action', { action: 'upsert_score', teamId: team.id, holeNumber });
+    routeLog(route, 'db_action', { action: 'save_score', teamId: team.id, holeNumber });
     return res.json({ success: true, score: data });
   } catch (error) {
     routeLog(route, 'error', { error: error?.message || String(error) });
@@ -1762,10 +1835,7 @@ app.post('/api/team/upload-photo/:holeNum', upload.single('photo'), async (req, 
       score: Number.isFinite(Number(existingScore?.score)) ? Number(existingScore.score) : 1,
       photo_path: photoPath
     };
-    const { data, error } = await supabase.from('scores')
-      .upsert(scorePayload, { onConflict: 'team_id,tournament_id,hole_number' })
-      .select('*').single();
-    if (error) throw error;
+    const data = await saveScoreCompat(scorePayload);
     routeLog(route, 'db_action', { action: 'upload_photo', scoreId: data?.id, storagePath });
     return res.json({ success: true, photo_path: photoPath, score: data });
   } catch (error) {
@@ -1850,14 +1920,7 @@ app.post('/api/team/claim-award', async (req, res) => {
       tournamentId,
       awardClaimInsert
     };
-    const { data, error } = await supabase
-      .from('award_claims')
-      .upsert(awardClaimInsert, {
-        onConflict: 'round_id,hole_number,award_type,team_id,player_name'
-      })
-      .select('*')
-      .single();
-    if (error) throw error;
+    const data = await saveAwardClaimCompat(awardClaimInsert);
     routeLog(route, 'db_action', { action: 'insert_award_claim', claimId: data?.id, teamId: team.id });
     return res.json({ success: true, claim: data });
   } catch (error) {
