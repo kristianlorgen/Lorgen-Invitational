@@ -1482,7 +1482,68 @@ app.get('/api/scoreboard', async (req, res) => {
       };
     }).sort((a, b) => a.total_score - b.total_score);
 
-    res.json({ tournament, holes: [], awards: [], scoreboard: totals });
+    const { data: awardClaims, error: awardClaimsError } = await supabase
+      .schema('public')
+      .from('award_claims')
+      .select(`
+        id,
+        tournament_id,
+        round_id,
+        team_id,
+        hole_number,
+        award_type,
+        player_name,
+        value,
+        detail,
+        claimed_at,
+        teams:team_id ( id, team_name, name ),
+        rounds:round_id ( id, tournament_id ),
+        tournaments:tournament_id ( id, name )
+      `)
+      .eq('tournament_id', tournamentId)
+      .not('round_id', 'is', null)
+      .in('award_type', ['longest_drive', 'closest_to_pin'])
+      .order('claimed_at', { ascending: false });
+
+    if (awardClaimsError && !isMissingTableError(awardClaimsError, 'award_claims')) throw awardClaimsError;
+
+    const numericAwardValue = (claim) => {
+      const parsed = Number.parseFloat(claim?.value ?? claim?.detail ?? '');
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+
+    const awardRows = Array.isArray(awardClaims) ? awardClaims : [];
+    const bestByType = {};
+
+    for (const claim of awardRows) {
+      const type = String(claim?.award_type || '');
+      const value = numericAwardValue(claim);
+      if (!type || value === null) continue;
+      const existing = bestByType[type];
+      if (!existing) {
+        bestByType[type] = claim;
+        continue;
+      }
+      const existingValue = numericAwardValue(existing);
+      const isBetter = type === 'longest_drive'
+        ? value > existingValue
+        : value < existingValue;
+      const isTieButNewer = value === existingValue
+        && new Date(claim?.claimed_at || 0).getTime() > new Date(existing?.claimed_at || 0).getTime();
+      if (isBetter || isTieButNewer) bestByType[type] = claim;
+    }
+
+    const awards = ['longest_drive', 'closest_to_pin']
+      .map((type) => bestByType[type])
+      .filter(Boolean)
+      .map((claim) => ({
+        ...claim,
+        team_name: claim?.teams?.team_name || claim?.teams?.name || null,
+        value: claim?.value ?? claim?.detail ?? null,
+        detail: claim?.detail ?? claim?.value ?? null
+      }));
+
+    res.json({ tournament, holes: [], awards, scoreboard: totals });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
