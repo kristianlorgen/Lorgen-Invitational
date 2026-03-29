@@ -1834,24 +1834,24 @@ app.post('/api/team/claim-award', async (req, res) => {
     if (!resolvedRoundId) {
       return res.status(400).json({ success: false, error: 'Kunne ikke finne round_id for turneringen.' });
     }
-    const insertPayload = {
+    const awardClaimInsert = {
       tournament_id: tournamentId,
+      round_id: resolvedRoundId,
       hole_number: payload.hole_number,
       award_type: payload.award_type,
       team_id: team.id,
       player_name: payload.player_name,
       value: payload.value,
-      detail: payload.detail,
-      round_id: resolvedRoundId
+      detail: payload.detail
     };
     logContext = {
       teamId: team.id,
       tournamentId,
-      insertPayload
+      awardClaimInsert
     };
     const { data, error } = await supabase
       .from('award_claims')
-      .insert(insertPayload)
+      .insert(awardClaimInsert)
       .select('*')
       .single();
     if (error) throw error;
