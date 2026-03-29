@@ -628,6 +628,47 @@ let notificationRegistration = null;
 let unreadChatCount = 0;
 let lastSeenChatId = 0;
 let chatUiMounted = false;
+let chatSyntheticIdCounter = 0;
+
+function normalizeChatMessage(message, fallbackPrefix = 'msg') {
+  if (!message || typeof message !== 'object') return null;
+  const normalized = { ...message };
+  const rawId = normalized.id;
+  const stringId = rawId === null || rawId === undefined ? '' : String(rawId).trim();
+  if (stringId) {
+    normalized.id = stringId;
+    return normalized;
+  }
+  chatSyntheticIdCounter += 1;
+  normalized.id = `${fallbackPrefix}-${Date.now()}-${chatSyntheticIdCounter}`;
+  return normalized;
+}
+
+function mergeChatMessages(messages) {
+  const incoming = Array.isArray(messages) ? messages : [messages];
+  const byId = new Map();
+  const addedIds = [];
+
+  chatMessages.forEach((message) => {
+    const normalized = normalizeChatMessage(message, 'existing');
+    if (!normalized) return;
+    byId.set(normalized.id, normalized);
+  });
+
+  incoming.forEach((message) => {
+    const normalized = normalizeChatMessage(message, 'incoming');
+    if (!normalized) return;
+    const alreadyPresent = byId.has(normalized.id);
+    byId.set(normalized.id, normalized);
+    if (!alreadyPresent) addedIds.push(normalized.id);
+  });
+
+  chatMessages = Array.from(byId.values())
+    .sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime())
+    .slice(-100);
+
+  return { addedIds };
+}
 
 function isTeamAuthenticated() {
   return !!teamData?.id && document.getElementById('scorecardScreen') && !document.getElementById('scorecardScreen').classList.contains('d-none');
@@ -991,7 +1032,8 @@ async function loadChatMessages() {
       if (wrap) wrap.innerHTML = `<div class="team-chat-empty">${escapeHtml(d?.error || 'Kunne ikke hente chat nå.')}</div>`;
       return;
     }
-    chatMessages = Array.isArray(d.messages) ? d.messages : [];
+    chatMessages = [];
+    mergeChatMessages(Array.isArray(d.messages) ? d.messages : []);
     renderChatMessages();
   } catch (_) {
     const wrap = document.getElementById('chatMessages');
@@ -1007,12 +1049,14 @@ function startChatEvents() {
     try {
       const payload = JSON.parse(evt.data);
       if (payload.type === 'chat_message' && payload.data) {
-        chatMessages.push(payload.data);
-        if (chatMessages.length > 100) chatMessages = chatMessages.slice(-100);
-        const incomingId = Number(payload.data.id) || 0;
-        if (!isChatWidgetOpen() && incomingId > lastSeenChatId) {
-          unreadChatCount += 1;
-          syncChatUnreadIndicator();
+        const normalizedIncoming = normalizeChatMessage(payload.data, 'realtime');
+        const mergeResult = mergeChatMessages(normalizedIncoming);
+        const incomingId = Number(normalizedIncoming?.id) || 0;
+        if (!isChatWidgetOpen() && mergeResult.addedIds.length) {
+          if (!incomingId || incomingId > lastSeenChatId) {
+            unreadChatCount += mergeResult.addedIds.length;
+            syncChatUnreadIndicator();
+          }
         }
         renderChatMessages();
       }
@@ -1114,13 +1158,8 @@ async function sendChatMessage(event) {
       input.value = '';
       if (imageInput) imageInput.value = '';
       updateChatUploadMeta();
-      if (d.message) {
-        chatMessages.push(d.message);
-        if (chatMessages.length > 100) chatMessages = chatMessages.slice(-100);
-        renderChatMessages();
-      } else {
-        await loadChatMessages();
-      }
+      // Realtime stream is the single source of truth for new chat rows.
+      // Do not insert locally here to avoid duplicates when the event arrives.
     }
   } catch (_) {
     showToast('Tilkoblingsfeil ved sending av melding', 'error');
