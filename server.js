@@ -1741,13 +1741,11 @@ app.post('/api/team/claim-award', async (req, res) => {
       ? null
       : Number(req.body.distance);
     const roundId = asInt(req.body?.round_id ?? req.body?.roundId);
-    const playerId = asInt(req.body?.player_id ?? req.body?.playerId);
     const imageUrl = String(req.body?.image_url ?? req.body?.imageUrl ?? '').trim() || null;
     const payload = {
       hole_number: asInt(req.body?.hole_number),
       award_type: String(req.body?.award_type || '').trim(),
       player_name: String(req.body?.player_name || '').trim(),
-      player_id: playerId || null,
       round_id: roundId || null,
       distance: Number.isFinite(parsedDistance) ? parsedDistance : null,
       image_url: imageUrl,
@@ -1757,22 +1755,8 @@ app.post('/api/team/claim-award', async (req, res) => {
     routeLog(route, 'hit', { payload });
     const { team, tournamentId } = await requireTeamContext(req);
     if (!team || !tournamentId) return res.status(401).json({ success: false, error: 'Team session mangler. Logg inn på nytt.' });
-    if (!payload.hole_number || !payload.award_type || !(payload.player_name || payload.player_id)) {
-      return res.status(400).json({ success: false, error: 'hole_number, award_type og player_name/player_id er påkrevd' });
-    }
-    let resolvedPlayerId = payload.player_id || null;
-    if (!resolvedPlayerId && payload.player_name) {
-      const { data: matchedPlayers, error: playerLookupError } = await supabase
-        .from('players')
-        .select('id')
-        .eq('tournament_id', tournamentId)
-        .eq('name', payload.player_name)
-        .limit(1);
-      if (playerLookupError) throw playerLookupError;
-      resolvedPlayerId = Array.isArray(matchedPlayers) && matchedPlayers[0]?.id ? Number(matchedPlayers[0].id) : null;
-    }
-    if (!resolvedPlayerId) {
-      return res.status(400).json({ success: false, error: 'Kunne ikke finne player_id for valgt spiller. Oppdater laget eller send player_id.' });
+    if (!payload.hole_number || !payload.award_type || !payload.player_name) {
+      return res.status(400).json({ success: false, error: 'hole_number, award_type og player_name er påkrevd' });
     }
     const fallbackRoundId = asInt(req.body?.hole_round_id ?? req.body?.score_round_id);
     let resolvedRoundId = payload.round_id || fallbackRoundId || null;
@@ -1789,36 +1773,28 @@ app.post('/api/team/claim-award', async (req, res) => {
     if (!resolvedRoundId) {
       return res.status(400).json({ success: false, error: 'Kunne ikke finne round_id for turneringen.' });
     }
-    const nowIso = new Date().toISOString();
-    const conflictPayload = {
-      round_id: resolvedRoundId,
+    const insertPayload = {
+      tournament_id: tournamentId,
       hole_number: payload.hole_number,
       award_type: payload.award_type,
-      player_id: resolvedPlayerId,
-      distance: payload.distance,
-      detail: payload.detail,
-      image_url: payload.image_url,
-      updated_at: nowIso,
-      tournament_id: tournamentId,
       team_id: team.id,
-      team_name: team.team_name,
-      player_name: payload.player_name || team.team_name || null,
+      player_name: payload.player_name,
       value: payload.value,
-      claimed_at: nowIso
+      detail: payload.detail,
+      round_id: resolvedRoundId
     };
     logContext = {
       teamId: team.id,
       tournamentId,
-      conflictTarget: 'round_id,hole_number,award_type,player_id',
-      conflictPayload
+      insertPayload
     };
     const { data, error } = await supabase
       .from('award_claims')
-      .upsert(conflictPayload, { onConflict: 'round_id,hole_number,award_type,player_id' })
+      .insert(insertPayload)
       .select('*')
       .single();
     if (error) throw error;
-    routeLog(route, 'db_action', { action: 'upsert_award_claim', claimId: data?.id, teamId: team.id });
+    routeLog(route, 'db_action', { action: 'insert_award_claim', claimId: data?.id, teamId: team.id });
     return res.json({ success: true, claim: data });
   } catch (error) {
     const missingColumn = detectMissingColumn(error);
