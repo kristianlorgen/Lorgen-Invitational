@@ -371,6 +371,15 @@ async function resolveTeamByTournamentAndPin(tournamentId, pin) {
     .eq('pin', pin)
     .maybeSingle();
 
+  if (!teamResult.error && !teamResult.data) {
+    teamResult = await supabase
+      .from('teams')
+      .select('id, tournament_id, name, team_name, pin, pin_code, locked')
+      .eq('tournament_id', tournamentId)
+      .eq('pin_code', pin)
+      .maybeSingle();
+  }
+
   if (teamResult.error && isMissingColumnError(teamResult.error, 'pin')) {
     teamResult = await supabase
       .from('teams')
@@ -611,7 +620,7 @@ app.post('/api/auth/team-login', async (req, res) => {
       success: true,
       team_id: team.id,
       tournament_id: team.tournament_id || tournamentId,
-      team
+      pin: team.pin
     });
   } catch (error) {
     routeLog(route, 'error', { error: error?.message || String(error) });
