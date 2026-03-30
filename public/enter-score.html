@@ -1094,28 +1094,18 @@ async function doLogin() {
     }, false);
     const d = await r.json();
     console.log('[login] raw response JSON from server', d);
-    const responseTeamId = String(
-      d?.team_id
-      || d?.teamId
-      || d?.team?.id
-      || ''
-    ).trim();
-    const responseTournamentId = String(
-      d?.tournament_id
-      || d?.tournamentId
-      || d?.team?.tournament_id
-      || d?.team?.tournamentId
-      || d?.tournament?.id
-      || ''
-    ).trim();
+    const responseTeamId = String(d?.team_id || '').trim();
+    const responseTournamentId = String(d?.tournament_id || '').trim();
+    const responsePin = String(d?.pin || '').trim();
     const failedChecks = [];
     if (d?.success !== true) failedChecks.push('success !== true');
     if (!responseTeamId) failedChecks.push('team_id missing');
     if (!responseTournamentId) failedChecks.push('tournament_id missing');
+    if (!responsePin) failedChecks.push('pin missing');
 
-    if (d?.success === true && responseTeamId && responseTournamentId) {
-      teamPin = pin;
-      sessionStorage.setItem('team_pin', pin);
+    if (d?.success === true && responseTeamId && responseTournamentId && responsePin) {
+      teamPin = responsePin;
+      sessionStorage.setItem('team_pin', responsePin);
       localStorage.setItem("team_id", responseTeamId);
       localStorage.setItem("tournament_id", responseTournamentId);
       const storedTeamId = localStorage.getItem("team_id");
@@ -2030,6 +2020,7 @@ async function initPageSessionFlow() {
   applyLoginUi();
   const session = getSession();
   if (!session?.team_id || !session?.tournament_id) {
+    startLoginMode();
     return;
   }
   await startTeamMode(session, { showErrorState: false });
