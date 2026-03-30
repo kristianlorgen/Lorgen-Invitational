@@ -610,19 +610,55 @@ app.post('/api/auth/team-login', async (req, res) => {
       return res.status(404).json({ success: false, error: 'Ingen aktiv turnering funnet' });
     }
 
-    const team = await resolveTeamByTournamentAndPin(tournamentId, pin);
+    let teamResult = await supabase
+      .from('teams')
+      .select('id, tournament_id, name, team_name, pin, pin_code, locked')
+      .eq('tournament_id', tournamentId)
+      .eq('pin', pin)
+      .maybeSingle();
+
+    if (!teamResult.error && !teamResult.data) {
+      teamResult = await supabase
+        .from('teams')
+        .select('id, tournament_id, name, team_name, pin, pin_code, locked')
+        .eq('tournament_id', tournamentId)
+        .eq('pin_code', pin)
+        .maybeSingle();
+    }
+
+    if (teamResult.error && isMissingColumnError(teamResult.error, 'pin')) {
+      teamResult = await supabase
+        .from('teams')
+        .select('id, tournament_id, name, team_name, pin, pin_code, locked')
+        .eq('tournament_id', tournamentId)
+        .eq('pin_code', pin)
+        .maybeSingle();
+    }
+
+    if (teamResult.error) throw teamResult.error;
+    const team = teamResult.data ? normalizeTeamRow(teamResult.data) : null;
+
     console.log('[team-login] matched team row', team || null);
     if (!team) {
       return res.status(401).json({ success: false, error: 'Ugyldig PIN' });
     }
 
-    setTeamAuthCookie(res, tournamentId, team.id);
-    routeLog(route, 'db_action', { action: 'team_lookup_success', tournamentId, teamId: team.id });
+    const teamId = normalizeUuid(team.id);
+    const teamTournamentId = normalizeUuid(team.tournament_id);
+    if (!teamId || !teamTournamentId) {
+      routeLog(route, 'invalid_uuid', {
+        team_id: team.id,
+        tournament_id: team.tournament_id
+      });
+      return res.status(500).json({ success: false, error: 'Team-oppsett er ugyldig: team_id/tournament_id må være UUID.' });
+    }
+
+    setTeamAuthCookie(res, teamTournamentId, teamId);
+    routeLog(route, 'db_action', { action: 'team_lookup_success', tournamentId: teamTournamentId, teamId });
     return res.json({
       success: true,
-      team_id: team.id,
-      tournament_id: team.tournament_id,
-      pin: team.pin
+      team_id: teamId,
+      tournament_id: teamTournamentId
     });
   } catch (error) {
     routeLog(route, 'error', { error: error?.message || String(error) });
