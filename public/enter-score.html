@@ -330,6 +330,31 @@
       width: 100%;
       justify-content: center;
     }
+    .login-debug-panel {
+      margin-top: 14px;
+      text-align: left;
+      border: 1px dashed rgba(201,168,76,.35);
+      border-radius: var(--radius-sm);
+      background: rgba(7, 10, 18, .55);
+      color: rgba(255,255,255,.88);
+      padding: 12px;
+      font-size: .75rem;
+      line-height: 1.4;
+      word-break: break-word;
+    }
+    .login-debug-panel pre {
+      margin: 4px 0 10px;
+      white-space: pre-wrap;
+      font-size: .71rem;
+      color: rgba(255,255,255,.86);
+    }
+    .login-debug-label {
+      color: var(--gold);
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      font-size: .62rem;
+      font-weight: 700;
+    }
 
   </style>
 </head>
@@ -427,6 +452,17 @@
       <button onclick="doLogin()" class="btn btn--gold" style="width:100%;justify-content:center" id="loginBtn">
         <i class="fas fa-arrow-right-to-bracket"></i> Logg inn
       </button>
+      <div id="loginDebugPanel" class="login-debug-panel" style="display:none">
+        <div class="login-debug-label">PIN login debug (temporary)</div>
+        <div><strong>Endpoint:</strong> <span id="debugLoginEndpoint">—</span></div>
+        <div><strong>HTTP status:</strong> <span id="debugLoginStatus">—</span></div>
+        <div><strong>Frontend validation:</strong> <span id="debugLoginValidation">—</span></div>
+        <div><strong>Rejection reason:</strong> <span id="debugLoginReason">—</span></div>
+        <div><strong>localStorage team_id:</strong> <span id="debugStoredTeamId">—</span></div>
+        <div><strong>localStorage tournament_id:</strong> <span id="debugStoredTournamentId">—</span></div>
+        <div class="login-debug-label" style="margin-top:8px">Raw response JSON</div>
+        <pre id="debugLoginResponse">—</pre>
+      </div>
       <p style="font-size:.75rem;color:rgba(255,255,255,.25);margin-top:16px">PIN-koden ble tildelt av turneringsadministrator</p>
     </div>
   </div>
@@ -1083,16 +1119,78 @@ function renderScoreStatus(kind, payload = {}) {
 }
 
 async function doLogin() {
+  const loginEndpoint = '/api/auth/team-login';
+  const debugPanel = document.getElementById('loginDebugPanel');
+  const debugFields = {
+    endpoint: document.getElementById('debugLoginEndpoint'),
+    status: document.getElementById('debugLoginStatus'),
+    response: document.getElementById('debugLoginResponse'),
+    validation: document.getElementById('debugLoginValidation'),
+    reason: document.getElementById('debugLoginReason'),
+    storedTeamId: document.getElementById('debugStoredTeamId'),
+    storedTournamentId: document.getElementById('debugStoredTournamentId')
+  };
+  const setLoginDebug = ({
+    status = '—',
+    response = null,
+    validation = 'pending',
+    reason = '',
+    forceVisible = true
+  } = {}) => {
+    if (debugFields.endpoint) debugFields.endpoint.textContent = `${window.location.origin}${loginEndpoint}`;
+    if (debugFields.status) debugFields.status.textContent = String(status);
+    if (debugFields.response) {
+      const formatted = response === null
+        ? '—'
+        : typeof response === 'string'
+          ? response
+          : JSON.stringify(response, null, 2);
+      debugFields.response.textContent = formatted;
+    }
+    if (debugFields.validation) debugFields.validation.textContent = validation;
+    if (debugFields.reason) debugFields.reason.textContent = reason || '—';
+    if (debugFields.storedTeamId) debugFields.storedTeamId.textContent = localStorage.getItem('team_id') || '(empty)';
+    if (debugFields.storedTournamentId) debugFields.storedTournamentId.textContent = localStorage.getItem('tournament_id') || '(empty)';
+    if (forceVisible && debugPanel) debugPanel.style.display = 'block';
+  };
+
+  setLoginDebug({
+    status: 'not sent',
+    response: null,
+    validation: 'pending',
+    reason: 'Awaiting PIN submit'
+  });
+
   const pin = getPin();
-  if (pin.length < 4) { document.getElementById('loginError').textContent = 'Vennligst skriv inn din 4-sifrede PIN'; return; }
+  if (pin.length < 4) {
+    document.getElementById('loginError').textContent = 'Vennligst skriv inn din 4-sifrede PIN';
+    setLoginDebug({
+      status: 'not sent',
+      response: { error: 'PIN_TOO_SHORT', entered_length: pin.length },
+      validation: 'invalid',
+      reason: 'PIN shorter than 4 digits'
+    });
+    return;
+  }
   const btn = document.getElementById('loginBtn');
   btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Bekrefter...';
   document.getElementById('loginError').textContent = '';
   try {
-    const r = await apiFetch('/api/auth/team-login', {
+    const r = await apiFetch(loginEndpoint, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin })
     }, false);
-    const d = await r.json();
+    let d = null;
+    try {
+      d = await r.json();
+    } catch (parseErr) {
+      setLoginDebug({
+        status: r.status,
+        response: `Failed to parse JSON response: ${parseErr?.message || 'unknown parse error'}`,
+        validation: 'invalid',
+        reason: 'Response body was not valid JSON'
+      });
+      throw new Error('LOGIN_RESPONSE_NOT_JSON');
+    }
     console.log('[login] raw response JSON from server', d);
     const responseTeamId = String(d?.team_id || '').trim();
     const responseTournamentId = String(d?.tournament_id || '').trim();
@@ -1113,10 +1211,28 @@ async function doLogin() {
       console.log('[login] stored team_id', storedTeamId);
       console.log('[login] stored tournament_id', storedTournamentId);
       if (!storedTeamId || !storedTournamentId) {
+        setLoginDebug({
+          status: r.status,
+          response: d,
+          validation: 'invalid',
+          reason: 'Session persistence failed: localStorage keys missing after setItem'
+        });
         throw new Error('LOGIN_SESSION_PERSIST_FAILED');
       }
+      setLoginDebug({
+        status: r.status,
+        response: d,
+        validation: 'valid',
+        reason: 'Session accepted, continuing to scorecard flow'
+      });
       await startTeamMode({ team_id: responseTeamId, tournament_id: responseTournamentId });
     } else if (d?.success !== true) {
+      setLoginDebug({
+        status: r.status,
+        response: d,
+        validation: 'invalid',
+        reason: `Server rejected login: ${d?.error || 'Ugyldig PIN'}`
+      });
       document.getElementById('loginError').textContent = d.error || 'Ugyldig PIN';
       digits.forEach(d => d.value = ''); digits[0].focus();
     } else {
@@ -1124,13 +1240,27 @@ async function doLogin() {
         failedChecks,
         response: d
       });
+      setLoginDebug({
+        status: r.status,
+        response: d,
+        validation: 'invalid',
+        reason: `Response contract check failed: ${failedChecks.join(', ') || 'unknown'}`
+      });
       throw new Error('LOGIN_INVALID_RESPONSE_CONTRACT');
     }
   } catch (e) {
+    if (e?.message !== 'LOGIN_INVALID_RESPONSE_CONTRACT' && e?.message !== 'LOGIN_SESSION_PERSIST_FAILED') {
+      setLoginDebug({
+        validation: 'invalid',
+        reason: e?.message || 'Unknown frontend exception'
+      });
+    }
     document.getElementById('loginError').textContent = e?.message === 'LOGIN_INVALID_RESPONSE_CONTRACT'
       ? 'Ugyldig lagøkt fra server. Kontakt administrator.'
       : e?.message === 'LOGIN_SESSION_PERSIST_FAILED'
         ? 'Kunne ikke lagre lagøkt lokalt. Prøv igjen.'
+        : e?.message === 'LOGIN_RESPONSE_NOT_JSON'
+          ? 'Ugyldig respons fra server. Kontakt administrator.'
         : 'Tilkoblingsfeil, prøv igjen';
   }
   btn.disabled = false; btn.innerHTML = '<i class="fas fa-arrow-right-to-bracket"></i> Logg inn';
