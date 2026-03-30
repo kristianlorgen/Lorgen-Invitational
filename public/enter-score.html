@@ -641,8 +641,6 @@ let positionLastFetchedAt = 0;
 const seenBirdieMessageIds = new Set();
 const TEAM_ID_STORAGE_KEY = 'team_id';
 const TOURNAMENT_ID_STORAGE_KEY = 'tournament_id';
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
 function getSession() {
   return {
     team_id: localStorage.getItem(TEAM_ID_STORAGE_KEY),
@@ -661,8 +659,8 @@ function clearSessionAndRedirectLogin() {
 
 function requireSession() {
   const session = getSession();
-  if (!isValidUuid(session.team_id) || !isValidUuid(session.tournament_id)) {
-    console.error('[session] Missing or invalid team session in localStorage', session);
+  if (!session.team_id || !session.tournament_id) {
+    console.error('[session] Missing team session in localStorage', session);
     clearSessionAndRedirectLogin();
     return null;
   }
@@ -700,10 +698,6 @@ async function apiFetch(url, options = {}, requireAuthSession = true) {
   }
 
   return fetch(requestUrl, opts);
-}
-
-function isValidUuid(value) {
-  return UUID_REGEX.test(String(value || '').trim());
 }
 
 function resolveImageUrl(url) {
@@ -1022,15 +1016,17 @@ async function doLogin() {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin })
     }, false);
     const d = await r.json();
-    console.log('[login] API response payload', d);
-    if (d.success) {
+    console.log('[login] raw response JSON from server', d);
+    const responseTeamId = String(d?.team_id || '').trim();
+    const responseTournamentId = String(d?.tournament_id || '').trim();
+    const failedChecks = [];
+    if (d?.success !== true) failedChecks.push('success !== true');
+    if (!responseTeamId) failedChecks.push('team_id missing');
+    if (!responseTournamentId) failedChecks.push('tournament_id missing');
+
+    if (d?.success === true && responseTeamId && responseTournamentId) {
       teamPin = pin;
       sessionStorage.setItem('team_pin', pin);
-      const responseTeamId = String(d?.team_id || '').trim();
-      const responseTournamentId = String(d?.tournament_id || '').trim();
-      if (!isValidUuid(responseTeamId) || !isValidUuid(responseTournamentId)) {
-        throw new Error('LOGIN_INVALID_IDS');
-      }
       teamData = { id: responseTeamId, tournament_id: responseTournamentId };
       localStorage.setItem(TEAM_ID_STORAGE_KEY, responseTeamId);
       localStorage.setItem(TOURNAMENT_ID_STORAGE_KEY, responseTournamentId);
@@ -1041,12 +1037,18 @@ async function doLogin() {
       mountChatUi();
       renderScoreStatus('idle');
       await loadScorecard();
-    } else {
+    } else if (d?.success !== true) {
       document.getElementById('loginError').textContent = d.error || 'Ugyldig PIN';
       digits.forEach(d => d.value = ''); digits[0].focus();
+    } else {
+      console.error('[login] field check failed before invalid session error', {
+        failedChecks,
+        response: d
+      });
+      throw new Error('LOGIN_INVALID_RESPONSE_CONTRACT');
     }
   } catch (e) {
-    document.getElementById('loginError').textContent = e?.message === 'LOGIN_INVALID_IDS'
+    document.getElementById('loginError').textContent = e?.message === 'LOGIN_INVALID_RESPONSE_CONTRACT'
       ? 'Ugyldig lagøkt fra server. Kontakt administrator.'
       : 'Tilkoblingsfeil, prøv igjen';
   }
@@ -1092,19 +1094,6 @@ async function loadScorecard() {
       return;
     }
 
-    console.log('team_id:', team_id);
-    if (team_id.length < 10) {
-      console.error('[scorecard] Rejected non-UUID-like team_id from localStorage', { team_id });
-      clearSessionAndRedirectLogin();
-      return;
-    }
-
-    if (!isValidUuid(team_id) || !isValidUuid(tournament_id)) {
-      console.error('[scorecard] Invalid UUID format in localStorage session', { team_id, tournament_id });
-      clearSessionAndRedirectLogin();
-      return;
-    }
-
     const r = await apiFetch('/api/team/scorecard');
     const d = await r.json();
     if (!r.ok || !d?.success) {
@@ -1133,12 +1122,12 @@ async function loadScorecard() {
       return;
     }
     const resolvedTournamentId = nextTeam?.tournament_id || nextTournament?.id;
-    if (!isValidUuid(nextTeam.id) || !isValidUuid(resolvedTournamentId)) {
-      console.error('[scorecard] Invalid UUID in API payload', {
+    if (!resolvedTournamentId) {
+      console.error('[scorecard] Missing tournament_id in API payload', {
         team_id: nextTeam.id,
         tournament_id: resolvedTournamentId
       });
-      renderScoreStatus('error', { detail: 'Ugyldige ID-er i svar fra API' });
+      renderScoreStatus('error', { detail: 'Mangler tournament_id i svar fra API' });
       return;
     }
     if (!nextHoles.length) {
@@ -1857,7 +1846,7 @@ async function checkSession() {
     await initNotifications();
     teamPin = sessionStorage.getItem('team_pin') || '';
     const session = getSession();
-    if (!isValidUuid(session.team_id) || !isValidUuid(session.tournament_id)) {
+    if (!session.team_id || !session.tournament_id) {
       clearSessionAndRedirectLogin();
       return;
     }

@@ -594,6 +594,7 @@ app.post('/api/auth/team-login', async (req, res) => {
     const requestedTournamentIdRaw = req.body?.tournament_id;
     const requestedTournamentId = normalizeUuid(requestedTournamentIdRaw);
     routeLog(route, 'hit', { payload: { pinLength: pin.length, requestedTournamentId } });
+    console.log('[team-login] incoming pin', pin);
 
     if (!pin) {
       return res.status(400).json({ success: false, error: 'PIN er påkrevd' });
@@ -610,18 +611,21 @@ app.post('/api/auth/team-login', async (req, res) => {
     }
 
     const team = await resolveTeamByTournamentAndPin(tournamentId, pin);
+    console.log('[team-login] matched team row', team || null);
     if (!team) {
       return res.status(401).json({ success: false, error: 'Ugyldig PIN' });
     }
 
     setTeamAuthCookie(res, tournamentId, team.id);
     routeLog(route, 'db_action', { action: 'team_lookup_success', tournamentId, teamId: team.id });
-    return res.json({
+    const responsePayload = {
       success: true,
       team_id: team.id,
-      tournament_id: team.tournament_id || tournamentId,
+      tournament_id: team.tournament_id,
       pin: team.pin
-    });
+    };
+    console.log('[team-login] response payload', responsePayload);
+    return res.json(responsePayload);
   } catch (error) {
     routeLog(route, 'error', { error: error?.message || String(error) });
     return res.status(500).json({ success: false, error: error?.message || 'Innlogging feilet' });
