@@ -238,6 +238,14 @@ document.addEventListener('click', e => {
 
 let photos = [];
 
+function resolveImageUrl(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return '';
+  if (/^https?:\/\//i.test(raw) || /^data:/i.test(raw)) return raw;
+  if (raw.startsWith('/')) return `${window.location.origin}${raw}`;
+  return `${window.location.origin}/${raw.replace(/^\/+/, '')}`;
+}
+
 function openLightbox(src) {
   document.getElementById('lightboxImg').src = src;
   document.getElementById('lightbox').classList.add('open');
@@ -350,7 +358,19 @@ async function loadGallery() {
   try {
     const r = await fetch('/api/gallery');
     const d = await r.json();
-    photos = d.photos || [];
+    photos = (d.photos || []).map((p) => {
+      const frontendSrc = resolveImageUrl(p.photo_path);
+      console.debug('[image-debug] gallery_photo', {
+        id: p.photo_ref || p.id,
+        stored_image_path: p.storage_path || null,
+        resolved_public_url: p.photo_path,
+        frontend_src_used: frontendSrc,
+        tournament_id: p.tournament_id || null,
+        hole_number: p.hole_number || null,
+        round_id: p.round_id || null
+      });
+      return { ...p, photo_path: frontendSrc };
+    });
     renderWinner(photos);
     renderGallery(photos);
   } catch(_) {}

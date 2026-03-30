@@ -634,6 +634,14 @@ let positionFetchPromise = null;
 let positionLastFetchedAt = 0;
 const seenBirdieMessageIds = new Set();
 
+function resolveImageUrl(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return '';
+  if (/^https?:\/\//i.test(raw) || /^data:/i.test(raw)) return raw;
+  if (raw.startsWith('/')) return `${window.location.origin}${raw}`;
+  return `${window.location.origin}/${raw.replace(/^\/+/, '')}`;
+}
+
 function getBirdieMessageId(payload) {
   if (!payload || typeof payload !== 'object') return '';
   const rawId = payload.id;
@@ -1616,7 +1624,14 @@ document.getElementById('photoInput').addEventListener('change', async e => {
     const d = await r.json();
     if (d.success) {
       if (!scoresData[holeNum]) scoresData[holeNum] = {};
-      scoresData[holeNum].photo_path = d.photo_path;
+      const resolvedSrc = resolveImageUrl(d.photo_path);
+      console.debug('[image-debug] upload_response', {
+        hole_number: holeNum,
+        stored_image_path: d.storage_path || null,
+        resolved_public_url: d.photo_path,
+        frontend_src_used: resolvedSrc
+      });
+      scoresData[holeNum].photo_path = resolvedSrc;
       showToast('Bilde lastet opp for hull ' + holeNum + '!', 'success');
     } else {
       if (d.code === 'STORAGE_BUCKET_NOT_FOUND' && d.bucket) {
