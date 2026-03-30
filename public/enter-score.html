@@ -1106,7 +1106,8 @@ function startChatEvents() {
       renderChatMessages();
     }
     if (isBirdieEventType(payload.type) && payload.data) {
-      const birdieMessageId = getBirdieMessageId(payload.data);
+      const birdiePayload = payload.data;
+      const birdieMessageId = getBirdieMessageId(birdiePayload);
       if (birdieMessageId && seenBirdieMessageIds.has(birdieMessageId)) {
         return;
       }
@@ -1118,9 +1119,14 @@ function startChatEvents() {
         setTimeout(() => shoutBtn.classList.remove('is-celebrating'), 1700);
       }
       if (navigator.vibrate) navigator.vibrate([120, 90, 120]);
-      notifyBirdieShot(payload.data);
-      showBirdieBanner(payload.data);
-      showToast(`⛳ ${payload.data.team_name || 'Et lag'} roper birdie! Alle spillere må ta birdie shots! 🥃`, 'info');
+      notifyBirdieShot(birdiePayload);
+      showBirdieBanner(birdiePayload);
+      if (payload.type === 'birdie_shout') {
+        const shoutMessage = birdiePayload.message || `${birdiePayload.team_name || 'Et lag'} roper birdie! Alle spillere må ta birdie shots! 🥃`;
+        showToast(`🍺 ${shoutMessage}`, 'info');
+      } else {
+        showToast(`⛳ ${birdiePayload.team_name || 'Et lag'} roper birdie! Alle spillere må ta birdie shots! 🥃`, 'info');
+      }
     }
   };
 
