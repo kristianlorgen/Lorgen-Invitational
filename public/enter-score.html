@@ -638,6 +638,7 @@ let birdieRealtimeReadyTimer = null;
 let chatInitialized = false;
 let positionFetchPromise = null;
 let positionLastFetchedAt = 0;
+let positionPollIntervalId = null;
 const seenBirdieMessageIds = new Set();
 const TEAM_ID_STORAGE_KEY = 'team_id';
 const TOURNAMENT_ID_STORAGE_KEY = 'tournament_id';
@@ -662,12 +663,56 @@ function clearSessionAndRedirectLogin() {
   localStorage.removeItem(TEAM_ID_STORAGE_KEY);
   localStorage.removeItem(TOURNAMENT_ID_STORAGE_KEY);
   sessionStorage.removeItem('team_pin');
+  stopBackgroundPolling();
+  closeRealtimeConnections();
   teamData = null;
   tournamentData = null;
+  chatMessages = [];
+  chatInitialized = false;
+  unreadChatCount = 0;
+  lastSeenChatId = 0;
+  hideScorecardErrorCard();
   document.getElementById('scorecardScreen')?.classList.add('d-none');
   document.getElementById('loginScreen')?.classList.remove('d-none');
   document.getElementById('loginError').textContent = '';
-  renderScoreStatus('idle');
+  syncChatUnreadIndicator();
+}
+
+function hideScorecardErrorCard() {
+  document.getElementById('scoreStatusScreen')?.classList.add('d-none');
+  document.getElementById('activeRoundContent')?.classList.add('d-none');
+}
+
+function closeRealtimeConnections() {
+  if (chatEventSource) {
+    chatEventSource.close();
+    chatEventSource = null;
+  }
+  birdieRealtimeReady = false;
+  if (birdieRealtimeReadyTimer) {
+    clearTimeout(birdieRealtimeReadyTimer);
+    birdieRealtimeReadyTimer = null;
+  }
+}
+
+function stopBackgroundPolling() {
+  if (positionPollIntervalId) {
+    clearInterval(positionPollIntervalId);
+    positionPollIntervalId = null;
+  }
+}
+
+function startBackgroundPolling() {
+  if (positionPollIntervalId) return;
+  positionPollIntervalId = setInterval(() => {
+    loadPosition();
+  }, 60000);
+}
+
+function hasStartupSession() {
+  const teamId = localStorage.getItem(TEAM_ID_STORAGE_KEY);
+  const tournamentId = localStorage.getItem(TOURNAMENT_ID_STORAGE_KEY);
+  return !isInvalidStoredId(teamId) && !isInvalidStoredId(tournamentId);
 }
 
 function requireSession() {
@@ -1069,6 +1114,7 @@ async function doLogin() {
       document.getElementById('loginScreen').classList.add('d-none');
       document.getElementById('scorecardScreen').classList.remove('d-none');
       mountChatUi();
+      startBackgroundPolling();
       renderScoreStatus('idle');
       await loadScorecard();
     } else if (d?.success !== true) {
@@ -1246,11 +1292,17 @@ function renderChatMessages({ autoScroll = false, forceScroll = false } = {}) {
 }
 
 async function loadChatMessages() {
+  const session = requireSession();
+  if (!session) return;
   if (!isTeamAuthenticated()) return;
   try {
     const r = await apiFetch('/api/chat/messages?private=1');
     const d = await r.json();
     if (!r.ok || !d?.success) {
+      if (String(d?.error || '').includes('Team session mangler')) {
+        clearSessionAndRedirectLogin();
+        return;
+      }
       const wrap = document.getElementById('chatMessages');
       if (wrap) wrap.innerHTML = `<div class="team-chat-empty">${escapeHtml(d?.error || 'Kunne ikke hente chat nå.')}</div>`;
       return;
@@ -1267,6 +1319,8 @@ async function loadChatMessages() {
 }
 
 function startChatEvents() {
+  const session = requireSession();
+  if (!session) return;
   if (!isTeamAuthenticated()) return;
   if (chatEventSource) return;
   birdieRealtimeReady = false;
@@ -1274,8 +1328,6 @@ function startChatEvents() {
     clearTimeout(birdieRealtimeReadyTimer);
     birdieRealtimeReadyTimer = null;
   }
-  const session = requireSession();
-  if (!session) return;
   chatEventSource = new EventSource(withSessionParams('/api/events', session));
   const handleRealtimePayload = (payload) => {
     if (!payload || typeof payload !== 'object') return;
@@ -1486,6 +1538,8 @@ function updateSummary() {
 }
 
 async function loadPosition(force = false) {
+  const session = requireSession();
+  if (!session) return;
   const now = Date.now();
   if (!force && now - positionLastFetchedAt < 5000) return;
   if (positionFetchPromise) return positionFetchPromise;
@@ -1493,6 +1547,10 @@ async function loadPosition(force = false) {
   try {
     const r = await apiFetch('/api/scoreboard');
     const d = await r.json();
+    if (!r.ok && String(d?.error || '').includes('Team session mangler')) {
+      clearSessionAndRedirectLogin();
+      return;
+    }
     if (d.scoreboard && teamData) {
       const idx = d.scoreboard.findIndex(t => t.team_id === teamData.id);
       document.getElementById('summaryPos').textContent = idx >= 0 ? '#' + (idx + 1) : '—';
@@ -1874,34 +1932,26 @@ async function submitClaim(holeNum, awardType) {
 
 async function checkSession() {
   try {
-    await initNotifications();
     teamPin = sessionStorage.getItem('team_pin') || '';
-
-    const teamId = localStorage.getItem('team_id');
-    const tournamentId = localStorage.getItem('tournament_id');
-    const isMissingSession = !teamId || !tournamentId;
-    const isInvalidSession = isInvalidStoredId(teamId) || isInvalidStoredId(tournamentId);
-
-    if (isMissingSession) {
-      localStorage.clear();
+    if (!hasStartupSession()) {
       clearSessionAndRedirectLogin();
       return;
     }
-
-    if (isInvalidSession) {
-      localStorage.removeItem('team_id');
-      localStorage.removeItem('tournament_id');
-      clearSessionAndRedirectLogin();
-      return;
-    }
-
     if (!hasValidStoredSession()) {
       clearSessionAndRedirectLogin();
       return;
     }
 
-    teamData = { id: teamId, tournament_id: tournamentId };
+    await initNotifications();
     await ensureNotificationPermission();
+    const session = getSession();
+    if (!session) {
+      clearSessionAndRedirectLogin();
+      return;
+    }
+
+    teamData = { id: session.team_id, tournament_id: session.tournament_id };
+    startBackgroundPolling();
     document.getElementById('loginScreen').classList.add('d-none');
     document.getElementById('scorecardScreen').classList.remove('d-none');
     mountChatUi();
@@ -1909,9 +1959,6 @@ async function checkSession() {
     await loadScorecard();
   } catch (_) {}
 }
-
-// Oppdater posisjon hvert minutt
-setInterval(loadPosition, 60000);
 
 checkSession();
 </script>
