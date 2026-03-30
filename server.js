@@ -91,6 +91,26 @@ function buildTournamentStoragePath({ tournamentId, teamId, holeNumber, extensio
   return `tournament/${safeTournamentId}/team/${safeTeamId}/hole/${holeSegment}/${Date.now()}-${crypto.randomUUID()}${extension}`;
 }
 
+function getRequestBaseUrl(req) {
+  const protoHeader = String(req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
+  const host = req.headers['x-forwarded-host'] || req.get('host');
+  if (!host) return null;
+  return `${protoHeader}://${host}`;
+}
+
+function toAbsoluteMediaUrl(value, req) {
+  if (!value) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  if (/^(https?:)?\/\//i.test(raw) || raw.startsWith('data:') || raw.startsWith('blob:')) return raw;
+  if (raw.startsWith('/')) {
+    const base = getRequestBaseUrl(req);
+    return base ? `${base}${raw}` : raw;
+  }
+  const { data } = supabase.storage.from(MEDIA_BUCKET).getPublicUrl(raw);
+  return data?.publicUrl || raw;
+}
+
 function buildBucketMissingError() {
   return {
     success: false,
@@ -156,7 +176,20 @@ function mapChatRow(row) {
   };
 }
 
-async function selectChatMessagesCompat({ tournamentId, teamId }) {
+function mapChatRowForResponse(row, req) {
+  const mapped = mapChatRow(row);
+  return {
+    ...mapped,
+    image_path: toAbsoluteMediaUrl(mapped.image_path, req)
+  };
+}
+
+function isBirdieMessage(row) {
+  const text = `${row?.message || ''} ${row?.note || ''}`.toLowerCase();
+  return text.includes('birdie shoutout') || text.includes('birdie shots');
+}
+
+async function selectChatMessagesCompat({ tournamentId, teamId, req = null }) {
   const requestedColumns = [...CHAT_BASE_COLUMNS, ...CHAT_OPTIONAL_COLUMNS];
   let columns = [...requestedColumns];
   let missingColumn = null;
@@ -170,7 +203,7 @@ async function selectChatMessagesCompat({ tournamentId, teamId }) {
     const { data, error } = await query;
     if (!error) {
       return {
-        rows: (data || []).map(mapChatRow),
+        rows: (data || []).map((row) => mapChatRowForResponse(row, req)),
         missingOptionalColumn: missingColumn
       };
     }
@@ -1731,7 +1764,55 @@ app.get('/api/events', (req, res) => {
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
-      res.write('event: ping\\ndata: {}\\n\\n');
+      res.flushHeaders?.();
+
+      const sendEvent = (eventType, payload) => {
+        res.write(`event: ${eventType}\n`);
+        res.write(`data: ${JSON.stringify(payload)}\n\n`);
+      };
+
+      sendEvent('ping', { type: 'ping' });
+
+      let closed = false;
+      let lastMessageId = 0;
+      const syncNewMessages = async () => {
+        if (closed) return;
+        try {
+          let query = supabase
+            .from('chat_messages')
+            .select('id, tournament_id, team_id, team_name, message, note, image_path, created_at')
+            .eq('tournament_id', tournamentId)
+            .order('id', { ascending: true })
+            .limit(100);
+          if (lastMessageId > 0) query = query.gt('id', lastMessageId);
+          const { data, error } = await query;
+          if (error) throw error;
+          const rows = Array.isArray(data) ? data : [];
+          rows.forEach((row) => {
+            const numericId = Number(row?.id) || 0;
+            if (numericId > lastMessageId) lastMessageId = numericId;
+            const safeRow = mapChatRowForResponse(row, req);
+            sendEvent('chat_message', { type: 'chat_message', data: safeRow });
+            if (isBirdieMessage(row)) {
+              sendEvent('birdie_shout', { type: 'birdie_shout', data: safeRow });
+            }
+          });
+        } catch (error) {
+          routeLog('/api/events', 'error', { error: error?.message || String(error), tournamentId, teamId: team.id });
+        }
+      };
+
+      const heartbeatTimer = setInterval(() => {
+        if (!closed) sendEvent('ping', { type: 'ping' });
+      }, 15000);
+      const streamTimer = setInterval(syncNewMessages, 1200);
+      syncNewMessages();
+
+      req.on('close', () => {
+        closed = true;
+        clearInterval(heartbeatTimer);
+        clearInterval(streamTimer);
+      });
     })
     .catch((error) => {
       res.status(500).json({ success: false, error: error?.message || 'Kunne ikke åpne event-strøm' });
@@ -1833,7 +1914,7 @@ app.get('/api/team/scorecard', async (req, res) => {
       holes: normalizeHoles(holeRows),
       scores: (scoresResp.data || []).map((row) => ({
         ...row,
-        photo_path: resolveImageUrl(row.photo_path, req)
+        photo_path: toAbsoluteMediaUrl(row?.photo_path, req)
       })),
       claims: (claimsResp.data || []).map((claim) => ({
         ...claim,
@@ -1923,12 +2004,8 @@ app.post('/api/team/upload-photo/:holeNum', upload.single('photo'), async (req, 
       throw uploadError;
     }
     const { data: publicData } = supabase.storage.from(MEDIA_BUCKET).getPublicUrl(storagePath);
-    const photoPath = resolveImageUrl(publicData?.publicUrl || storagePath, req);
-    routeLog(route, 'image_debug', {
-      stored_image_path: storagePath,
-      resolved_public_url: photoPath,
-      frontend_src_used: photoPath
-    });
+    const photoPath = publicData?.publicUrl || null;
+    routeLog(route, 'upload_photo_url_debug', { storagePath, publicUrl: photoPath });
 
     const { data: existingScore, error: existingScoreError } = await supabase
       .from('scores')
@@ -1948,7 +2025,11 @@ app.post('/api/team/upload-photo/:holeNum', upload.single('photo'), async (req, 
     };
     const data = await saveScoreCompat(scorePayload);
     routeLog(route, 'db_action', { action: 'upload_photo', scoreId: data?.id, storagePath });
-    return res.json({ success: true, photo_path: photoPath, storage_path: storagePath, score: data });
+    return res.json({
+      success: true,
+      photo_path: toAbsoluteMediaUrl(photoPath, req),
+      score: data ? { ...data, photo_path: toAbsoluteMediaUrl(data.photo_path, req) } : data
+    });
   } catch (error) {
     if (isMissingBucketError(error)) {
       return res.status(500).json(buildBucketMissingError());
@@ -2076,7 +2157,7 @@ app.get('/api/chat/messages', async (req, res) => {
     if (!team || !tournamentId) return res.status(401).json({ success: false, error: 'Team session mangler. Logg inn på nytt.' });
     const privateChat = String(req.query?.private || '').toLowerCase();
     const teamFilter = privateChat === '1' || privateChat === 'true' ? team.id : null;
-    const { rows, missingOptionalColumn } = await selectChatMessagesCompat({ tournamentId, teamId: teamFilter });
+    const { rows, missingOptionalColumn } = await selectChatMessagesCompat({ tournamentId, teamId: teamFilter, req });
     routeLog(route, 'db_action', {
       action: 'fetch_chat_messages',
       count: rows?.length || 0,
@@ -2130,12 +2211,13 @@ app.post('/api/chat/send', upload.single('image'), async (req, res) => {
       }
       const { data: publicData } = supabase.storage.from(MEDIA_BUCKET).getPublicUrl(storagePath);
       imagePath = publicData?.publicUrl || null;
+      routeLog(route, 'chat_image_url_debug', { storagePath, publicUrl: imagePath });
     }
 
     const payload = { tournament_id: tournamentId, team_id: team.id, team_name: team.team_name, message: message || null, note, image_path: imagePath };
     const data = await insertChatMessageCompat(payload);
     routeLog(route, 'db_action', { action: 'insert_chat_message', messageId: data?.id, teamId: team.id, tournamentId });
-    return res.json({ success: true, message: data });
+    return res.json({ success: true, message: mapChatRowForResponse(data, req) });
   } catch (error) {
     const missingColumn = detectMissingColumn(error);
     if (missingColumn) {
@@ -2177,8 +2259,7 @@ app.get('/api/gallery', async (req, res) => {
     const scorePhotos = (scorePhotosResp.data || []).map((row) => ({
       id: `score-${row.id}`,
       photo_ref: `score-${row.id}`,
-      photo_path: resolveImageUrl(row.photo_path, req),
-      round_id: row.round_id || null,
+      photo_path: toAbsoluteMediaUrl(row.photo_path, req),
       hole_number: row.hole_number,
       team_name: teamsById[row.team_id]?.team_name || 'Lag',
       created_at: row.created_at,
@@ -2188,7 +2269,7 @@ app.get('/api/gallery', async (req, res) => {
     const galleryPhotos = (galleryResp.data || []).map((row) => ({
       id: `gallery-${row.id}`,
       photo_ref: `gallery-${row.id}`,
-      photo_path: resolveImageUrl(row.photo_path, req),
+      photo_path: toAbsoluteMediaUrl(row.photo_path, req),
       hole_number: null,
       team_name: row.caption || 'Turneringsbilde',
       created_at: row.uploaded_at,

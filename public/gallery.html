@@ -269,6 +269,13 @@ async function vote(photoRef, btn) {
   } catch(_) {}
 }
 
+function resolveGalleryImageSrc(path) {
+  if (!path) return '';
+  if (/^(https?:)?\/\//i.test(path) || path.startsWith('data:') || path.startsWith('blob:')) return path;
+  if (path.startsWith('/')) return `${window.location.origin}${path}`;
+  return path;
+}
+
 function renderWinner(photos) {
   const section = document.getElementById('winnerSection');
   const content = document.getElementById('winnerContent');
@@ -278,6 +285,8 @@ function renderWinner(photos) {
     return;
   }
   section.style.display = '';
+  const winnerSrc = resolveGalleryImageSrc(topVoted.photo_path);
+  console.debug('[gallery-winner] final frontend img.src:', winnerSrc);
   content.innerHTML = `
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
       <span style="font-size:1.4rem">🏆</span>
@@ -287,9 +296,8 @@ function renderWinner(photos) {
       </div>
     </div>
     <div style="display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap">
-      <img src="${resolveImageUrl(topVoted.photo_path)}" alt="Blinkskudd"
-        onclick="openLightbox('${resolveImageUrl(topVoted.photo_path)}')"
-        onerror="console.error('[image-debug] gallery_winner_failed', { src: this.src, raw: '${String(topVoted.photo_path || '').replace(/'/g, "\\'")}' })"
+      <img src="${winnerSrc}" alt="Blinkskudd"
+        onclick="openLightbox('${winnerSrc}')"
         style="width:280px;max-width:100%;height:200px;object-fit:contain;background:var(--dark);border-radius:var(--radius-lg);
                border:2px solid var(--gold);box-shadow:var(--shadow-gold);cursor:pointer">
       <div style="flex:1;min-width:200px">
@@ -321,13 +329,14 @@ function renderGallery(photosArr) {
   grid.innerHTML = photosArr.map((p, idx) => {
     const isWinner = idx === 0 && p.votes > 0;
     const sub = p.hole_number ? `Hull ${p.hole_number}` : (p.source === 'gallery' ? 'Arrangørbilde' : '');
+    const photoSrc = resolveGalleryImageSrc(p.photo_path);
+    console.debug('[gallery-card] final frontend img.src:', photoSrc);
     return `
     <div class="gallery-card-wrap">
       ${isWinner ? '<div class="winner-badge">⭐ Blinkskudd</div>' : ''}
       <div class="gallery-card${isWinner ? ' winner-card' : ''}">
-        <img src="${resolveImageUrl(p.photo_path)}" alt="${p.team_name || 'Bilde'}"
-          onclick="openLightbox('${resolveImageUrl(p.photo_path)}')"
-          onerror="console.error('[image-debug] gallery_card_failed', { src: this.src, raw: '${String(p.photo_path || '').replace(/'/g, "\\'")}' })"
+        <img src="${photoSrc}" alt="${p.team_name || 'Bilde'}"
+          onclick="openLightbox('${photoSrc}')"
           loading="lazy">
         <div class="gallery-card-body">
           <div class="gallery-card-info">
