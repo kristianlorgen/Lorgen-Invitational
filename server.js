@@ -44,8 +44,17 @@ function normalizeUuid(value) {
   return raw.toLowerCase();
 }
 
-function isValidUuid(value) {
-  return !!normalizeUuid(value);
+function normalizeEntityId(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+  const uuid = normalizeUuid(raw);
+  if (uuid) return uuid;
+  if (/^\d+$/.test(raw)) return raw;
+  return null;
+}
+
+function isValidEntityId(value) {
+  return !!normalizeEntityId(value);
 }
 
 function ensureSupabaseEnv() {
@@ -490,8 +499,8 @@ function verifyTeamCookieValue(value) {
   if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
   const [issuedAtRaw, tournamentIdRaw, teamIdRaw] = payload.split(':');
   const issuedAt = Number.parseInt(issuedAtRaw, 10);
-  const tournamentId = normalizeUuid(tournamentIdRaw);
-  const teamId = normalizeUuid(teamIdRaw);
+  const tournamentId = normalizeEntityId(tournamentIdRaw);
+  const teamId = normalizeEntityId(teamIdRaw);
   if (!Number.isFinite(issuedAt) || !tournamentId || !teamId) return null;
   const ageSeconds = Math.floor(Date.now() / 1000) - issuedAt;
   if (!(ageSeconds >= 0 && ageSeconds <= TEAM_COOKIE_TTL_SECONDS)) return null;
@@ -592,7 +601,7 @@ app.post('/api/auth/team-login', async (req, res) => {
   try {
     const pin = String(req.body?.pin || '').trim();
     const requestedTournamentIdRaw = req.body?.tournament_id;
-    const requestedTournamentId = normalizeUuid(requestedTournamentIdRaw);
+    const requestedTournamentId = normalizeEntityId(requestedTournamentIdRaw);
     routeLog(route, 'hit', { payload: { pinLength: pin.length, requestedTournamentId } });
     console.log('[team-login] incoming pin', pin);
 
@@ -601,8 +610,8 @@ app.post('/api/auth/team-login', async (req, res) => {
     }
 
     if (requestedTournamentIdRaw && !requestedTournamentId) {
-      routeLog(route, 'invalid_uuid', { field: 'tournament_id', value: requestedTournamentIdRaw });
-      return res.status(400).json({ success: false, error: 'Ugyldig tournament_id (må være UUID).' });
+      routeLog(route, 'invalid_tournament_id', { field: 'tournament_id', value: requestedTournamentIdRaw });
+      return res.status(400).json({ success: false, error: 'Ugyldig tournament_id format.' });
     }
 
     const tournamentId = requestedTournamentId || await resolveTournamentId(null);
@@ -643,14 +652,14 @@ app.post('/api/auth/team-login', async (req, res) => {
       return res.status(401).json({ success: false, error: 'Ugyldig PIN' });
     }
 
-    const teamId = normalizeUuid(team.id);
-    const teamTournamentId = normalizeUuid(team.tournament_id);
+    const teamId = normalizeEntityId(team.id);
+    const teamTournamentId = normalizeEntityId(team.tournament_id);
     if (!teamId || !teamTournamentId) {
-      routeLog(route, 'invalid_uuid', {
+      routeLog(route, 'invalid_team_setup', {
         team_id: team.id,
         tournament_id: team.tournament_id
       });
-      return res.status(500).json({ success: false, error: 'Team-oppsett er ugyldig: team_id/tournament_id må være UUID.' });
+      return res.status(500).json({ success: false, error: 'Team-oppsett er ugyldig: team_id/tournament_id mangler eller har ugyldig format.' });
     }
 
     setTeamAuthCookie(res, teamTournamentId, teamId);
@@ -696,7 +705,7 @@ app.post('/api/team/birdie-shot', async (req, res) => {
 app.post('/team/birdie-shot', (req, res) => forwardTo(req, res, 'POST', '/api/team/birdie-shot'));
 
 async function resolveTournamentId(tournamentId) {
-  const parsed = normalizeUuid(tournamentId);
+  const parsed = normalizeEntityId(tournamentId);
   if (parsed) return parsed;
 
   const { data, error } = await supabase
@@ -1688,15 +1697,15 @@ app.get('/api/scoreboard', async (req, res) => {
   try {
     timing('hit');
     const requestedTournamentId = req.query?.tournamentId;
-    if (requestedTournamentId && !isValidUuid(requestedTournamentId)) {
-      routeLog(route, 'invalid_uuid', { field: 'tournamentId', value: requestedTournamentId });
-      return res.status(400).json({ success: false, error: 'Ugyldig tournament_id (må være UUID).' });
+    if (requestedTournamentId && !isValidEntityId(requestedTournamentId)) {
+      routeLog(route, 'invalid_tournament_id', { field: 'tournamentId', value: requestedTournamentId });
+      return res.status(400).json({ success: false, error: 'Ugyldig tournament_id format.' });
     }
     const tournamentId = await resolveTournamentId(req.query.tournamentId);
     if (!tournamentId) return res.json({ tournament: null, scoreboard: [] });
-    if (!isValidUuid(tournamentId)) {
-      routeLog(route, 'invalid_uuid', { field: 'tournament_id', value: tournamentId });
-      return res.status(400).json({ success: false, error: 'Ugyldig tournament_id (må være UUID).' });
+    if (!isValidEntityId(tournamentId)) {
+      routeLog(route, 'invalid_tournament_id', { field: 'tournament_id', value: tournamentId });
+      return res.status(400).json({ success: false, error: 'Ugyldig tournament_id format.' });
     }
 
     const [tournament, teams, holeResp, awardClaimsResp] = await Promise.all([
@@ -1915,9 +1924,9 @@ async function requireTeamContext(req, { allowPinFallback = false } = {}) {
 
   const pin = String(req.body?.pin || req.query?.pin || '').trim();
   if (allowPinFallback && pin) {
-    const requestedTournamentId = normalizeUuid(req.body?.tournament_id || req.query?.tournament_id);
+    const requestedTournamentId = normalizeEntityId(req.body?.tournament_id || req.query?.tournament_id);
     if ((req.body?.tournament_id || req.query?.tournament_id) && !requestedTournamentId) {
-      routeLog('/api/team-context', 'invalid_uuid', {
+      routeLog('/api/team-context', 'invalid_tournament_id', {
         field: 'tournament_id',
         value: req.body?.tournament_id || req.query?.tournament_id
       });
@@ -1948,15 +1957,15 @@ app.get('/api/team/scorecard', async (req, res) => {
     });
     if (!team || !tournamentId) return res.status(401).json({ success: false, error: 'Team session mangler. Logg inn på nytt.' });
 
-    if (!isValidUuid(team.id)) {
-      routeLog(route, 'invalid_uuid', { field: 'team_id', value: team.id });
-      return res.status(400).json({ success: false, error: 'Ugyldig team_id (må være UUID).' });
+    if (!isValidEntityId(team.id)) {
+      routeLog(route, 'invalid_team_id', { field: 'team_id', value: team.id });
+      return res.status(400).json({ success: false, error: 'Ugyldig team_id format.' });
     }
-    const teamTournamentUuid = normalizeUuid(team.tournament_id);
-    const resolvedTournamentId = teamTournamentUuid || normalizeUuid(tournamentId);
+    const teamTournamentUuid = normalizeEntityId(team.tournament_id);
+    const resolvedTournamentId = teamTournamentUuid || normalizeEntityId(tournamentId);
     if (!resolvedTournamentId) {
-      routeLog(route, 'invalid_uuid', { field: 'tournament_id', value: team.tournament_id || tournamentId });
-      return res.status(400).json({ success: false, error: 'Ugyldig tournament_id (må være UUID).' });
+      routeLog(route, 'invalid_tournament_id', { field: 'tournament_id', value: team.tournament_id || tournamentId });
+      return res.status(400).json({ success: false, error: 'Ugyldig tournament_id format.' });
     }
     routeLog(route, 'tournament_resolved', { resolvedTournamentId, source: teamTournamentUuid ? 'team_session' : 'cookie_session' });
 
@@ -2291,13 +2300,13 @@ app.get('/api/chat/messages', async (req, res) => {
     const { team, tournamentId } = await requireTeamContext(req);
     routeLog(route, 'hit', { payload: { tournamentId, hasTeam: !!team } });
     if (!team || !tournamentId) return res.status(401).json({ success: false, error: 'Team session mangler. Logg inn på nytt.' });
-    if (!isValidUuid(team.id)) {
-      routeLog(route, 'invalid_uuid', { field: 'team_id', value: team.id });
-      return res.status(400).json({ success: false, error: 'Ugyldig team_id (må være UUID).' });
+    if (!isValidEntityId(team.id)) {
+      routeLog(route, 'invalid_team_id', { field: 'team_id', value: team.id });
+      return res.status(400).json({ success: false, error: 'Ugyldig team_id format.' });
     }
-    if (!isValidUuid(tournamentId)) {
-      routeLog(route, 'invalid_uuid', { field: 'tournament_id', value: tournamentId });
-      return res.status(400).json({ success: false, error: 'Ugyldig tournament_id (må være UUID).' });
+    if (!isValidEntityId(tournamentId)) {
+      routeLog(route, 'invalid_tournament_id', { field: 'tournament_id', value: tournamentId });
+      return res.status(400).json({ success: false, error: 'Ugyldig tournament_id format.' });
     }
     const privateChat = String(req.query?.private || '').toLowerCase();
     const teamFilter = privateChat === '1' || privateChat === 'true' ? team.id : null;
