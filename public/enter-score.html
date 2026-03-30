@@ -1017,8 +1017,20 @@ async function doLogin() {
     }, false);
     const d = await r.json();
     console.log('[login] raw response JSON from server', d);
-    const responseTeamId = String(d?.team_id || '').trim();
-    const responseTournamentId = String(d?.tournament_id || '').trim();
+    const responseTeamId = String(
+      d?.team_id
+      || d?.teamId
+      || d?.team?.id
+      || ''
+    ).trim();
+    const responseTournamentId = String(
+      d?.tournament_id
+      || d?.tournamentId
+      || d?.team?.tournament_id
+      || d?.team?.tournamentId
+      || d?.tournament?.id
+      || ''
+    ).trim();
     const failedChecks = [];
     if (d?.success !== true) failedChecks.push('success !== true');
     if (!responseTeamId) failedChecks.push('team_id missing');
@@ -1028,10 +1040,15 @@ async function doLogin() {
       teamPin = pin;
       sessionStorage.setItem('team_pin', pin);
       teamData = { id: responseTeamId, tournament_id: responseTournamentId };
-      localStorage.setItem(TEAM_ID_STORAGE_KEY, responseTeamId);
-      localStorage.setItem(TOURNAMENT_ID_STORAGE_KEY, responseTournamentId);
-      console.log('[login] stored team_id', localStorage.getItem(TEAM_ID_STORAGE_KEY));
-      console.log('[login] stored tournament_id', localStorage.getItem(TOURNAMENT_ID_STORAGE_KEY));
+      localStorage.setItem("team_id", responseTeamId);
+      localStorage.setItem("tournament_id", responseTournamentId);
+      const storedTeamId = localStorage.getItem("team_id");
+      const storedTournamentId = localStorage.getItem("tournament_id");
+      console.log('[login] stored team_id', storedTeamId);
+      console.log('[login] stored tournament_id', storedTournamentId);
+      if (!storedTeamId || !storedTournamentId) {
+        throw new Error('LOGIN_SESSION_PERSIST_FAILED');
+      }
       document.getElementById('loginScreen').classList.add('d-none');
       document.getElementById('scorecardScreen').classList.remove('d-none');
       mountChatUi();
@@ -1050,7 +1067,9 @@ async function doLogin() {
   } catch (e) {
     document.getElementById('loginError').textContent = e?.message === 'LOGIN_INVALID_RESPONSE_CONTRACT'
       ? 'Ugyldig lagøkt fra server. Kontakt administrator.'
-      : 'Tilkoblingsfeil, prøv igjen';
+      : e?.message === 'LOGIN_SESSION_PERSIST_FAILED'
+        ? 'Kunne ikke lagre lagøkt lokalt. Prøv igjen.'
+        : 'Tilkoblingsfeil, prøv igjen';
   }
   btn.disabled = false; btn.innerHTML = '<i class="fas fa-arrow-right-to-bracket"></i> Logg inn';
 }
@@ -1087,6 +1106,7 @@ async function loadScorecard() {
   try {
     const team_id = localStorage.getItem(TEAM_ID_STORAGE_KEY);
     const tournament_id = localStorage.getItem(TOURNAMENT_ID_STORAGE_KEY);
+    console.log('[scorecard:init] localStorage session read', { team_id, tournament_id });
 
     if (!team_id || !tournament_id) {
       console.warn('[scorecard] Missing team_id/tournament_id in localStorage; redirecting to login');
