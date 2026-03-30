@@ -647,6 +647,13 @@ function isBirdieEventType(type) {
   return type === 'birdie_shot' || type === 'birdie_shout';
 }
 
+function resolveImageSrc(path) {
+  if (!path) return '';
+  if (/^(https?:)?\/\//i.test(path) || path.startsWith('data:') || path.startsWith('blob:')) return path;
+  if (path.startsWith('/')) return `${window.location.origin}${path}`;
+  return path;
+}
+
 
 function normalizeChatMessage(message, fallbackPrefix = 'msg') {
   if (!message || typeof message !== 'object') return null;
@@ -1076,40 +1083,53 @@ function startChatEvents() {
   if (!isTeamAuthenticated()) return;
   if (chatEventSource) return;
   chatEventSource = new EventSource('/api/events');
+  const handleRealtimePayload = (payload) => {
+    if (!payload || typeof payload !== 'object') return;
+    if (payload.type === 'chat_message' && payload.data) {
+      const normalizedIncoming = normalizeChatMessage(payload.data, 'realtime');
+      const mergeResult = mergeChatMessages(normalizedIncoming);
+      const incomingId = Number(normalizedIncoming?.id) || 0;
+      if (!isChatWidgetOpen() && mergeResult.addedIds.length) {
+        if (!incomingId || incomingId > lastSeenChatId) {
+          unreadChatCount += mergeResult.addedIds.length;
+          syncChatUnreadIndicator();
+        }
+      }
+      renderChatMessages();
+    }
+    if (isBirdieEventType(payload.type) && payload.data) {
+      const birdieMessageId = getBirdieMessageId(payload.data);
+      if (birdieMessageId && seenBirdieMessageIds.has(birdieMessageId)) {
+        return;
+      }
+      if (birdieMessageId) seenBirdieMessageIds.add(birdieMessageId);
+
+      const shoutBtn = document.getElementById('birdieShoutBtn');
+      if (shoutBtn) {
+        shoutBtn.classList.add('is-celebrating');
+        setTimeout(() => shoutBtn.classList.remove('is-celebrating'), 1700);
+      }
+      if (navigator.vibrate) navigator.vibrate([120, 90, 120]);
+      notifyBirdieShot(payload.data);
+      showBirdieBanner(payload.data);
+      showToast(`⛳ ${payload.data.team_name || 'Et lag'} roper birdie! Alle spillere må ta birdie shots! 🥃`, 'info');
+    }
+  };
+
   chatEventSource.onmessage = (evt) => {
     try {
-      const payload = JSON.parse(evt.data);
-      if (payload.type === 'chat_message' && payload.data) {
-        const normalizedIncoming = normalizeChatMessage(payload.data, 'realtime');
-        const mergeResult = mergeChatMessages(normalizedIncoming);
-        const incomingId = Number(normalizedIncoming?.id) || 0;
-        if (!isChatWidgetOpen() && mergeResult.addedIds.length) {
-          if (!incomingId || incomingId > lastSeenChatId) {
-            unreadChatCount += mergeResult.addedIds.length;
-            syncChatUnreadIndicator();
-          }
-        }
-        renderChatMessages();
-      }
-      if (isBirdieEventType(payload.type) && payload.data) {
-        const birdieMessageId = getBirdieMessageId(payload.data);
-        if (birdieMessageId && seenBirdieMessageIds.has(birdieMessageId)) {
-          return;
-        }
-        if (birdieMessageId) seenBirdieMessageIds.add(birdieMessageId);
-
-        const shoutBtn = document.getElementById('birdieShoutBtn');
-        if (shoutBtn) {
-          shoutBtn.classList.add('is-celebrating');
-          setTimeout(() => shoutBtn.classList.remove('is-celebrating'), 1700);
-        }
-        if (navigator.vibrate) navigator.vibrate([120, 90, 120]);
-        notifyBirdieShot(payload.data);
-        showBirdieBanner(payload.data);
-        showToast(`⛳ ${payload.data.team_name || 'Et lag'} roper birdie! Alle spillere må ta birdie shots! 🥃`, 'info');
-      }
+      handleRealtimePayload(JSON.parse(evt.data));
     } catch (_) {}
   };
+  chatEventSource.addEventListener('chat_message', (evt) => {
+    try { handleRealtimePayload(JSON.parse(evt.data)); } catch (_) {}
+  });
+  chatEventSource.addEventListener('birdie_shout', (evt) => {
+    try { handleRealtimePayload({ ...JSON.parse(evt.data), type: 'birdie_shout' }); } catch (_) {}
+  });
+  chatEventSource.addEventListener('birdie_shot', (evt) => {
+    try { handleRealtimePayload({ ...JSON.parse(evt.data), type: 'birdie_shot' }); } catch (_) {}
+  });
   chatEventSource.onerror = () => {
     if (chatEventSource) {
       chatEventSource.close();
@@ -1346,6 +1366,9 @@ function renderCurrentHole() {
       <button class="claim-btn" onclick="submitClaim(${h.hole_number},'closest_to_pin')">Meld inn kandidat</button>
     </div>` : '';
 
+  const holePhotoSrc = hasPhoto ? resolveImageSrc(saved.photo_path) : '';
+  if (holePhotoSrc) console.debug('[hole-photo-preview] final frontend img.src:', holePhotoSrc);
+
   card.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
       <div>
@@ -1367,7 +1390,7 @@ function renderCurrentHole() {
           ? '<i class="fas fa-circle-check"></i> Bilde lagret'
           : '<i class="fas fa-camera"></i> Last opp bilde først'}
       </div>
-      ${hasPhoto ? `<img class="photo-preview" src="${saved.photo_path}" alt="Hull ${h.hole_number} bilde">` : ''}
+      ${hasPhoto ? `<img class="photo-preview" src="${holePhotoSrc}" alt="Hull ${h.hole_number} bilde">` : ''}
     ` : ''}
 
     <div class="score-stepper">
