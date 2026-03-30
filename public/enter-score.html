@@ -629,6 +629,9 @@ let unreadChatCount = 0;
 let lastSeenChatId = 0;
 let chatUiMounted = false;
 let chatSyntheticIdCounter = 0;
+let birdieBannerTimer = null;
+let positionFetchPromise = null;
+let positionLastFetchedAt = 0;
 const seenBirdieMessageIds = new Set();
 
 function getBirdieMessageId(payload) {
@@ -785,6 +788,19 @@ function markChatAsSeen() {
 
 function isChatWidgetOpen() {
   return document.getElementById('chatWidget')?.classList.contains('open');
+}
+
+function showBirdieBanner(payload) {
+  const banner = document.getElementById('notificationBanner');
+  if (!banner) return;
+  const teamName = escapeHtml(payload?.team_name || 'Et lag');
+  banner.classList.add('show');
+  banner.innerHTML = `<strong>⛳ ${teamName}</strong> roper birdie! Alle spillere må ta birdie shots! 🥃`;
+  if (birdieBannerTimer) clearTimeout(birdieBannerTimer);
+  birdieBannerTimer = setTimeout(() => {
+    birdieBannerTimer = null;
+    updateNotificationBanner();
+  }, 4200);
 }
 
 async function notifyBirdieShot(payload) {
@@ -1083,7 +1099,7 @@ function startChatEvents() {
         }
         if (navigator.vibrate) navigator.vibrate([120, 90, 120]);
         notifyBirdieShot(payload.data);
-        updateNotificationBanner();
+        showBirdieBanner(payload.data);
         showToast(`⛳ ${payload.data.team_name || 'Et lag'} roper birdie! Alle spillere må ta birdie shots! 🥃`, 'info');
       }
     } catch (_) {}
@@ -1229,7 +1245,11 @@ function updateSummary() {
   }
 }
 
-async function loadPosition() {
+async function loadPosition(force = false) {
+  const now = Date.now();
+  if (!force && now - positionLastFetchedAt < 5000) return;
+  if (positionFetchPromise) return positionFetchPromise;
+  positionFetchPromise = (async () => {
   try {
     const r = await fetch('/api/scoreboard');
     const d = await r.json();
@@ -1238,6 +1258,13 @@ async function loadPosition() {
       document.getElementById('summaryPos').textContent = idx >= 0 ? '#' + (idx + 1) : '—';
     }
   } catch(_) {}
+  positionLastFetchedAt = Date.now();
+  })();
+  try {
+    await positionFetchPromise;
+  } finally {
+    positionFetchPromise = null;
+  }
 }
 
 function renderDots() {
@@ -1528,7 +1555,7 @@ async function submitScore(holeNum) {
       updateSummary();
       renderDots();
       renderCurrentHole();
-      loadPosition();
+      loadPosition(true);
       renderScoreStatus(allHolesCompleted() ? 'finished' : 'active');
     } else {
       showToast(d.error || 'Kunne ikke lagre poengsum', 'error');

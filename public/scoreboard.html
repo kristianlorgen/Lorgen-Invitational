@@ -240,6 +240,10 @@ document.addEventListener('click', e => {
 let holes = [];
 let scoreboard = [];
 let currentTournament = null;
+let scoreboardFetchPromise = null;
+let scoreboardLastFetchAt = 0;
+let scoreboardRefreshTimer = null;
+let scoreboardSse = null;
 
 function formatToPar(n, holesCompleted) {
   if (holesCompleted === 0) return '<span class="score-par score-even">–</span>';
@@ -427,7 +431,11 @@ function renderAwards(awards) {
 }
 
 
-async function loadScoreboard() {
+async function loadScoreboard(force = false) {
+  const now = Date.now();
+  if (!force && now - scoreboardLastFetchAt < 1500) return;
+  if (scoreboardFetchPromise) return scoreboardFetchPromise;
+  scoreboardFetchPromise = (async () => {
   try {
     const r = await fetch('/api/scoreboard');
     const d = await r.json();
@@ -470,26 +478,51 @@ async function loadScoreboard() {
   } catch (e) {
     console.error(e);
   }
+  scoreboardLastFetchAt = Date.now();
+  })();
+  try {
+    await scoreboardFetchPromise;
+  } finally {
+    scoreboardFetchPromise = null;
+  }
+}
+
+function scheduleScoreboardRefresh() {
+  if (scoreboardRefreshTimer) return;
+  scoreboardRefreshTimer = setTimeout(async () => {
+    scoreboardRefreshTimer = null;
+    await loadScoreboard(true);
+  }, 250);
 }
 
 // SSE live-oppdateringer
 function connectSSE() {
-  const sse = new EventSource('/api/events');
-  sse.onmessage = e => {
+  if (scoreboardSse) return;
+  scoreboardSse = new EventSource('/api/events');
+  scoreboardSse.onmessage = e => {
     try {
       const data = JSON.parse(e.data);
       if (data.type === 'score_updated' || data.type === 'award_updated') {
-        loadScoreboard();
+        scheduleScoreboardRefresh();
       }
     } catch (_) {}
   };
-  sse.onerror = () => {
-    setTimeout(connectSSE, 5000);
+  scoreboardSse.onerror = () => {
+    if (scoreboardSse) {
+      scoreboardSse.close();
+      scoreboardSse = null;
+    }
+    setTimeout(connectSSE, 15000);
   };
 }
 
-loadScoreboard();
-connectSSE();
+loadScoreboard(true);
+fetch('/api/auth/status')
+  .then((r) => r.json())
+  .then((d) => {
+    if (d?.type === 'team' || d?.type === 'admin') connectSSE();
+  })
+  .catch(() => {});
 // Reserveoppdatering hvert 60. sekund
 setInterval(loadScoreboard, 60000);
 </script>
