@@ -639,6 +639,7 @@ let chatInitialized = false;
 let positionFetchPromise = null;
 let positionLastFetchedAt = 0;
 let positionPollIntervalId = null;
+let startupInProgress = false;
 const seenBirdieMessageIds = new Set();
 const TEAM_ID_STORAGE_KEY = 'team_id';
 const TOURNAMENT_ID_STORAGE_KEY = 'tournament_id';
@@ -659,7 +660,16 @@ function getSession() {
   };
 }
 
-function clearSessionAndRedirectLogin() {
+function isSessionErrorPayload(payload) {
+  return String(payload?.error || '').includes('Team session mangler');
+}
+
+function hasSessionAuthError(response, payload) {
+  return response?.status === 401 || response?.status === 403 || isSessionErrorPayload(payload);
+}
+
+function startLoginMode() {
+  console.log('startLoginMode');
   localStorage.removeItem(TEAM_ID_STORAGE_KEY);
   localStorage.removeItem(TOURNAMENT_ID_STORAGE_KEY);
   sessionStorage.removeItem('team_pin');
@@ -675,6 +685,9 @@ function clearSessionAndRedirectLogin() {
   document.getElementById('scorecardScreen')?.classList.add('d-none');
   document.getElementById('loginScreen')?.classList.remove('d-none');
   document.getElementById('loginError').textContent = '';
+  const chatWrap = document.getElementById('chatMessages');
+  if (chatWrap) chatWrap.innerHTML = '';
+  document.getElementById('chatWidget')?.classList.remove('open');
   syncChatUnreadIndicator();
 }
 
@@ -709,24 +722,14 @@ function startBackgroundPolling() {
   }, 60000);
 }
 
-function hasStartupSession() {
-  const teamId = localStorage.getItem(TEAM_ID_STORAGE_KEY);
-  const tournamentId = localStorage.getItem(TOURNAMENT_ID_STORAGE_KEY);
-  return !isInvalidStoredId(teamId) && !isInvalidStoredId(tournamentId);
-}
-
 function requireSession() {
   const session = getSession();
   if (!session?.team_id || !session?.tournament_id) {
     console.error('[session] Missing team session in localStorage', session);
-    clearSessionAndRedirectLogin();
+    startLoginMode();
     return null;
   }
   return session;
-}
-
-function hasValidStoredSession() {
-  return Boolean(getSession());
 }
 
 function withSessionParams(url, session) {
@@ -759,7 +762,15 @@ async function apiFetch(url, options = {}, requireAuthSession = true) {
     opts.body.set('tournament_id', session.tournament_id);
   }
 
-  return fetch(requestUrl, opts);
+  if (startupInProgress) {
+    console.log(`[startup api] ${method} ${requestUrl}`);
+  }
+  const response = await fetch(requestUrl, opts);
+  if (response.status === 401 || response.status === 403) {
+    startLoginMode();
+    throw new Error('TEAM_SESSION_INVALID');
+  }
+  return response;
 }
 
 function resolveImageUrl(url) {
@@ -1101,7 +1112,6 @@ async function doLogin() {
     if (d?.success === true && responseTeamId && responseTournamentId) {
       teamPin = pin;
       sessionStorage.setItem('team_pin', pin);
-      teamData = { id: responseTeamId, tournament_id: responseTournamentId };
       localStorage.setItem("team_id", responseTeamId);
       localStorage.setItem("tournament_id", responseTournamentId);
       const storedTeamId = localStorage.getItem("team_id");
@@ -1111,12 +1121,7 @@ async function doLogin() {
       if (!storedTeamId || !storedTournamentId) {
         throw new Error('LOGIN_SESSION_PERSIST_FAILED');
       }
-      document.getElementById('loginScreen').classList.add('d-none');
-      document.getElementById('scorecardScreen').classList.remove('d-none');
-      mountChatUi();
-      startBackgroundPolling();
-      renderScoreStatus('idle');
-      await loadScorecard();
+      await startTeamMode({ team_id: responseTeamId, tournament_id: responseTournamentId });
     } else if (d?.success !== true) {
       document.getElementById('loginError').textContent = d.error || 'Ugyldig PIN';
       digits.forEach(d => d.value = ''); digits[0].focus();
@@ -1141,7 +1146,7 @@ async function doLogout() {
   try {
     await apiFetch('/api/auth/logout', { method: 'POST' }, false);
   } catch (_) {}
-  clearSessionAndRedirectLogin();
+  startLoginMode();
 }
 
 function scrollToScoreInput() {
@@ -1161,6 +1166,10 @@ window.addEventListener('beforeunload', (e) => {
 });
 
 async function loadScorecard() {
+  if (!getSession()) {
+    console.log('[guard] blocked fetch loadScorecard: missing session');
+    return;
+  }
   try {
     const session = requireSession();
     if (!session) return;
@@ -1169,8 +1178,8 @@ async function loadScorecard() {
     const r = await apiFetch('/api/team/scorecard');
     const d = await r.json();
     if (!r.ok || !d?.success) {
-      if (String(d?.error || '').includes('Team session mangler')) {
-        clearSessionAndRedirectLogin();
+      if (hasSessionAuthError(r, d)) {
+        startLoginMode();
         return;
       }
       const setupError = d?.error === 'Turneringen mangler hulloppsett';
@@ -1243,7 +1252,7 @@ async function loadScorecard() {
       renderScoreStatus('active');
     }
   } catch (error) {
-    if (error?.message === 'TEAM_SESSION_MISSING') return;
+    if (error?.message === 'TEAM_SESSION_MISSING' || error?.message === 'TEAM_SESSION_INVALID') return;
     renderScoreStatus('error');
     showToast('Kunne ikke laste scorekortdata', 'error');
   }
@@ -1292,6 +1301,10 @@ function renderChatMessages({ autoScroll = false, forceScroll = false } = {}) {
 }
 
 async function loadChatMessages() {
+  if (!getSession()) {
+    console.log('[guard] blocked fetch loadChatMessages: missing session');
+    return;
+  }
   const session = requireSession();
   if (!session) return;
   if (!isTeamAuthenticated()) return;
@@ -1299,8 +1312,8 @@ async function loadChatMessages() {
     const r = await apiFetch('/api/chat/messages?private=1');
     const d = await r.json();
     if (!r.ok || !d?.success) {
-      if (String(d?.error || '').includes('Team session mangler')) {
-        clearSessionAndRedirectLogin();
+      if (hasSessionAuthError(r, d)) {
+        startLoginMode();
         return;
       }
       const wrap = document.getElementById('chatMessages');
@@ -1319,6 +1332,10 @@ async function loadChatMessages() {
 }
 
 function startChatEvents() {
+  if (!getSession()) {
+    console.log('[guard] blocked fetch startChatEvents: missing session');
+    return;
+  }
   const session = requireSession();
   if (!session) return;
   if (!isTeamAuthenticated()) return;
@@ -1400,7 +1417,13 @@ function startChatEvents() {
         clearTimeout(birdieRealtimeReadyTimer);
         birdieRealtimeReadyTimer = null;
       }
-      setTimeout(startChatEvents, 3000);
+      setTimeout(() => {
+        if (!getSession()) {
+          console.log('[guard] blocked fetch startChatEvents(retry): missing session');
+          return;
+        }
+        startChatEvents();
+      }, 3000);
     }
   };
 }
@@ -1421,6 +1444,10 @@ async function sendBirdieShoutout() {
       body: JSON.stringify({ note: 'Alle spillere må ta birdie shots! 🥃' })
     });
     const d = await r.json();
+    if (hasSessionAuthError(r, d)) {
+      startLoginMode();
+      return;
+    }
     if (!d.success) {
       showToast(d.error || 'Kunne ikke sende birdie shoutout', 'error');
     } else {
@@ -1471,6 +1498,10 @@ async function sendChatMessage(event) {
       });
     }
     const d = await r.json();
+    if (hasSessionAuthError(r, d)) {
+      startLoginMode();
+      return;
+    }
     if (!d.success) {
       if (d.code === 'STORAGE_BUCKET_NOT_FOUND' && d.bucket) {
         showToast('Chat-bilde feilet: mangler bucket "' + d.bucket + '"', 'error');
@@ -1538,6 +1569,10 @@ function updateSummary() {
 }
 
 async function loadPosition(force = false) {
+  if (!getSession()) {
+    console.log('[guard] blocked fetch loadPosition: missing session');
+    return;
+  }
   const session = requireSession();
   if (!session) return;
   const now = Date.now();
@@ -1547,8 +1582,8 @@ async function loadPosition(force = false) {
   try {
     const r = await apiFetch('/api/scoreboard');
     const d = await r.json();
-    if (!r.ok && String(d?.error || '').includes('Team session mangler')) {
-      clearSessionAndRedirectLogin();
+    if (hasSessionAuthError(r, d)) {
+      startLoginMode();
       return;
     }
     if (d.scoreboard && teamData) {
@@ -1817,6 +1852,10 @@ async function lockAndClose() {
   try {
     const r = await apiFetch('/api/team/lock-scorecard', { method: 'POST' });
     const d = await r.json();
+    if (hasSessionAuthError(r, d)) {
+      startLoginMode();
+      return;
+    }
     if (d.success) {
       teamData.locked = 1;
       closeSummary(); showLockedState();
@@ -1849,6 +1888,10 @@ async function submitScore(holeNum) {
       body: JSON.stringify({ hole_number: holeNum, score })
     });
     const d = await r.json();
+    if (hasSessionAuthError(r, d)) {
+      startLoginMode();
+      return;
+    }
     if (d.success) {
       if (!scoresData[holeNum]) scoresData[holeNum] = {};
       scoresData[holeNum].score = score;
@@ -1886,6 +1929,10 @@ document.getElementById('photoInput').addEventListener('change', async e => {
   try {
     const r = await apiFetch('/api/team/upload-photo/' + holeNum, { method: 'POST', body: fd });
     const d = await r.json();
+    if (hasSessionAuthError(r, d)) {
+      startLoginMode();
+      return;
+    }
     if (d.success) {
       if (!scoresData[holeNum]) scoresData[holeNum] = {};
       const resolvedSrc = resolveImageUrl(d.image_url);
@@ -1922,6 +1969,10 @@ async function submitClaim(holeNum, awardType) {
       body: JSON.stringify({ hole_number: holeNum, award_type: awardType, player_name, detail })
     });
     const d = await r.json();
+    if (hasSessionAuthError(r, d)) {
+      startLoginMode();
+      return;
+    }
     if (d.success) {
       claimsData[holeNum + '_' + awardType] = { player_name, detail, hole_number: holeNum, award_type: awardType };
       showToast('Kandidatur registrert!', 'success');
@@ -1930,37 +1981,42 @@ async function submitClaim(holeNum, awardType) {
   } catch(e) { showToast('Tilkoblingsfeil — prøv igjen', 'error'); }
 }
 
-async function checkSession() {
+async function startTeamMode(session) {
+  const activeSession = session || getSession();
+  if (!activeSession?.team_id || !activeSession?.tournament_id) {
+    console.log('[guard] blocked fetch startTeamMode: missing session');
+    startLoginMode();
+    return;
+  }
+  console.log('startTeamMode', activeSession);
+  teamPin = sessionStorage.getItem('team_pin') || '';
+  teamData = { id: activeSession.team_id, tournament_id: activeSession.tournament_id };
+  document.getElementById('loginScreen')?.classList.add('d-none');
+  document.getElementById('scorecardScreen')?.classList.remove('d-none');
+  hideScorecardErrorCard();
+  mountChatUi();
+  renderScoreStatus('idle');
+  startBackgroundPolling();
+  startupInProgress = true;
   try {
-    teamPin = sessionStorage.getItem('team_pin') || '';
-    if (!hasStartupSession()) {
-      clearSessionAndRedirectLogin();
-      return;
-    }
-    if (!hasValidStoredSession()) {
-      clearSessionAndRedirectLogin();
-      return;
-    }
-
     await initNotifications();
     await ensureNotificationPermission();
-    const session = getSession();
-    if (!session) {
-      clearSessionAndRedirectLogin();
-      return;
-    }
-
-    teamData = { id: session.team_id, tournament_id: session.tournament_id };
-    startBackgroundPolling();
-    document.getElementById('loginScreen').classList.add('d-none');
-    document.getElementById('scorecardScreen').classList.remove('d-none');
-    mountChatUi();
-    renderScoreStatus('idle');
     await loadScorecard();
-  } catch (_) {}
+  } finally {
+    startupInProgress = false;
+  }
 }
 
-checkSession();
+function initPageSessionFlow() {
+  const session = getSession();
+  if (!session?.team_id || !session?.tournament_id) {
+    startLoginMode();
+    return;
+  }
+  startTeamMode(session);
+}
+
+initPageSessionFlow();
 </script>
 </body>
 </html>
