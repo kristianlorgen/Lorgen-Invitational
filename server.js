@@ -105,6 +105,28 @@ function isMissingBucketError(error) {
   return message.includes('bucket not found') || (message.includes('bucket') && message.includes('not') && message.includes('found'));
 }
 
+function isUuidInputSyntaxError(error) {
+  const message = `${error?.message || ''} ${error?.details || ''}`.toLowerCase();
+  return error?.code === '22P02' && message.includes('invalid input syntax for type uuid');
+}
+
+async function loadTeamMembersSafe(teamId, route) {
+  const membersResp = await supabase
+    .from('team_members')
+    .select('players(name, handicap)')
+    .eq('team_id', teamId);
+
+  if (membersResp.error && isUuidInputSyntaxError(membersResp.error)) {
+    routeLog(route, 'team_members_uuid_type_mismatch_fallback', {
+      teamId,
+      error: membersResp.error?.message || null
+    });
+    return [];
+  }
+  if (membersResp.error) throw membersResp.error;
+  return Array.isArray(membersResp.data) ? membersResp.data : [];
+}
+
 function buildTournamentStoragePath({ tournamentId, teamId, holeNumber, extension }) {
   const safeTournamentId = Number.isFinite(Number(tournamentId)) ? Number(tournamentId) : 0;
   const safeTeamId = Number.isFinite(Number(teamId)) ? Number(teamId) : 0;
@@ -401,12 +423,7 @@ async function resolveTeamByTournamentAndPin(tournamentId, pin) {
   if (!teamResult.data) return null;
 
   const team = normalizeTeamRow(teamResult.data);
-  const { data: members, error: membersError } = await supabase
-    .from('team_members')
-    .select('players(name, handicap)')
-    .eq('team_id', team.id);
-  if (membersError) throw membersError;
-
+  const members = await loadTeamMembersSafe(team.id, 'resolveTeamByTournamentAndPin');
   const players = (members || []).map((row) => row.players).filter(Boolean);
   const [player1, player2] = players;
   return {
@@ -541,11 +558,7 @@ async function resolveTeamFromCookie(req) {
   if (!team) return null;
 
   const normalized = normalizeTeamRow(team);
-  const { data: members, error: membersError } = await supabase
-    .from('team_members')
-    .select('players(name, handicap)')
-    .eq('team_id', normalized.id);
-  if (membersError) throw membersError;
+  const members = await loadTeamMembersSafe(normalized.id, 'resolveTeamFromCookie');
   const players = (members || []).map((row) => row.players).filter(Boolean);
   return {
     ...normalized,
@@ -1984,20 +1997,50 @@ app.get('/api/team/scorecard', async (req, res) => {
     ]);
     if (tournamentResp.error) throw tournamentResp.error;
     if (holesResp.error) throw holesResp.error;
-    if (scoresResp.error) throw scoresResp.error;
-    if (claimsResp.error && !isMissingTableError(claimsResp.error, 'award_claims')) throw claimsResp.error;
+    const safeScoresResp = { ...scoresResp };
+    if (safeScoresResp.error && isUuidInputSyntaxError(safeScoresResp.error)) {
+      routeLog(route, 'scores_uuid_type_mismatch_fallback', {
+        teamId: team.id,
+        tournamentId: resolvedTournamentId,
+        error: safeScoresResp.error?.message || null
+      });
+      safeScoresResp.data = [];
+      safeScoresResp.error = null;
+    }
+    if (safeScoresResp.error) throw safeScoresResp.error;
+    const safeClaimsResp = { ...claimsResp };
+    if (safeClaimsResp.error && isUuidInputSyntaxError(safeClaimsResp.error)) {
+      routeLog(route, 'award_claims_uuid_type_mismatch_fallback', {
+        teamId: team.id,
+        tournamentId: resolvedTournamentId,
+        error: safeClaimsResp.error?.message || null
+      });
+      safeClaimsResp.data = [];
+      safeClaimsResp.error = null;
+    }
+    if (safeClaimsResp.error && !isMissingTableError(safeClaimsResp.error, 'award_claims')) throw safeClaimsResp.error;
     if (holeSponsorsResp.error && !isMissingTableError(holeSponsorsResp.error, 'sponsors')) throw holeSponsorsResp.error;
-    if (holeImagesResp.error && !isMissingTableError(holeImagesResp.error, 'hole_images')) throw holeImagesResp.error;
+    const safeHoleImagesResp = { ...holeImagesResp };
+    if (safeHoleImagesResp.error && isUuidInputSyntaxError(safeHoleImagesResp.error)) {
+      routeLog(route, 'hole_images_uuid_type_mismatch_fallback', {
+        teamId: team.id,
+        tournamentId: resolvedTournamentId,
+        error: safeHoleImagesResp.error?.message || null
+      });
+      safeHoleImagesResp.data = [];
+      safeHoleImagesResp.error = null;
+    }
+    if (safeHoleImagesResp.error && !isMissingTableError(safeHoleImagesResp.error, 'hole_images')) throw safeHoleImagesResp.error;
 
     routeLog(route, 'dataset_loaded', {
       teamId: team.id,
       tournamentId: resolvedTournamentId,
       tournamentFound: !!tournamentResp.data,
       tournamentHolesCount: Array.isArray(holesResp.data) ? holesResp.data.length : 0,
-      scoresCount: Array.isArray(scoresResp.data) ? scoresResp.data.length : 0,
-      claimsCount: Array.isArray(claimsResp.data) ? claimsResp.data.length : 0,
+      scoresCount: Array.isArray(safeScoresResp.data) ? safeScoresResp.data.length : 0,
+      claimsCount: Array.isArray(safeClaimsResp.data) ? safeClaimsResp.data.length : 0,
       holeSponsorsCount: Array.isArray(holeSponsorsResp.data) ? holeSponsorsResp.data.length : 0,
-      holeImagesCount: Array.isArray(holeImagesResp.data) ? holeImagesResp.data.length : 0
+      holeImagesCount: Array.isArray(safeHoleImagesResp.data) ? safeHoleImagesResp.data.length : 0
     });
 
     if (!tournamentResp.data) {
@@ -2029,13 +2072,13 @@ app.get('/api/team/scorecard', async (req, res) => {
     }
 
     const latestHoleImageByNumber = new Map();
-    for (const row of (holeImagesResp.data || [])) {
+    for (const row of (safeHoleImagesResp.data || [])) {
       const holeNumber = asInt(row?.hole_number);
       if (!holeNumber || latestHoleImageByNumber.has(holeNumber)) continue;
       latestHoleImageByNumber.set(holeNumber, String(row.image_url || '').trim() || null);
     }
 
-    const normalizedScores = (scoresResp.data || []).map((row) => {
+    const normalizedScores = (safeScoresResp.data || []).map((row) => {
       const holeNumber = asInt(row?.hole_number);
       const imageUrl = latestHoleImageByNumber.get(holeNumber) || null;
       return withCanonicalImageField({ ...row, photo_path: imageUrl || row.photo_path || null }, req, 'photo_path');
@@ -2059,7 +2102,7 @@ app.get('/api/team/scorecard', async (req, res) => {
         image_url: latestHoleImageByNumber.get(asInt(hole?.hole_number)) || null
       })),
       scores: normalizedScores,
-      claims: (claimsResp.data || []).map((claim) => ({
+      claims: (safeClaimsResp.data || []).map((claim) => ({
         ...claim,
         detail: claim?.detail ?? claim?.value ?? null,
         value: claim?.value ?? claim?.detail ?? null
