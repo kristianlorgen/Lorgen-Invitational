@@ -1026,9 +1026,17 @@ async function doLogin() {
       teamPin = pin;
       sessionStorage.setItem('team_pin', pin);
       teamData = d.team;
-      if (isValidUuid(d?.team?.id)) localStorage.setItem(TEAM_ID_STORAGE_KEY, d.team.id);
-      const tournamentId = d?.team?.tournament_id || d?.tournament_id;
-      if (isValidUuid(tournamentId)) localStorage.setItem(TOURNAMENT_ID_STORAGE_KEY, tournamentId);
+      const responseTeamId = String(d?.team_id || '').trim();
+      const responseTournamentId = String(d?.tournament_id || '').trim();
+      if (!isValidUuid(responseTeamId) || !isValidUuid(responseTournamentId)) {
+        throw new Error('LOGIN_INVALID_IDS');
+      }
+      localStorage.setItem(TEAM_ID_STORAGE_KEY, responseTeamId);
+      localStorage.setItem(TOURNAMENT_ID_STORAGE_KEY, responseTournamentId);
+      console.log('[login] stored session IDs', {
+        team_id: localStorage.getItem(TEAM_ID_STORAGE_KEY),
+        tournament_id: localStorage.getItem(TOURNAMENT_ID_STORAGE_KEY)
+      });
       document.getElementById('loginScreen').classList.add('d-none');
       document.getElementById('scorecardScreen').classList.remove('d-none');
       mountChatUi();
@@ -1038,7 +1046,11 @@ async function doLogin() {
       document.getElementById('loginError').textContent = d.error || 'Ugyldig PIN';
       digits.forEach(d => d.value = ''); digits[0].focus();
     }
-  } catch (e) { document.getElementById('loginError').textContent = 'Tilkoblingsfeil, prøv igjen'; }
+  } catch (e) {
+    document.getElementById('loginError').textContent = e?.message === 'LOGIN_INVALID_IDS'
+      ? 'Ugyldig lagøkt fra server. Kontakt administrator.'
+      : 'Tilkoblingsfeil, prøv igjen';
+  }
   btn.disabled = false; btn.innerHTML = '<i class="fas fa-arrow-right-to-bracket"></i> Logg inn';
 }
 
@@ -1072,6 +1084,28 @@ window.addEventListener('beforeunload', (e) => {
 
 async function loadScorecard() {
   try {
+    const team_id = localStorage.getItem(TEAM_ID_STORAGE_KEY);
+    const tournament_id = localStorage.getItem(TOURNAMENT_ID_STORAGE_KEY);
+
+    if (!team_id || !tournament_id) {
+      console.warn('[scorecard] Missing team_id/tournament_id in localStorage; redirecting to login');
+      clearSessionAndRedirectLogin();
+      return;
+    }
+
+    console.log('team_id:', team_id);
+    if (team_id.length < 10) {
+      console.error('[scorecard] Rejected non-UUID-like team_id from localStorage', { team_id });
+      clearSessionAndRedirectLogin();
+      return;
+    }
+
+    if (!isValidUuid(team_id) || !isValidUuid(tournament_id)) {
+      console.error('[scorecard] Invalid UUID format in localStorage session', { team_id, tournament_id });
+      clearSessionAndRedirectLogin();
+      return;
+    }
+
     const r = await apiFetch('/api/team/scorecard');
     const d = await r.json();
     if (!r.ok || !d?.success) {
