@@ -1194,16 +1194,15 @@ async function doLogin() {
     console.log('[login] raw response JSON from server', d);
     const responseTeamId = String(d?.team_id || '').trim();
     const responseTournamentId = String(d?.tournament_id || '').trim();
-    const responsePin = String(d?.pin || '').trim();
+    const responsePin = String(d?.pin || d?.pin_code || pin).trim();
     const failedChecks = [];
     if (d?.success !== true) failedChecks.push('success !== true');
     if (!responseTeamId) failedChecks.push('team_id missing');
     if (!responseTournamentId) failedChecks.push('tournament_id missing');
-    if (!responsePin) failedChecks.push('pin missing');
 
-    if (d?.success === true && responseTeamId && responseTournamentId && responsePin) {
+    if (d?.success === true && responseTeamId && responseTournamentId) {
       teamPin = responsePin;
-      sessionStorage.setItem('team_pin', responsePin);
+      if (responsePin) sessionStorage.setItem('team_pin', responsePin);
       localStorage.setItem("team_id", responseTeamId);
       localStorage.setItem("tournament_id", responseTournamentId);
       const storedTeamId = localStorage.getItem("team_id");
