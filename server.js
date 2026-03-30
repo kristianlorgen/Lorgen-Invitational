@@ -618,14 +618,12 @@ app.post('/api/auth/team-login', async (req, res) => {
 
     setTeamAuthCookie(res, tournamentId, team.id);
     routeLog(route, 'db_action', { action: 'team_lookup_success', tournamentId, teamId: team.id });
-    const responsePayload = {
+    return res.json({
       success: true,
       team_id: team.id,
       tournament_id: team.tournament_id,
       pin: team.pin
-    };
-    console.log('[team-login] response payload', responsePayload);
-    return res.json(responsePayload);
+    });
   } catch (error) {
     routeLog(route, 'error', { error: error?.message || String(error) });
     return res.status(500).json({ success: false, error: error?.message || 'Innlogging feilet' });
