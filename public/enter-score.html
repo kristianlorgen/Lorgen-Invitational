@@ -574,7 +574,10 @@ function toggleChatWidget() {
   const widget = document.getElementById('chatWidget');
   if (!widget) return;
   widget.classList.toggle('open');
-  if (widget.classList.contains('open')) markChatAsSeen();
+  if (widget.classList.contains('open')) {
+    markChatAsSeen();
+    scrollChatToNewest(true);
+  }
 }
 
 document.addEventListener('click', e => {
@@ -630,6 +633,9 @@ let lastSeenChatId = 0;
 let chatUiMounted = false;
 let chatSyntheticIdCounter = 0;
 let birdieBannerTimer = null;
+let birdieRealtimeReady = false;
+let birdieRealtimeReadyTimer = null;
+let chatInitialized = false;
 let positionFetchPromise = null;
 let positionLastFetchedAt = 0;
 const seenBirdieMessageIds = new Set();
@@ -809,6 +815,23 @@ function markChatAsSeen() {
 
 function isChatWidgetOpen() {
   return document.getElementById('chatWidget')?.classList.contains('open');
+}
+
+function isChatNearBottom(wrap, threshold = 72) {
+  if (!wrap) return false;
+  return (wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight) <= threshold;
+}
+
+function scrollChatToNewest(force = false) {
+  const wrap = document.getElementById('chatMessages');
+  if (!wrap) return;
+  if (!force && !isChatNearBottom(wrap)) return;
+  requestAnimationFrame(() => {
+    wrap.scrollTop = wrap.scrollHeight;
+    requestAnimationFrame(() => {
+      wrap.scrollTop = wrap.scrollHeight;
+    });
+  });
 }
 
 function showBirdieBanner(payload) {
@@ -1010,6 +1033,7 @@ async function loadScorecard() {
     renderAll();
     loadPosition();
     if (isTeamAuthenticated()) {
+      chatInitialized = false;
       await loadChatMessages();
       startChatEvents();
     }
@@ -1044,11 +1068,13 @@ function escapeHtml(text) {
     .replaceAll("'", '&#39;');
 }
 
-function renderChatMessages() {
+function renderChatMessages({ autoScroll = false, forceScroll = false } = {}) {
   const wrap = document.getElementById('chatMessages');
   if (!wrap) return;
+  const shouldStickToBottom = forceScroll || (autoScroll && isChatNearBottom(wrap));
   if (!chatMessages.length) {
     wrap.innerHTML = '<div class="team-chat-empty">Ingen meldinger ennå. Vær førstemann ut! 💬</div>';
+    if (forceScroll) scrollChatToNewest(true);
     return;
   }
   wrap.innerHTML = chatMessages.map(m => `
@@ -1062,7 +1088,7 @@ function renderChatMessages() {
       ${m.note ? `<div class="team-chat-note">${escapeHtml(m.note)}</div>` : ''}
     </div>
   `).join('');
-  wrap.scrollTop = wrap.scrollHeight;
+  if (shouldStickToBottom) scrollChatToNewest(true);
   const newestMessage = chatMessages[chatMessages.length - 1];
   if (newestMessage?.id) lastSeenChatId = Math.max(lastSeenChatId, Number(newestMessage.id) || 0);
   if (isChatWidgetOpen()) markChatAsSeen();
@@ -1080,20 +1106,29 @@ async function loadChatMessages() {
     }
     chatMessages = [];
     mergeChatMessages(Array.isArray(d.messages) ? d.messages : []);
-    renderChatMessages();
+    renderChatMessages({ autoScroll: true, forceScroll: true });
+    chatInitialized = true;
   } catch (_) {
     const wrap = document.getElementById('chatMessages');
     if (wrap) wrap.innerHTML = '<div class="team-chat-empty">Kunne ikke hente chat nå.</div>';
+    chatInitialized = true;
   }
 }
 
 function startChatEvents() {
   if (!isTeamAuthenticated()) return;
   if (chatEventSource) return;
+  birdieRealtimeReady = false;
+  if (birdieRealtimeReadyTimer) {
+    clearTimeout(birdieRealtimeReadyTimer);
+    birdieRealtimeReadyTimer = null;
+  }
   chatEventSource = new EventSource('/api/events');
   const handleRealtimePayload = (payload) => {
     if (!payload || typeof payload !== 'object') return;
     if (payload.type === 'chat_message' && payload.data) {
+      const wrap = document.getElementById('chatMessages');
+      const shouldScroll = isChatWidgetOpen() && isChatNearBottom(wrap);
       const normalizedIncoming = normalizeChatMessage(payload.data, 'realtime');
       const mergeResult = mergeChatMessages(normalizedIncoming);
       const incomingId = Number(normalizedIncoming?.id) || 0;
@@ -1103,7 +1138,7 @@ function startChatEvents() {
           syncChatUnreadIndicator();
         }
       }
-      renderChatMessages();
+      renderChatMessages({ autoScroll: shouldScroll, forceScroll: false });
     }
     if (isBirdieEventType(payload.type) && payload.data) {
       const birdiePayload = payload.data;
@@ -1112,6 +1147,7 @@ function startChatEvents() {
         return;
       }
       if (birdieMessageId) seenBirdieMessageIds.add(birdieMessageId);
+      if (!chatInitialized || !birdieRealtimeReady) return;
 
       const shoutBtn = document.getElementById('birdieShoutBtn');
       if (shoutBtn) {
@@ -1135,6 +1171,12 @@ function startChatEvents() {
       handleRealtimePayload(JSON.parse(evt.data));
     } catch (_) {}
   };
+  chatEventSource.onopen = () => {
+    birdieRealtimeReadyTimer = setTimeout(() => {
+      birdieRealtimeReady = chatInitialized;
+      birdieRealtimeReadyTimer = null;
+    }, 1000);
+  };
   chatEventSource.addEventListener('chat_message', (evt) => {
     try { handleRealtimePayload(JSON.parse(evt.data)); } catch (_) {}
   });
@@ -1148,6 +1190,11 @@ function startChatEvents() {
     if (chatEventSource) {
       chatEventSource.close();
       chatEventSource = null;
+      birdieRealtimeReady = false;
+      if (birdieRealtimeReadyTimer) {
+        clearTimeout(birdieRealtimeReadyTimer);
+        birdieRealtimeReadyTimer = null;
+      }
       setTimeout(startChatEvents, 3000);
     }
   };
