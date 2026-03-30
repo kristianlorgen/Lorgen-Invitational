@@ -111,6 +111,15 @@ function toAbsoluteMediaUrl(value, req) {
   return data?.publicUrl || raw;
 }
 
+function withCanonicalImageField(row, req, sourceField = 'photo_path') {
+  const resolved = toAbsoluteMediaUrl(row?.[sourceField], req);
+  return {
+    ...row,
+    [sourceField]: resolved,
+    image_url: resolved
+  };
+}
+
 function buildBucketMissingError() {
   return {
     success: false,
@@ -1907,15 +1916,23 @@ app.get('/api/team/scorecard', async (req, res) => {
       return res.status(422).json({ success: false, error: 'Turneringen mangler hulloppsett', code: 'MISSING_HOLE_SETUP' });
     }
 
+    const normalizedScores = (scoresResp.data || []).map((row) => withCanonicalImageField(row, req, 'photo_path'));
+    routeLog(route, 'scorecard_payload_image_debug', {
+      sample: normalizedScores.slice(0, 2).map((row) => ({
+        id: row.id,
+        hole_number: row.hole_number,
+        photo_path: row.photo_path,
+        image_url: row.image_url
+      })),
+      count: normalizedScores.length
+    });
+
     const payload = {
       success: true,
       team,
       tournament: tournamentResp.data || null,
       holes: normalizeHoles(holeRows),
-      scores: (scoresResp.data || []).map((row) => ({
-        ...row,
-        photo_path: toAbsoluteMediaUrl(row?.photo_path, req)
-      })),
+      scores: normalizedScores,
       claims: (claimsResp.data || []).map((claim) => ({
         ...claim,
         detail: claim?.detail ?? claim?.value ?? null,
@@ -2024,11 +2041,22 @@ app.post('/api/team/upload-photo/:holeNum', upload.single('photo'), async (req, 
       photo_path: photoPath
     };
     const data = await saveScoreCompat(scorePayload);
+    const dbLoggedRow = {
+      id: data?.id || null,
+      tournament_id: data?.tournament_id || tournamentId,
+      team_id: data?.team_id || team.id,
+      hole_number: data?.hole_number || holeNum,
+      photo_path: data?.photo_path || photoPath,
+      image_url: toAbsoluteMediaUrl(data?.photo_path || photoPath, req)
+    };
+    routeLog(route, 'upload_photo_db_row_debug', dbLoggedRow);
     routeLog(route, 'db_action', { action: 'upload_photo', scoreId: data?.id, storagePath });
+    const canonicalPhotoUrl = toAbsoluteMediaUrl(photoPath, req);
     return res.json({
       success: true,
-      photo_path: toAbsoluteMediaUrl(photoPath, req),
-      score: data ? { ...data, photo_path: toAbsoluteMediaUrl(data.photo_path, req) } : data
+      photo_path: canonicalPhotoUrl,
+      image_url: canonicalPhotoUrl,
+      score: data ? withCanonicalImageField(data, req, 'photo_path') : data
     });
   } catch (error) {
     if (isMissingBucketError(error)) {
@@ -2234,7 +2262,9 @@ app.post('/api/chat/send', upload.single('image'), async (req, res) => {
 app.get('/api/gallery', async (req, res) => {
   const route = '/api/gallery';
   try {
-    const tournamentId = asInt(req.query?.tournament_id) || await resolveTournamentId(null);
+    const requestedTournamentId = asInt(req.query?.tournament_id);
+    const teamFromCookie = requestedTournamentId ? null : await resolveTeamFromCookie(req);
+    const tournamentId = requestedTournamentId || asInt(teamFromCookie?.tournament_id) || await resolveTournamentId(null);
     routeLog(route, 'hit', { payload: { tournamentId } });
     if (!tournamentId) return res.json({ success: true, photos: [] });
     const scorePhotosResp = await supabase.from('scores')
@@ -2260,21 +2290,27 @@ app.get('/api/gallery', async (req, res) => {
       id: `score-${row.id}`,
       photo_ref: `score-${row.id}`,
       photo_path: toAbsoluteMediaUrl(row.photo_path, req),
+      image_url: toAbsoluteMediaUrl(row.photo_path, req),
       hole_number: row.hole_number,
       team_name: teamsById[row.team_id]?.team_name || 'Lag',
       created_at: row.created_at,
       votes: 0,
-      voted: false
+      voted: false,
+      source: 'score',
+      tournament_id: tournamentId
     }));
     const galleryPhotos = (galleryResp.data || []).map((row) => ({
       id: `gallery-${row.id}`,
       photo_ref: `gallery-${row.id}`,
       photo_path: toAbsoluteMediaUrl(row.photo_path, req),
+      image_url: toAbsoluteMediaUrl(row.photo_path, req),
       hole_number: null,
       team_name: row.caption || 'Turneringsbilde',
       created_at: row.uploaded_at,
       votes: 0,
-      voted: false
+      voted: false,
+      source: 'gallery',
+      tournament_id: row.tournament_id || tournamentId
     }));
     const photos = [...galleryPhotos, ...scorePhotos]
       .filter((row) => !!row.photo_path)
@@ -2283,6 +2319,16 @@ app.get('/api/gallery', async (req, res) => {
       stored_image_path: 'mixed_gallery_paths',
       resolved_public_url: photos[0]?.photo_path || null,
       frontend_src_used: photos[0]?.photo_path || null,
+      count: photos.length
+    });
+    routeLog(route, 'gallery_payload_image_debug', {
+      sample: photos.slice(0, 3).map((row) => ({
+        photo_ref: row.photo_ref,
+        source: row.source,
+        tournament_id: row.tournament_id,
+        photo_path: row.photo_path,
+        image_url: row.image_url
+      })),
       count: photos.length
     });
     routeLog(route, 'db_action', { action: 'fetch_gallery_public', count: photos.length, tournamentId });
