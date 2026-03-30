@@ -1022,21 +1022,20 @@ async function doLogin() {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin })
     }, false);
     const d = await r.json();
+    console.log('[login] API response payload', d);
     if (d.success) {
       teamPin = pin;
       sessionStorage.setItem('team_pin', pin);
-      teamData = d.team;
       const responseTeamId = String(d?.team_id || '').trim();
       const responseTournamentId = String(d?.tournament_id || '').trim();
       if (!isValidUuid(responseTeamId) || !isValidUuid(responseTournamentId)) {
         throw new Error('LOGIN_INVALID_IDS');
       }
+      teamData = { id: responseTeamId, tournament_id: responseTournamentId };
       localStorage.setItem(TEAM_ID_STORAGE_KEY, responseTeamId);
       localStorage.setItem(TOURNAMENT_ID_STORAGE_KEY, responseTournamentId);
-      console.log('[login] stored session IDs', {
-        team_id: localStorage.getItem(TEAM_ID_STORAGE_KEY),
-        tournament_id: localStorage.getItem(TOURNAMENT_ID_STORAGE_KEY)
-      });
+      console.log('[login] stored team_id', localStorage.getItem(TEAM_ID_STORAGE_KEY));
+      console.log('[login] stored tournament_id', localStorage.getItem(TOURNAMENT_ID_STORAGE_KEY));
       document.getElementById('loginScreen').classList.add('d-none');
       document.getElementById('scorecardScreen').classList.remove('d-none');
       mountChatUi();
