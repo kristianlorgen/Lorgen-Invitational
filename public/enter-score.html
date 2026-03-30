@@ -669,7 +669,11 @@ function resolveImageSrc(path) {
 }
 
 function getCanonicalImageUrl(payload) {
-  return payload?.image_url || payload?.photo_url || payload?.photo_path || '';
+  return payload?.image_url || '';
+}
+
+function getHoleImageUrl(hole, scoreRow) {
+  return (scoreRow?.image_url || hole?.image_url || '').trim();
 }
 
 
@@ -1037,7 +1041,7 @@ async function loadScorecard() {
     claimsData = {};
     holeSponsorsMap = {};
     nextScores.forEach((s) => {
-      scoresData[s.hole_number] = { ...s, image_url: getCanonicalImageUrl(s) || null };
+      scoresData[s.hole_number] = { ...s, image_url: s.image_url || null };
     });
     nextClaims.forEach((c) => { claimsData[c.hole_number + '_' + c.award_type] = c; });
     nextHoleSponsors.forEach((s) => { holeSponsorsMap[s.hole_number] = s; });
@@ -1372,7 +1376,7 @@ function renderDots() {
     const saved = scoresData[h.hole_number];
     const hasScore = saved && saved.score > 0;
     const needsPhoto = h.requires_photo;
-    const hasPhoto = !!getCanonicalImageUrl(saved);
+    const hasPhoto = !!getHoleImageUrl(h, saved);
     let cls = 'hole-dot';
     if (hasScore) cls += ' done';
     if (i === currentHoleIndex) cls += ' active';
@@ -1386,7 +1390,7 @@ function renderCurrentHole() {
   const h = holesData[currentHoleIndex];
   const card = document.getElementById('singleHoleCard');
   const saved    = scoresData[h.hole_number];
-  const hasPhoto = !!getCanonicalImageUrl(saved);
+  const hasPhoto = !!getHoleImageUrl(h, saved);
   const hasScore = saved && saved.score > 0;
   const needsPhoto = h.requires_photo;
   const blocked    = needsPhoto && !hasPhoto;
@@ -1439,7 +1443,7 @@ function renderCurrentHole() {
       <button class="claim-btn" onclick="submitClaim(${h.hole_number},'closest_to_pin')">Meld inn kandidat</button>
     </div>` : '';
 
-  const holePhotoSrc = hasPhoto ? resolveImageSrc(getCanonicalImageUrl(saved)) : '';
+  const holePhotoSrc = hasPhoto ? resolveImageSrc(getHoleImageUrl(h, saved)) : '';
   if (holePhotoSrc) console.debug('[hole-photo-preview] final frontend img.src:', holePhotoSrc);
 
   card.innerHTML = `
@@ -1689,17 +1693,14 @@ document.getElementById('photoInput').addEventListener('change', async e => {
     const d = await r.json();
     if (d.success) {
       if (!scoresData[holeNum]) scoresData[holeNum] = {};
-      const canonicalImage = getCanonicalImageUrl(d);
-      const resolvedSrc = resolveImageUrl(canonicalImage);
+      const resolvedSrc = resolveImageUrl(d.image_url);
       console.debug('[image-debug] upload_response', {
         hole_number: holeNum,
-        stored_image_path: d.storage_path || null,
-        resolved_public_url: canonicalImage,
+        resolved_public_url: d.image_url || null,
         frontend_src_used: resolvedSrc
       });
       console.debug('[hole-photo-preview] final frontend img.src:', resolvedSrc);
       scoresData[holeNum].image_url = resolvedSrc;
-      scoresData[holeNum].photo_path = resolvedSrc;
       showToast('Bilde lastet opp for hull ' + holeNum + '!', 'success');
     } else {
       if (d.code === 'STORAGE_BUCKET_NOT_FOUND' && d.bucket) {
