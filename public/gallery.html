@@ -276,6 +276,10 @@ function resolveGalleryImageSrc(path) {
   return path;
 }
 
+function getCanonicalImageUrl(payload) {
+  return payload?.image_url || payload?.photo_url || payload?.photo_path || '';
+}
+
 function renderWinner(photos) {
   const section = document.getElementById('winnerSection');
   const content = document.getElementById('winnerContent');
@@ -285,7 +289,7 @@ function renderWinner(photos) {
     return;
   }
   section.style.display = '';
-  const winnerSrc = resolveGalleryImageSrc(topVoted.photo_path);
+  const winnerSrc = resolveGalleryImageSrc(getCanonicalImageUrl(topVoted));
   console.debug('[gallery-winner] final frontend img.src:', winnerSrc);
   content.innerHTML = `
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
@@ -329,7 +333,7 @@ function renderGallery(photosArr) {
   grid.innerHTML = photosArr.map((p, idx) => {
     const isWinner = idx === 0 && p.votes > 0;
     const sub = p.hole_number ? `Hull ${p.hole_number}` : (p.source === 'gallery' ? 'Arrangørbilde' : '');
-    const photoSrc = resolveGalleryImageSrc(p.photo_path);
+    const photoSrc = resolveGalleryImageSrc(getCanonicalImageUrl(p));
     console.debug('[gallery-card] final frontend img.src:', photoSrc);
     return `
     <div class="gallery-card-wrap">
@@ -358,18 +362,27 @@ async function loadGallery() {
   try {
     const r = await fetch('/api/gallery');
     const d = await r.json();
+    console.debug('[gallery-api] payload image fields:', (d.photos || []).slice(0, 5).map((p) => ({
+      id: p.photo_ref || p.id,
+      source: p.source || null,
+      tournament_id: p.tournament_id || null,
+      photo_path: p.photo_path || null,
+      image_url: p.image_url || null
+    })));
     photos = (d.photos || []).map((p) => {
-      const frontendSrc = resolveImageUrl(p.photo_path);
+      const canonicalImage = getCanonicalImageUrl(p);
+      const frontendSrc = resolveImageUrl(canonicalImage);
       console.debug('[image-debug] gallery_photo', {
         id: p.photo_ref || p.id,
         stored_image_path: p.storage_path || null,
-        resolved_public_url: p.photo_path,
+        resolved_public_url: canonicalImage,
         frontend_src_used: frontendSrc,
         tournament_id: p.tournament_id || null,
         hole_number: p.hole_number || null,
         round_id: p.round_id || null
       });
-      return { ...p, photo_path: frontendSrc };
+      console.debug('[gallery-card] final frontend img.src:', frontendSrc);
+      return { ...p, image_url: frontendSrc, photo_path: frontendSrc };
     });
     renderWinner(photos);
     renderGallery(photos);
