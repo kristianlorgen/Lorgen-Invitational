@@ -653,8 +653,11 @@ function clearSessionAndRedirectLogin() {
   localStorage.removeItem(TOURNAMENT_ID_STORAGE_KEY);
   sessionStorage.removeItem('team_pin');
   teamData = null;
+  tournamentData = null;
   document.getElementById('scorecardScreen')?.classList.add('d-none');
   document.getElementById('loginScreen')?.classList.remove('d-none');
+  document.getElementById('loginError').textContent = '';
+  renderScoreStatus('idle');
 }
 
 function requireSession() {
@@ -665,6 +668,11 @@ function requireSession() {
     return null;
   }
   return session;
+}
+
+function hasValidStoredSession() {
+  const session = getSession();
+  return Boolean(session.team_id && session.tournament_id);
 }
 
 function withSessionParams(url, session) {
@@ -1075,15 +1083,10 @@ async function doLogin() {
 }
 
 async function doLogout() {
-  if (!allHolesCompleted()) {
-    showToast('Du må fylle ut alle hull før du kan lukke scorekortet.', 'error');
-    return;
-  }
-  await apiFetch('/api/auth/logout', { method: 'POST' }, false);
-  sessionStorage.removeItem('team_pin');
-  localStorage.removeItem(TEAM_ID_STORAGE_KEY);
-  localStorage.removeItem(TOURNAMENT_ID_STORAGE_KEY);
-  location.reload();
+  try {
+    await apiFetch('/api/auth/logout', { method: 'POST' }, false);
+  } catch (_) {}
+  clearSessionAndRedirectLogin();
 }
 
 function scrollToScoreInput() {
@@ -1104,19 +1107,17 @@ window.addEventListener('beforeunload', (e) => {
 
 async function loadScorecard() {
   try {
-    const team_id = localStorage.getItem(TEAM_ID_STORAGE_KEY);
-    const tournament_id = localStorage.getItem(TOURNAMENT_ID_STORAGE_KEY);
-    console.log('[scorecard:init] localStorage session read', { team_id, tournament_id });
-
-    if (!team_id || !tournament_id) {
-      console.warn('[scorecard] Missing team_id/tournament_id in localStorage; redirecting to login');
-      clearSessionAndRedirectLogin();
-      return;
-    }
+    const session = requireSession();
+    if (!session) return;
+    console.log('[scorecard:init] using stored session', session);
 
     const r = await apiFetch('/api/team/scorecard');
     const d = await r.json();
     if (!r.ok || !d?.success) {
+      if (d?.error === 'Team session mangler. Logg inn på nytt.') {
+        clearSessionAndRedirectLogin();
+        return;
+      }
       const setupError = d?.error === 'Turneringen mangler hulloppsett';
       renderScoreStatus('error', { detail: setupError ? 'Turneringen mangler hulloppsett' : undefined });
       showToast(d?.error || 'Kunne ikke laste scorekortdata', 'error');
@@ -1186,7 +1187,8 @@ async function loadScorecard() {
     } else {
       renderScoreStatus('active');
     }
-  } catch (_) {
+  } catch (error) {
+    if (error?.message === 'TEAM_SESSION_MISSING') return;
     renderScoreStatus('error');
     showToast('Kunne ikke laste scorekortdata', 'error');
   }
@@ -1865,12 +1867,12 @@ async function checkSession() {
   try {
     await initNotifications();
     teamPin = sessionStorage.getItem('team_pin') || '';
-    const session = getSession();
-    if (!session.team_id || !session.tournament_id) {
+    if (!hasValidStoredSession()) {
       clearSessionAndRedirectLogin();
       return;
     }
 
+    const session = getSession();
     teamData = { id: session.team_id, tournament_id: session.tournament_id };
     await ensureNotificationPermission();
     document.getElementById('loginScreen').classList.add('d-none');
