@@ -277,7 +277,7 @@ function resolveGalleryImageSrc(path) {
 }
 
 function getCanonicalImageUrl(payload) {
-  return payload?.image_url || payload?.photo_url || payload?.photo_path || '';
+  return payload?.image_url || '';
 }
 
 function renderWinner(photos) {
@@ -366,23 +366,20 @@ async function loadGallery() {
       id: p.photo_ref || p.id,
       source: p.source || null,
       tournament_id: p.tournament_id || null,
-      photo_path: p.photo_path || null,
       image_url: p.image_url || null
     })));
     photos = (d.photos || []).map((p) => {
-      const canonicalImage = getCanonicalImageUrl(p);
-      const frontendSrc = resolveImageUrl(canonicalImage);
+      const frontendSrc = resolveImageUrl(p.image_url);
       console.debug('[image-debug] gallery_photo', {
         id: p.photo_ref || p.id,
-        stored_image_path: p.storage_path || null,
-        resolved_public_url: canonicalImage,
+        resolved_public_url: p.image_url || null,
         frontend_src_used: frontendSrc,
         tournament_id: p.tournament_id || null,
         hole_number: p.hole_number || null,
         round_id: p.round_id || null
       });
       console.debug('[gallery-card] final frontend img.src:', frontendSrc);
-      return { ...p, image_url: frontendSrc, photo_path: frontendSrc };
+      return { ...p, image_url: frontendSrc };
     });
     renderWinner(photos);
     renderGallery(photos);

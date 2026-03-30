@@ -15,6 +15,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 12 * 1024 * 1024 } });
 const MEDIA_BUCKET = process.env.SUPABASE_MEDIA_BUCKET || 'tournament-gallery';
+const HOLE_IMAGE_BUCKET = 'images';
 const CHAT_BASE_COLUMNS = ['id', 'tournament_id', 'team_id', 'team_name', 'message', 'created_at'];
 const CHAT_OPTIONAL_COLUMNS = ['note', 'image_path'];
 
@@ -120,13 +121,13 @@ function withCanonicalImageField(row, req, sourceField = 'photo_path') {
   };
 }
 
-function buildBucketMissingError() {
+function buildBucketMissingError(bucketName = MEDIA_BUCKET) {
   return {
     success: false,
-    error: `Supabase Storage bucket mangler: ${MEDIA_BUCKET}. Create bucket: tournament-gallery`,
+    error: `Supabase Storage bucket mangler: ${bucketName}.`,
     code: 'STORAGE_BUCKET_NOT_FOUND',
-    bucket: MEDIA_BUCKET,
-    action: 'Create bucket: tournament-gallery'
+    bucket: bucketName,
+    action: `Create bucket: ${bucketName}`
   };
 }
 
@@ -1865,18 +1866,25 @@ app.get('/api/team/scorecard', async (req, res) => {
     const resolvedTournamentId = asInt(team.tournament_id) || tournamentId;
     routeLog(route, 'tournament_resolved', { resolvedTournamentId, source: asInt(team.tournament_id) ? 'team_session' : 'cookie_session' });
 
-    const [tournamentResp, holesResp, scoresResp, claimsResp, holeSponsorsResp] = await Promise.all([
+    const [tournamentResp, holesResp, scoresResp, claimsResp, holeSponsorsResp, holeImagesResp] = await Promise.all([
       supabase.from('tournaments').select('*').eq('id', resolvedTournamentId).maybeSingle(),
       supabase.from('tournament_holes').select('*').eq('tournament_id', resolvedTournamentId).order('hole_number', { ascending: true }),
       supabase.from('scores').select('*').eq('team_id', team.id).eq('tournament_id', resolvedTournamentId),
       supabase.from('award_claims').select('*').eq('team_id', team.id).eq('tournament_id', resolvedTournamentId),
-      supabase.from('sponsors').select('*').eq('tournament_id', resolvedTournamentId).eq('placement', 'hole').eq('is_enabled', true).order('hole_number', { ascending: true })
+      supabase.from('sponsors').select('*').eq('tournament_id', resolvedTournamentId).eq('placement', 'hole').eq('is_enabled', true).order('hole_number', { ascending: true }),
+      supabase
+        .from('hole_images')
+        .select('id, team_id, tournament_id, hole_number, image_url, created_at')
+        .eq('team_id', team.id)
+        .eq('tournament_id', resolvedTournamentId)
+        .order('created_at', { ascending: false })
     ]);
     if (tournamentResp.error) throw tournamentResp.error;
     if (holesResp.error) throw holesResp.error;
     if (scoresResp.error) throw scoresResp.error;
     if (claimsResp.error && !isMissingTableError(claimsResp.error, 'award_claims')) throw claimsResp.error;
     if (holeSponsorsResp.error && !isMissingTableError(holeSponsorsResp.error, 'sponsors')) throw holeSponsorsResp.error;
+    if (holeImagesResp.error && !isMissingTableError(holeImagesResp.error, 'hole_images')) throw holeImagesResp.error;
 
     routeLog(route, 'dataset_loaded', {
       teamId: team.id,
@@ -1885,7 +1893,8 @@ app.get('/api/team/scorecard', async (req, res) => {
       tournamentHolesCount: Array.isArray(holesResp.data) ? holesResp.data.length : 0,
       scoresCount: Array.isArray(scoresResp.data) ? scoresResp.data.length : 0,
       claimsCount: Array.isArray(claimsResp.data) ? claimsResp.data.length : 0,
-      holeSponsorsCount: Array.isArray(holeSponsorsResp.data) ? holeSponsorsResp.data.length : 0
+      holeSponsorsCount: Array.isArray(holeSponsorsResp.data) ? holeSponsorsResp.data.length : 0,
+      holeImagesCount: Array.isArray(holeImagesResp.data) ? holeImagesResp.data.length : 0
     });
 
     if (!tournamentResp.data) {
@@ -1916,7 +1925,18 @@ app.get('/api/team/scorecard', async (req, res) => {
       return res.status(422).json({ success: false, error: 'Turneringen mangler hulloppsett', code: 'MISSING_HOLE_SETUP' });
     }
 
-    const normalizedScores = (scoresResp.data || []).map((row) => withCanonicalImageField(row, req, 'photo_path'));
+    const latestHoleImageByNumber = new Map();
+    for (const row of (holeImagesResp.data || [])) {
+      const holeNumber = asInt(row?.hole_number);
+      if (!holeNumber || latestHoleImageByNumber.has(holeNumber)) continue;
+      latestHoleImageByNumber.set(holeNumber, String(row.image_url || '').trim() || null);
+    }
+
+    const normalizedScores = (scoresResp.data || []).map((row) => {
+      const holeNumber = asInt(row?.hole_number);
+      const imageUrl = latestHoleImageByNumber.get(holeNumber) || null;
+      return withCanonicalImageField({ ...row, photo_path: imageUrl || row.photo_path || null }, req, 'photo_path');
+    });
     routeLog(route, 'scorecard_payload_image_debug', {
       sample: normalizedScores.slice(0, 2).map((row) => ({
         id: row.id,
@@ -1931,7 +1951,10 @@ app.get('/api/team/scorecard', async (req, res) => {
       success: true,
       team,
       tournament: tournamentResp.data || null,
-      holes: normalizeHoles(holeRows),
+      holes: normalizeHoles(holeRows).map((hole) => ({
+        ...hole,
+        image_url: latestHoleImageByNumber.get(asInt(hole?.hole_number)) || null
+      })),
       scores: normalizedScores,
       claims: (claimsResp.data || []).map((claim) => ({
         ...claim,
@@ -2012,55 +2035,46 @@ app.post('/api/team/upload-photo/:holeNum', upload.single('photo'), async (req, 
       holeNumber: holeNum,
       extension: safeExt
     });
-    const { error: uploadError } = await supabase.storage.from(MEDIA_BUCKET)
+    const { error: uploadError } = await supabase.storage.from(HOLE_IMAGE_BUCKET)
       .upload(storagePath, req.file.buffer, { contentType: req.file.mimetype || 'image/jpeg', upsert: false });
     if (uploadError) {
       if (isMissingBucketError(uploadError)) {
-        return res.status(500).json(buildBucketMissingError());
+        return res.status(500).json(buildBucketMissingError(HOLE_IMAGE_BUCKET));
       }
       throw uploadError;
     }
-    const { data: publicData } = supabase.storage.from(MEDIA_BUCKET).getPublicUrl(storagePath);
-    const photoPath = publicData?.publicUrl || null;
-    routeLog(route, 'upload_photo_url_debug', { storagePath, publicUrl: photoPath });
+    const { data: publicData } = supabase.storage.from(HOLE_IMAGE_BUCKET).getPublicUrl(storagePath);
+    const imageUrl = publicData?.publicUrl || null;
+    routeLog(route, 'upload_photo_url_debug', { storagePath, publicUrl: imageUrl });
 
-    const { data: existingScore, error: existingScoreError } = await supabase
-      .from('scores')
-      .select('score')
-      .eq('tournament_id', tournamentId)
-      .eq('team_id', team.id)
-      .eq('hole_number', holeNum)
-      .maybeSingle();
-    if (existingScoreError) throw existingScoreError;
-
-    const scorePayload = {
+    const holeImagePayload = {
       tournament_id: tournamentId,
       team_id: team.id,
       hole_number: holeNum,
-      score: Number.isFinite(Number(existingScore?.score)) ? Number(existingScore.score) : 1,
-      photo_path: photoPath
+      image_url: imageUrl
     };
-    const data = await saveScoreCompat(scorePayload);
+    const { data, error: holeImageInsertError } = await supabase
+      .from('hole_images')
+      .insert(holeImagePayload)
+      .select('*')
+      .single();
+    if (holeImageInsertError) throw holeImageInsertError;
     const dbLoggedRow = {
       id: data?.id || null,
       tournament_id: data?.tournament_id || tournamentId,
       team_id: data?.team_id || team.id,
       hole_number: data?.hole_number || holeNum,
-      photo_path: data?.photo_path || photoPath,
-      image_url: toAbsoluteMediaUrl(data?.photo_path || photoPath, req)
+      image_url: data?.image_url || imageUrl
     };
     routeLog(route, 'upload_photo_db_row_debug', dbLoggedRow);
-    routeLog(route, 'db_action', { action: 'upload_photo', scoreId: data?.id, storagePath });
-    const canonicalPhotoUrl = toAbsoluteMediaUrl(photoPath, req);
+    routeLog(route, 'db_action', { action: 'upload_hole_image', holeImageId: data?.id, storagePath });
     return res.json({
       success: true,
-      photo_path: canonicalPhotoUrl,
-      image_url: canonicalPhotoUrl,
-      score: data ? withCanonicalImageField(data, req, 'photo_path') : data
+      image_url: data?.image_url || imageUrl
     });
   } catch (error) {
     if (isMissingBucketError(error)) {
-      return res.status(500).json(buildBucketMissingError());
+      return res.status(500).json(buildBucketMissingError(HOLE_IMAGE_BUCKET));
     }
     routeLog(route, 'error', { error: error?.message || String(error) });
     return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke laste opp bilde' });
@@ -2267,30 +2281,24 @@ app.get('/api/gallery', async (req, res) => {
     const tournamentId = requestedTournamentId || asInt(teamFromCookie?.tournament_id) || await resolveTournamentId(null);
     routeLog(route, 'hit', { payload: { tournamentId } });
     if (!tournamentId) return res.json({ success: true, photos: [] });
-    const scorePhotosResp = await supabase.from('scores')
-      .select('id, team_id, round_id, hole_number, photo_path, created_at')
+    const holeImagesResp = await supabase.from('hole_images')
+      .select('id, team_id, hole_number, image_url, created_at')
       .eq('tournament_id', tournamentId)
-      .or('round_id.not.is.null,hole_number.not.is.null')
-      .not('photo_path', 'is', null);
-    if (scorePhotosResp.error) throw scorePhotosResp.error;
-    const galleryResp = await supabase.from('tournament_gallery_images')
-      .select('id, tournament_id, photo_path, caption, is_published, uploaded_at')
-      .eq('tournament_id', tournamentId)
-      .or('is_published.is.true,is_published.is.null');
-    if (galleryResp.error) throw galleryResp.error;
+      .not('image_url', 'is', null)
+      .order('created_at', { ascending: false });
+    if (holeImagesResp.error) throw holeImagesResp.error;
 
-    const teamIds = [...new Set((scorePhotosResp.data || []).map((row) => row.team_id).filter(Boolean))];
+    const teamIds = [...new Set((holeImagesResp.data || []).map((row) => row.team_id).filter(Boolean))];
     let teamsById = {};
     if (teamIds.length) {
       const teamsResp = await supabase.from('teams').select('id, name, team_name').in('id', teamIds);
       if (teamsResp.error) throw teamsResp.error;
       teamsById = Object.fromEntries((teamsResp.data || []).map((team) => [team.id, normalizeTeamRow(team)]));
     }
-    const scorePhotos = (scorePhotosResp.data || []).map((row) => ({
+    const photos = (holeImagesResp.data || []).map((row) => ({
       id: `score-${row.id}`,
       photo_ref: `score-${row.id}`,
-      photo_path: toAbsoluteMediaUrl(row.photo_path, req),
-      image_url: toAbsoluteMediaUrl(row.photo_path, req),
+      image_url: row.image_url,
       hole_number: row.hole_number,
       team_name: teamsById[row.team_id]?.team_name || 'Lag',
       created_at: row.created_at,
@@ -2298,27 +2306,11 @@ app.get('/api/gallery', async (req, res) => {
       voted: false,
       source: 'score',
       tournament_id: tournamentId
-    }));
-    const galleryPhotos = (galleryResp.data || []).map((row) => ({
-      id: `gallery-${row.id}`,
-      photo_ref: `gallery-${row.id}`,
-      photo_path: toAbsoluteMediaUrl(row.photo_path, req),
-      image_url: toAbsoluteMediaUrl(row.photo_path, req),
-      hole_number: null,
-      team_name: row.caption || 'Turneringsbilde',
-      created_at: row.uploaded_at,
-      votes: 0,
-      voted: false,
-      source: 'gallery',
-      tournament_id: row.tournament_id || tournamentId
-    }));
-    const photos = [...galleryPhotos, ...scorePhotos]
-      .filter((row) => !!row.photo_path)
-      .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    })).filter((row) => !!row.image_url);
     routeLog(route, 'image_debug', {
-      stored_image_path: 'mixed_gallery_paths',
-      resolved_public_url: photos[0]?.photo_path || null,
-      frontend_src_used: photos[0]?.photo_path || null,
+      stored_image_path: 'hole_images.image_url',
+      resolved_public_url: photos[0]?.image_url || null,
+      frontend_src_used: photos[0]?.image_url || null,
       count: photos.length
     });
     routeLog(route, 'gallery_payload_image_debug', {
@@ -2326,7 +2318,6 @@ app.get('/api/gallery', async (req, res) => {
         photo_ref: row.photo_ref,
         source: row.source,
         tournament_id: row.tournament_id,
-        photo_path: row.photo_path,
         image_url: row.image_url
       })),
       count: photos.length
