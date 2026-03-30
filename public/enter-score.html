@@ -642,6 +642,12 @@ function getBirdieMessageId(payload) {
   return fallback;
 }
 
+
+function isBirdieEventType(type) {
+  return type === 'birdie_shot' || type === 'birdie_shout';
+}
+
+
 function normalizeChatMessage(message, fallbackPrefix = 'msg') {
   if (!message || typeof message !== 'object') return null;
   const normalized = { ...message };
@@ -1085,7 +1091,7 @@ function startChatEvents() {
         }
         renderChatMessages();
       }
-      if (payload.type === 'birdie_shot' && payload.data) {
+      if (isBirdieEventType(payload.type) && payload.data) {
         const birdieMessageId = getBirdieMessageId(payload.data);
         if (birdieMessageId && seenBirdieMessageIds.has(birdieMessageId)) {
           return;
@@ -1132,7 +1138,7 @@ async function sendBirdieShoutout() {
     if (!d.success) {
       showToast(d.error || 'Kunne ikke sende birdie shoutout', 'error');
     } else {
-      // Realtime birdie_shot event is the single source of truth for user-visible shoutout alerts.
+      // Realtime birdie_shot / birdie_shout events are the single source of truth for user-visible shoutout alerts.
     }
   } catch (_) {
     showToast('Tilkoblingsfeil ved birdie shoutout', 'error');
