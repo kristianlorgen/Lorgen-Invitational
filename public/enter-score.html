@@ -641,10 +641,20 @@ let positionLastFetchedAt = 0;
 const seenBirdieMessageIds = new Set();
 const TEAM_ID_STORAGE_KEY = 'team_id';
 const TOURNAMENT_ID_STORAGE_KEY = 'tournament_id';
+function isInvalidStoredId(value) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return !normalized || normalized === 'undefined' || normalized === 'null';
+}
+
 function getSession() {
+  const teamId = localStorage.getItem(TEAM_ID_STORAGE_KEY);
+  const tournamentId = localStorage.getItem(TOURNAMENT_ID_STORAGE_KEY);
+  if (isInvalidStoredId(teamId) || isInvalidStoredId(tournamentId)) {
+    return null;
+  }
   return {
-    team_id: localStorage.getItem(TEAM_ID_STORAGE_KEY),
-    tournament_id: localStorage.getItem(TOURNAMENT_ID_STORAGE_KEY)
+    team_id: teamId,
+    tournament_id: tournamentId
   };
 }
 
@@ -662,7 +672,7 @@ function clearSessionAndRedirectLogin() {
 
 function requireSession() {
   const session = getSession();
-  if (!session.team_id || !session.tournament_id) {
+  if (!session?.team_id || !session?.tournament_id) {
     console.error('[session] Missing team session in localStorage', session);
     clearSessionAndRedirectLogin();
     return null;
@@ -671,8 +681,7 @@ function requireSession() {
 }
 
 function hasValidStoredSession() {
-  const session = getSession();
-  return Boolean(session.team_id && session.tournament_id);
+  return Boolean(getSession());
 }
 
 function withSessionParams(url, session) {
@@ -1114,7 +1123,7 @@ async function loadScorecard() {
     const r = await apiFetch('/api/team/scorecard');
     const d = await r.json();
     if (!r.ok || !d?.success) {
-      if (d?.error === 'Team session mangler. Logg inn på nytt.') {
+      if (String(d?.error || '').includes('Team session mangler')) {
         clearSessionAndRedirectLogin();
         return;
       }
@@ -1867,13 +1876,31 @@ async function checkSession() {
   try {
     await initNotifications();
     teamPin = sessionStorage.getItem('team_pin') || '';
+
+    const teamId = localStorage.getItem('team_id');
+    const tournamentId = localStorage.getItem('tournament_id');
+    const isMissingSession = !teamId || !tournamentId;
+    const isInvalidSession = isInvalidStoredId(teamId) || isInvalidStoredId(tournamentId);
+
+    if (isMissingSession) {
+      localStorage.clear();
+      clearSessionAndRedirectLogin();
+      return;
+    }
+
+    if (isInvalidSession) {
+      localStorage.removeItem('team_id');
+      localStorage.removeItem('tournament_id');
+      clearSessionAndRedirectLogin();
+      return;
+    }
+
     if (!hasValidStoredSession()) {
       clearSessionAndRedirectLogin();
       return;
     }
 
-    const session = getSession();
-    teamData = { id: session.team_id, tournament_id: session.tournament_id };
+    teamData = { id: teamId, tournament_id: tournamentId };
     await ensureNotificationPermission();
     document.getElementById('loginScreen').classList.add('d-none');
     document.getElementById('scorecardScreen').classList.remove('d-none');
