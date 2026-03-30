@@ -643,6 +643,65 @@ const TEAM_ID_STORAGE_KEY = 'team_id';
 const TOURNAMENT_ID_STORAGE_KEY = 'tournament_id';
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+function getSession() {
+  return {
+    team_id: localStorage.getItem(TEAM_ID_STORAGE_KEY),
+    tournament_id: localStorage.getItem(TOURNAMENT_ID_STORAGE_KEY)
+  };
+}
+
+function clearSessionAndRedirectLogin() {
+  localStorage.removeItem(TEAM_ID_STORAGE_KEY);
+  localStorage.removeItem(TOURNAMENT_ID_STORAGE_KEY);
+  sessionStorage.removeItem('team_pin');
+  teamData = null;
+  document.getElementById('scorecardScreen')?.classList.add('d-none');
+  document.getElementById('loginScreen')?.classList.remove('d-none');
+}
+
+function requireSession() {
+  const session = getSession();
+  if (!isValidUuid(session.team_id) || !isValidUuid(session.tournament_id)) {
+    console.error('[session] Missing or invalid team session in localStorage', session);
+    clearSessionAndRedirectLogin();
+    return null;
+  }
+  return session;
+}
+
+function withSessionParams(url, session) {
+  const nextUrl = new URL(url, window.location.origin);
+  nextUrl.searchParams.set('team_id', session.team_id);
+  nextUrl.searchParams.set('tournament_id', session.tournament_id);
+  return nextUrl.pathname + nextUrl.search;
+}
+
+async function apiFetch(url, options = {}, requireAuthSession = true) {
+  const opts = { ...options };
+  if (!requireAuthSession) return fetch(url, opts);
+  const session = requireSession();
+  if (!session) throw new Error('TEAM_SESSION_MISSING');
+  const method = String(opts.method || 'GET').toUpperCase();
+  const hasJsonBody = opts.body && typeof opts.body === 'string';
+  const isFormData = typeof FormData !== 'undefined' && opts.body instanceof FormData;
+  const requestUrl = withSessionParams(url, session);
+
+  if (hasJsonBody) {
+    let parsedBody = {};
+    try {
+      parsedBody = JSON.parse(opts.body);
+    } catch (_) {
+      parsedBody = {};
+    }
+    opts.body = JSON.stringify({ ...parsedBody, team_id: session.team_id, tournament_id: session.tournament_id });
+  } else if (isFormData && method !== 'GET') {
+    opts.body.set('team_id', session.team_id);
+    opts.body.set('tournament_id', session.tournament_id);
+  }
+
+  return fetch(requestUrl, opts);
+}
+
 function isValidUuid(value) {
   return UUID_REGEX.test(String(value || '').trim());
 }
@@ -959,17 +1018,17 @@ async function doLogin() {
   btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Bekrefter...';
   document.getElementById('loginError').textContent = '';
   try {
-    const r = await fetch('/api/auth/team-login', {
+    const r = await apiFetch('/api/auth/team-login', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin })
-    });
+    }, false);
     const d = await r.json();
     if (d.success) {
       teamPin = pin;
       sessionStorage.setItem('team_pin', pin);
       teamData = d.team;
-      if (isValidUuid(d?.team?.id)) sessionStorage.setItem(TEAM_ID_STORAGE_KEY, d.team.id);
+      if (isValidUuid(d?.team?.id)) localStorage.setItem(TEAM_ID_STORAGE_KEY, d.team.id);
       const tournamentId = d?.team?.tournament_id || d?.tournament_id;
-      if (isValidUuid(tournamentId)) sessionStorage.setItem(TOURNAMENT_ID_STORAGE_KEY, tournamentId);
+      if (isValidUuid(tournamentId)) localStorage.setItem(TOURNAMENT_ID_STORAGE_KEY, tournamentId);
       document.getElementById('loginScreen').classList.add('d-none');
       document.getElementById('scorecardScreen').classList.remove('d-none');
       mountChatUi();
@@ -988,10 +1047,10 @@ async function doLogout() {
     showToast('Du må fylle ut alle hull før du kan lukke scorekortet.', 'error');
     return;
   }
-  await fetch('/api/auth/logout', { method: 'POST' });
+  await apiFetch('/api/auth/logout', { method: 'POST' }, false);
   sessionStorage.removeItem('team_pin');
-  sessionStorage.removeItem(TEAM_ID_STORAGE_KEY);
-  sessionStorage.removeItem(TOURNAMENT_ID_STORAGE_KEY);
+  localStorage.removeItem(TEAM_ID_STORAGE_KEY);
+  localStorage.removeItem(TOURNAMENT_ID_STORAGE_KEY);
   location.reload();
 }
 
@@ -1013,7 +1072,7 @@ window.addEventListener('beforeunload', (e) => {
 
 async function loadScorecard() {
   try {
-    const r = await fetch('/api/team/scorecard');
+    const r = await apiFetch('/api/team/scorecard');
     const d = await r.json();
     if (!r.ok || !d?.success) {
       const setupError = d?.error === 'Turneringen mangler hulloppsett';
@@ -1057,8 +1116,8 @@ async function loadScorecard() {
 
     teamData = nextTeam;
     tournamentData = nextTournament;
-    sessionStorage.setItem(TEAM_ID_STORAGE_KEY, nextTeam.id);
-    sessionStorage.setItem(TOURNAMENT_ID_STORAGE_KEY, resolvedTournamentId);
+    localStorage.setItem(TEAM_ID_STORAGE_KEY, nextTeam.id);
+    localStorage.setItem(TOURNAMENT_ID_STORAGE_KEY, resolvedTournamentId);
     holesData = nextHoles;
     scoresData = {};
     claimsData = {};
@@ -1136,7 +1195,7 @@ function renderChatMessages({ autoScroll = false, forceScroll = false } = {}) {
 async function loadChatMessages() {
   if (!isTeamAuthenticated()) return;
   try {
-    const r = await fetch('/api/chat/messages?private=1');
+    const r = await apiFetch('/api/chat/messages?private=1');
     const d = await r.json();
     if (!r.ok || !d?.success) {
       const wrap = document.getElementById('chatMessages');
@@ -1162,7 +1221,9 @@ function startChatEvents() {
     clearTimeout(birdieRealtimeReadyTimer);
     birdieRealtimeReadyTimer = null;
   }
-  chatEventSource = new EventSource('/api/events');
+  const session = requireSession();
+  if (!session) return;
+  chatEventSource = new EventSource(withSessionParams('/api/events', session));
   const handleRealtimePayload = (payload) => {
     if (!payload || typeof payload !== 'object') return;
     if (payload.type === 'chat_message' && payload.data) {
@@ -1249,7 +1310,7 @@ async function sendBirdieShoutout() {
   if (btn) btn.classList.add('is-celebrating');
   if (navigator.vibrate) navigator.vibrate([120, 80, 120, 80, 180]);
   try {
-    const r = await fetch('/api/team/birdie-shot', {
+    const r = await apiFetch('/api/team/birdie-shot', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ note: 'Alle spillere må ta birdie shots! 🥃' })
@@ -1296,9 +1357,9 @@ async function sendChatMessage(event) {
       const formData = new FormData();
       formData.append('message', message);
       formData.append('image', imageFile);
-      r = await fetch('/api/chat/send', { method: 'POST', body: formData });
+      r = await apiFetch('/api/chat/send', { method: 'POST', body: formData });
     } else {
-      r = await fetch('/api/chat/send', {
+      r = await apiFetch('/api/chat/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message })
@@ -1377,7 +1438,7 @@ async function loadPosition(force = false) {
   if (positionFetchPromise) return positionFetchPromise;
   positionFetchPromise = (async () => {
   try {
-    const r = await fetch('/api/scoreboard');
+    const r = await apiFetch('/api/scoreboard');
     const d = await r.json();
     if (d.scoreboard && teamData) {
       const idx = d.scoreboard.findIndex(t => t.team_id === teamData.id);
@@ -1643,7 +1704,7 @@ async function lockAndClose() {
   const btn = document.getElementById('summaryLockBtn');
   btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Låser...';
   try {
-    const r = await fetch('/api/team/lock-scorecard', { method: 'POST' });
+    const r = await apiFetch('/api/team/lock-scorecard', { method: 'POST' });
     const d = await r.json();
     if (d.success) {
       teamData.locked = 1;
@@ -1672,7 +1733,7 @@ async function submitScore(holeNum) {
   btn.disabled = true;
 
   try {
-    const r = await fetch('/api/team/submit-score', {
+    const r = await apiFetch('/api/team/submit-score', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ hole_number: holeNum, score })
     });
@@ -1712,7 +1773,7 @@ document.getElementById('photoInput').addEventListener('change', async e => {
   const fd = new FormData();
   fd.append('photo', file);
   try {
-    const r = await fetch('/api/team/upload-photo/' + holeNum, { method: 'POST', body: fd });
+    const r = await apiFetch('/api/team/upload-photo/' + holeNum, { method: 'POST', body: fd });
     const d = await r.json();
     if (d.success) {
       if (!scoresData[holeNum]) scoresData[holeNum] = {};
@@ -1745,7 +1806,7 @@ async function submitClaim(holeNum, awardType) {
   const detail = document.getElementById(prefix + '-detail-' + holeNum)?.value || '';
   if (!player_name) { showToast('Velg en spiller', 'error'); return; }
   try {
-    const r = await fetch('/api/team/claim-award', {
+    const r = await apiFetch('/api/team/claim-award', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ hole_number: holeNum, award_type: awardType, player_name, detail })
     });
@@ -1762,29 +1823,19 @@ async function checkSession() {
   try {
     await initNotifications();
     teamPin = sessionStorage.getItem('team_pin') || '';
-    const cachedTeamId = sessionStorage.getItem(TEAM_ID_STORAGE_KEY) || '';
-    const cachedTournamentId = sessionStorage.getItem(TOURNAMENT_ID_STORAGE_KEY) || '';
-    if (cachedTeamId && !isValidUuid(cachedTeamId)) {
-      console.error('[session] Invalid cached team_id, clearing', { team_id: cachedTeamId });
-      sessionStorage.removeItem(TEAM_ID_STORAGE_KEY);
+    const session = getSession();
+    if (!isValidUuid(session.team_id) || !isValidUuid(session.tournament_id)) {
+      clearSessionAndRedirectLogin();
+      return;
     }
-    if (cachedTournamentId && !isValidUuid(cachedTournamentId)) {
-      console.error('[session] Invalid cached tournament_id, clearing', { tournament_id: cachedTournamentId });
-      sessionStorage.removeItem(TOURNAMENT_ID_STORAGE_KEY);
-    }
-    const r = await fetch('/api/auth/status');
-    const d = await r.json();
-    if (d.type === 'team') {
-      teamData = d.team;
-      if (isValidUuid(d?.team?.id)) sessionStorage.setItem(TEAM_ID_STORAGE_KEY, d.team.id);
-      if (isValidUuid(d?.team?.tournament_id)) sessionStorage.setItem(TOURNAMENT_ID_STORAGE_KEY, d.team.tournament_id);
-      await ensureNotificationPermission();
-      document.getElementById('loginScreen').classList.add('d-none');
-      document.getElementById('scorecardScreen').classList.remove('d-none');
-      mountChatUi();
-      renderScoreStatus('idle');
-      await loadScorecard();
-    }
+
+    teamData = { id: session.team_id, tournament_id: session.tournament_id };
+    await ensureNotificationPermission();
+    document.getElementById('loginScreen').classList.add('d-none');
+    document.getElementById('scorecardScreen').classList.remove('d-none');
+    mountChatUi();
+    renderScoreStatus('idle');
+    await loadScorecard();
   } catch (_) {}
 }
 
