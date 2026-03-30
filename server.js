@@ -250,6 +250,13 @@ function routeLog(route, phase, details = {}) {
   console.log('[api:compat]', payload);
 }
 
+function createRouteTimer(route) {
+  const started = Date.now();
+  return (phase = 'timing', details = {}) => {
+    routeLog(route, phase, { elapsed_ms: Date.now() - started, ...details });
+  };
+}
+
 function normalizeTeamRow(row) {
   return {
     ...row,
@@ -1522,29 +1529,80 @@ app.delete('/api/admin/team/:id', async (req, res) => {
 });
 
 app.get('/api/scoreboard', async (req, res) => {
+  const route = '/api/scoreboard';
+  const timing = createRouteTimer(route);
   try {
+    timing('hit');
     const tournamentId = await resolveTournamentId(req.query.tournamentId);
     if (!tournamentId) return res.json({ tournament: null, scoreboard: [] });
 
-    const tournament = await getTournament(tournamentId);
-    const teams = await fetchTeamsWithPlayers(tournamentId);
+    const [tournament, teams, holeResp, awardClaimsResp] = await Promise.all([
+      getTournament(tournamentId),
+      fetchTeamsWithPlayers(tournamentId),
+      supabase.from('tournament_holes').select('*').eq('tournament_id', tournamentId).order('hole_number', { ascending: true }),
+      supabase
+        .schema('public')
+        .from('award_claims')
+        .select(`
+          id,
+          tournament_id,
+          round_id,
+          team_id,
+          hole_number,
+          award_type,
+          player_name,
+          value,
+          detail,
+          claimed_at,
+          teams:team_id ( id, team_name, name ),
+          rounds:round_id ( id, tournament_id ),
+          tournaments:tournament_id ( id, name )
+        `)
+        .eq('tournament_id', tournamentId)
+        .not('round_id', 'is', null)
+        .in('award_type', ['longest_drive', 'closest_to_pin'])
+        .order('claimed_at', { ascending: false })
+    ]);
+    if (holeResp.error) throw holeResp.error;
+    if (awardClaimsResp.error && !isMissingTableError(awardClaimsResp.error, 'award_claims')) throw awardClaimsResp.error;
+
     const teamIds = teams.map((team) => team.id);
 
     let scores = [];
     if (teamIds.length) {
       const { data, error } = await supabase
         .from('scores')
-        .select('team_id, score')
+        .select('team_id, hole_number, score')
         .in('team_id', teamIds);
       if (error) throw error;
-      scores = data;
+      scores = data || [];
     }
 
+    let holes = Array.isArray(holeResp.data) ? normalizeHoles(holeResp.data) : [];
+    if (!holes.length && tournament?.course_id) {
+      const courseHolesResp = await supabase
+        .from('course_holes')
+        .select('*')
+        .eq('course_id', tournament.course_id)
+        .order('hole_number', { ascending: true });
+      if (courseHolesResp.error) throw courseHolesResp.error;
+      holes = normalizeHoles(courseHolesResp.data || []);
+    }
+    const parByHole = new Map(holes.map((hole) => [hole.hole_number, Number(hole.par || 0)]));
+
+    const scoresByTeamId = scores.reduce((acc, row) => {
+      if (!acc[row.team_id]) acc[row.team_id] = [];
+      acc[row.team_id].push(row);
+      return acc;
+    }, {});
+
     const totals = teams.map((team) => {
-      const teamScores = scores.filter((row) => row.team_id === team.id);
+      const teamScores = scoresByTeamId[team.id] || [];
       const total = teamScores.reduce((sum, row) => sum + Number(row.score || 0), 0);
+      const teamParTotal = teamScores.reduce((sum, row) => sum + Number(parByHole.get(Number(row.hole_number)) || 0), 0);
       const player1 = team.players[0]?.name || '';
       const player2 = team.players[1]?.name || '';
+      const handicap = Math.round(Number(team.players[0]?.handicap || 0) + Number(team.players[1]?.handicap || 0));
       const holeScores = {};
       for (const s of teamScores) holeScores[s.hole_number] = { score: s.score };
       return {
@@ -1553,44 +1611,30 @@ app.get('/api/scoreboard', async (req, res) => {
         players: team.players,
         player1,
         player2,
+        player1_handicap: team.players[0]?.handicap ?? null,
+        player2_handicap: team.players[1]?.handicap ?? null,
+        handicap,
         total_score: total,
         holes_completed: teamScores.length,
-        to_par: 0,
+        to_par: teamScores.length ? total - teamParTotal : 0,
+        net_score: teamScores.length ? total - handicap : null,
+        net_to_par: teamScores.length ? (total - handicap) - teamParTotal : 0,
         hole_scores: holeScores
       };
-    }).sort((a, b) => a.total_score - b.total_score);
-
-    const { data: awardClaims, error: awardClaimsError } = await supabase
-      .schema('public')
-      .from('award_claims')
-      .select(`
-        id,
-        tournament_id,
-        round_id,
-        team_id,
-        hole_number,
-        award_type,
-        player_name,
-        value,
-        detail,
-        claimed_at,
-        teams:team_id ( id, team_name, name ),
-        rounds:round_id ( id, tournament_id ),
-        tournaments:tournament_id ( id, name )
-      `)
-      .eq('tournament_id', tournamentId)
-      .not('round_id', 'is', null)
-      .in('award_type', ['longest_drive', 'closest_to_pin'])
-      .order('claimed_at', { ascending: false });
-
-    if (awardClaimsError && !isMissingTableError(awardClaimsError, 'award_claims')) throw awardClaimsError;
+    }).sort((a, b) => {
+      if (a.holes_completed === 0 && b.holes_completed > 0) return 1;
+      if (b.holes_completed === 0 && a.holes_completed > 0) return -1;
+      if (a.net_score !== null && b.net_score !== null && a.net_score !== b.net_score) return a.net_score - b.net_score;
+      if (a.to_par !== b.to_par) return a.to_par - b.to_par;
+      return a.total_score - b.total_score;
+    });
 
     const numericAwardValue = (claim) => {
       const parsed = Number.parseFloat(claim?.value ?? claim?.detail ?? '');
       return Number.isFinite(parsed) ? parsed : null;
     };
 
-    const awardRows = Array.isArray(awardClaims) ? awardClaims : [];
+    const awardRows = Array.isArray(awardClaimsResp.data) ? awardClaimsResp.data : [];
     const bestByType = {};
 
     for (const claim of awardRows) {
@@ -1621,8 +1665,16 @@ app.get('/api/scoreboard', async (req, res) => {
         detail: claim?.detail ?? claim?.value ?? null
       }));
 
-    res.json({ tournament, holes: [], awards, scoreboard: totals });
+    timing('success', {
+      tournamentId,
+      teams: teams.length,
+      holes: holes.length,
+      scores: scores.length,
+      awards: awards.length
+    });
+    res.json({ tournament, holes, awards, scoreboard: totals });
   } catch (error) {
+    timing('error', { error: error?.message || String(error) });
     res.status(500).json({ error: error.message });
   }
 });
@@ -1665,8 +1717,10 @@ async function requireTeamContext(req, { allowPinFallback = false } = {}) {
 
 app.get('/api/team/scorecard', async (req, res) => {
   const route = '/api/team/scorecard';
+  const timing = createRouteTimer(route);
   try {
     routeLog(route, 'hit');
+    timing('timing_start');
     const { team, tournamentId } = await requireTeamContext(req);
     routeLog(route, 'session_resolved', {
       authenticated: !!team,
@@ -1751,6 +1805,12 @@ app.get('/api/team/scorecard', async (req, res) => {
       claims: payload.claims.length,
       sponsors: payload.hole_sponsors.length
     });
+    timing('success', {
+      teamId: payload.team?.id || null,
+      tournamentId: payload.tournament?.id || null,
+      holes: payload.holes.length,
+      scores: payload.scores.length
+    });
     return res.json({
       ...payload
     });
@@ -1764,6 +1824,7 @@ app.get('/api/team/scorecard', async (req, res) => {
       return res.status(500).json({ success: false, error: `Manglende tabell: ${missingTable}`, code: 'SCHEMA_TABLE_NOT_FOUND', table: missingTable });
     }
     routeLog(route, 'error', { error: error?.message || String(error) });
+    timing('error', { error: error?.message || String(error) });
     return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke laste scorecard' });
   }
 });
@@ -1958,6 +2019,7 @@ app.post('/api/team/claim-award', async (req, res) => {
 
 app.get('/api/chat/messages', async (req, res) => {
   const route = '/api/chat/messages';
+  const timing = createRouteTimer(route);
   try {
     const { team, tournamentId } = await requireTeamContext(req);
     routeLog(route, 'hit', { payload: { tournamentId, hasTeam: !!team } });
@@ -1972,6 +2034,7 @@ app.get('/api/chat/messages', async (req, res) => {
       filteredByTeam: !!teamFilter,
       missingOptionalColumn: missingOptionalColumn || null
     });
+    timing('success', { tournamentId, teamId: team.id, count: rows?.length || 0, filteredByTeam: !!teamFilter });
     return res.json({ success: true, messages: rows || [] });
   } catch (error) {
     const missingColumn = detectMissingColumn(error);
@@ -1982,6 +2045,7 @@ app.get('/api/chat/messages', async (req, res) => {
       return res.status(500).json({ success: false, error: 'Manglende tabell: chat_messages', code: 'SCHEMA_TABLE_NOT_FOUND', table: 'chat_messages' });
     }
     routeLog(route, 'error', { error: error?.message || String(error) });
+    timing('error', { error: error?.message || String(error) });
     return res.status(500).json({ success: false, error: error?.message || 'Kunne ikke hente chat' });
   }
 });
