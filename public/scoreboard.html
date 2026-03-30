@@ -244,6 +244,98 @@ let scoreboardFetchPromise = null;
 let scoreboardLastFetchAt = 0;
 let scoreboardRefreshTimer = null;
 let scoreboardSse = null;
+let birdieBannerTimer = null;
+const seenBirdieEventIds = new Set();
+
+
+function normalizeHole(rawHole) {
+  if (!rawHole || typeof rawHole !== 'object') return null;
+  const holeNumber = Number(rawHole.hole_number);
+  if (!Number.isFinite(holeNumber) || holeNumber <= 0) return null;
+  return {
+    ...rawHole,
+    hole_number: holeNumber,
+    par: Number(rawHole.par || 0),
+    stroke_index: Number(rawHole.stroke_index || 0),
+    requires_photo: Boolean(rawHole.requires_photo)
+  };
+}
+
+function normalizeHolesList(rawHoles) {
+  if (!Array.isArray(rawHoles)) {
+    console.warn('[scoreboard] malformed holes payload', rawHoles);
+    return [];
+  }
+  const normalized = rawHoles.map(normalizeHole).filter(Boolean).sort((a, b) => a.hole_number - b.hole_number);
+  if (!normalized.length) {
+    console.warn('[scoreboard] no valid holes in response', rawHoles);
+  }
+  return normalized;
+}
+
+function normalizeTeamHoleScores(team) {
+  const normalized = {};
+  const rawMap = team?.hole_scores;
+  if (!rawMap || typeof rawMap !== 'object') return normalized;
+
+  if (Array.isArray(rawMap)) {
+    rawMap.forEach((item) => {
+      const holeNum = Number(item?.hole_number);
+      if (!Number.isFinite(holeNum) || holeNum <= 0) return;
+      const score = Number(item?.score || 0);
+      normalized[holeNum] = { score: Number.isFinite(score) ? score : 0 };
+    });
+    return normalized;
+  }
+
+  Object.entries(rawMap).forEach(([key, value]) => {
+    const holeNum = Number(value?.hole_number ?? key);
+    if (!Number.isFinite(holeNum) || holeNum <= 0) return;
+    const score = Number(value?.score || 0);
+    normalized[holeNum] = { score: Number.isFinite(score) ? score : 0 };
+  });
+  return normalized;
+}
+
+function normalizeScoreboardRows(rawScoreboard) {
+  if (!Array.isArray(rawScoreboard)) {
+    console.warn('[scoreboard] malformed scoreboard payload', rawScoreboard);
+    return [];
+  }
+  return rawScoreboard.map((team) => ({
+    ...team,
+    holes_completed: Number(team?.holes_completed || 0),
+    total_score: Number(team?.total_score || 0),
+    to_par: Number(team?.to_par || 0),
+    net_score: team?.net_score === null || team?.net_score === undefined ? null : Number(team.net_score),
+    net_to_par: Number(team?.net_to_par || 0),
+    handicap: Number(team?.handicap || 0),
+    hole_scores: normalizeTeamHoleScores(team)
+  }));
+}
+
+function getBirdieEventId(data) {
+  if (!data || typeof data !== 'object') return '';
+  if (data.id !== undefined && data.id !== null && String(data.id).trim()) return String(data.id).trim();
+  return [data.team_id || '', data.team_name || '', data.created_at || '', data.note || ''].join('|').trim();
+}
+
+function showBirdieNotification(data) {
+  const banner = document.getElementById('liveBadge');
+  if (!banner) return;
+  const teamName = data?.team_name || 'Et lag';
+  banner.textContent = `⛳ ${teamName} roper birdie!`;
+  banner.style.display = 'inline-flex';
+  if (birdieBannerTimer) clearTimeout(birdieBannerTimer);
+  birdieBannerTimer = setTimeout(() => {
+    birdieBannerTimer = null;
+    banner.textContent = 'LIVE';
+  }, 4200);
+}
+
+function isBirdieEventType(type) {
+  return type === 'birdie_shot' || type === 'birdie_shout';
+}
 
 function formatToPar(n, holesCompleted) {
   if (holesCompleted === 0) return '<span class="score-par score-even">–</span>';
@@ -433,7 +525,7 @@ function renderAwards(awards) {
 
 async function loadScoreboard(force = false) {
   const now = Date.now();
-  if (!force && now - scoreboardLastFetchAt < 1500) return;
+  if (!force && now - scoreboardLastFetchAt < 350) return;
   if (scoreboardFetchPromise) return scoreboardFetchPromise;
   scoreboardFetchPromise = (async () => {
   try {
@@ -453,8 +545,15 @@ async function loadScoreboard(force = false) {
     document.getElementById('awardsSection').classList.remove('d-none');
 
     currentTournament = d.tournament;
-    holes = d.holes || [];
-    scoreboard = d.scoreboard || [];
+    holes = normalizeHolesList(d.holes);
+    scoreboard = normalizeScoreboardRows(d.scoreboard);
+
+    if (!holes.length) {
+      console.warn('[scoreboard] empty holes after normalization', d?.holes);
+    }
+    if (!scoreboard.length) {
+      console.warn('[scoreboard] empty scoreboard after normalization', d?.scoreboard);
+    }
 
     document.getElementById('sbTournamentName').textContent =
       d.tournament.name + (d.tournament.course ? ' · ' + d.tournament.course : '');
@@ -492,7 +591,7 @@ function scheduleScoreboardRefresh() {
   scoreboardRefreshTimer = setTimeout(async () => {
     scoreboardRefreshTimer = null;
     await loadScoreboard(true);
-  }, 250);
+  }, 80);
 }
 
 // SSE live-oppdateringer
@@ -502,7 +601,18 @@ function connectSSE() {
   scoreboardSse.onmessage = e => {
     try {
       const data = JSON.parse(e.data);
+      if (!data?.type) return;
+
       if (data.type === 'score_updated' || data.type === 'award_updated') {
+        loadScoreboard(true);
+        return;
+      }
+
+      if (isBirdieEventType(data.type)) {
+        const eventId = getBirdieEventId(data.data);
+        if (eventId && seenBirdieEventIds.has(eventId)) return;
+        if (eventId) seenBirdieEventIds.add(eventId);
+        showBirdieNotification(data.data);
         scheduleScoreboardRefresh();
       }
     } catch (_) {}
