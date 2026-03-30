@@ -460,7 +460,7 @@
     </div>
   </section>
 
-  <div id="activeRoundContent">
+  <div id="activeRoundContent" class="d-none">
   <!-- Hullnavigasjon (prikker) -->
   <div style="background:var(--white);padding:12px 16px;border-bottom:1px solid var(--gold-border)">
     <div class="container" style="max-width:600px">
@@ -673,6 +673,10 @@ function startLoginMode() {
   localStorage.removeItem(TEAM_ID_STORAGE_KEY);
   localStorage.removeItem(TOURNAMENT_ID_STORAGE_KEY);
   sessionStorage.removeItem('team_pin');
+  applyLoginUi();
+}
+
+function applyLoginUi() {
   stopBackgroundPolling();
   closeRealtimeConnections();
   teamData = null;
@@ -1165,14 +1169,14 @@ window.addEventListener('beforeunload', (e) => {
   }
 });
 
-async function loadScorecard() {
+async function loadScorecard({ displayErrorState = true } = {}) {
   if (!getSession()) {
     console.log('[guard] blocked fetch loadScorecard: missing session');
-    return;
+    return false;
   }
   try {
     const session = requireSession();
-    if (!session) return;
+    if (!session) return false;
     console.log('[scorecard:init] using stored session', session);
 
     const r = await apiFetch('/api/team/scorecard');
@@ -1180,12 +1184,14 @@ async function loadScorecard() {
     if (!r.ok || !d?.success) {
       if (hasSessionAuthError(r, d)) {
         startLoginMode();
-        return;
+        return false;
       }
       const setupError = d?.error === 'Turneringen mangler hulloppsett';
-      renderScoreStatus('error', { detail: setupError ? 'Turneringen mangler hulloppsett' : undefined });
+      if (displayErrorState) {
+        renderScoreStatus('error', { detail: setupError ? 'Turneringen mangler hulloppsett' : undefined });
+      }
       showToast(d?.error || 'Kunne ikke laste scorekortdata', 'error');
-      return;
+      return false;
     }
 
     const nextTeam = d.team || null;
@@ -1202,9 +1208,9 @@ async function loadScorecard() {
     const nextHoleSponsors = Array.isArray(d.hole_sponsors) ? d.hole_sponsors : [];
 
     if (!nextTeam?.id) {
-      renderScoreStatus('error');
+      if (displayErrorState) renderScoreStatus('error');
       showToast('Kunne ikke laste scorekortdata', 'error');
-      return;
+      return false;
     }
     const resolvedTournamentId = nextTeam?.tournament_id || nextTournament?.id;
     if (!resolvedTournamentId) {
@@ -1212,13 +1218,13 @@ async function loadScorecard() {
         team_id: nextTeam.id,
         tournament_id: resolvedTournamentId
       });
-      renderScoreStatus('error', { detail: 'Mangler tournament_id i svar fra API' });
-      return;
+      if (displayErrorState) renderScoreStatus('error', { detail: 'Mangler tournament_id i svar fra API' });
+      return false;
     }
     if (!nextHoles.length) {
-      renderScoreStatus('error', { detail: 'Turneringen mangler hulloppsett' });
+      if (displayErrorState) renderScoreStatus('error', { detail: 'Turneringen mangler hulloppsett' });
       showToast('Turneringen mangler hulloppsett', 'error');
-      return;
+      return false;
     }
 
     teamData = nextTeam;
@@ -1244,17 +1250,19 @@ async function loadScorecard() {
     }
     if (teamData.locked) {
       showLockedState();
-      return;
+      return true;
     }
     if (allHolesCompleted()) {
       renderScoreStatus('finished');
     } else {
       renderScoreStatus('active');
     }
+    return true;
   } catch (error) {
-    if (error?.message === 'TEAM_SESSION_MISSING' || error?.message === 'TEAM_SESSION_INVALID') return;
-    renderScoreStatus('error');
+    if (error?.message === 'TEAM_SESSION_MISSING' || error?.message === 'TEAM_SESSION_INVALID') return false;
+    if (displayErrorState) renderScoreStatus('error');
     showToast('Kunne ikke laste scorekortdata', 'error');
+    return false;
   }
 }
 
@@ -1981,39 +1989,50 @@ async function submitClaim(holeNum, awardType) {
   } catch(e) { showToast('Tilkoblingsfeil — prøv igjen', 'error'); }
 }
 
-async function startTeamMode(session) {
+function showTeamModeUi() {
+  document.getElementById('loginScreen')?.classList.add('d-none');
+  document.getElementById('scorecardScreen')?.classList.remove('d-none');
+  mountChatUi();
+}
+
+async function startTeamMode(session, options = {}) {
+  const { showErrorState = true } = options;
   const activeSession = session || getSession();
   if (!activeSession?.team_id || !activeSession?.tournament_id) {
     console.log('[guard] blocked fetch startTeamMode: missing session');
     startLoginMode();
-    return;
+    return false;
   }
   console.log('startTeamMode', activeSession);
   teamPin = sessionStorage.getItem('team_pin') || '';
   teamData = { id: activeSession.team_id, tournament_id: activeSession.tournament_id };
-  document.getElementById('loginScreen')?.classList.add('d-none');
-  document.getElementById('scorecardScreen')?.classList.remove('d-none');
   hideScorecardErrorCard();
-  mountChatUi();
-  renderScoreStatus('idle');
-  startBackgroundPolling();
   startupInProgress = true;
   try {
     await initNotifications();
     await ensureNotificationPermission();
-    await loadScorecard();
+    const loaded = await loadScorecard({ displayErrorState: showErrorState });
+    if (!loaded) {
+      if (!showErrorState) startLoginMode();
+      return false;
+    }
+    showTeamModeUi();
+    startBackgroundPolling();
+    await loadChatMessages();
+    startChatEvents();
+    return true;
   } finally {
     startupInProgress = false;
   }
 }
 
-function initPageSessionFlow() {
+async function initPageSessionFlow() {
+  applyLoginUi();
   const session = getSession();
   if (!session?.team_id || !session?.tournament_id) {
-    startLoginMode();
     return;
   }
-  startTeamMode(session);
+  await startTeamMode(session, { showErrorState: false });
 }
 
 initPageSessionFlow();
