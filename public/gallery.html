@@ -238,6 +238,14 @@ document.addEventListener('click', e => {
 
 let photos = [];
 
+function resolveImageUrl(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return '';
+  if (/^https?:\/\//i.test(raw) || /^data:/i.test(raw)) return raw;
+  if (raw.startsWith('/')) return `${window.location.origin}${raw}`;
+  return `${window.location.origin}/${raw.replace(/^\/+/, '')}`;
+}
+
 function openLightbox(src) {
   document.getElementById('lightboxImg').src = src;
   document.getElementById('lightbox').classList.add('open');
@@ -279,8 +287,9 @@ function renderWinner(photos) {
       </div>
     </div>
     <div style="display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap">
-      <img src="${topVoted.photo_path}" alt="Blinkskudd"
-        onclick="openLightbox('${topVoted.photo_path}')"
+      <img src="${resolveImageUrl(topVoted.photo_path)}" alt="Blinkskudd"
+        onclick="openLightbox('${resolveImageUrl(topVoted.photo_path)}')"
+        onerror="console.error('[image-debug] gallery_winner_failed', { src: this.src, raw: '${String(topVoted.photo_path || '').replace(/'/g, "\\'")}' })"
         style="width:280px;max-width:100%;height:200px;object-fit:contain;background:var(--dark);border-radius:var(--radius-lg);
                border:2px solid var(--gold);box-shadow:var(--shadow-gold);cursor:pointer">
       <div style="flex:1;min-width:200px">
@@ -316,8 +325,9 @@ function renderGallery(photosArr) {
     <div class="gallery-card-wrap">
       ${isWinner ? '<div class="winner-badge">⭐ Blinkskudd</div>' : ''}
       <div class="gallery-card${isWinner ? ' winner-card' : ''}">
-        <img src="${p.photo_path}" alt="${p.team_name || 'Bilde'}"
-          onclick="openLightbox('${p.photo_path}')"
+        <img src="${resolveImageUrl(p.photo_path)}" alt="${p.team_name || 'Bilde'}"
+          onclick="openLightbox('${resolveImageUrl(p.photo_path)}')"
+          onerror="console.error('[image-debug] gallery_card_failed', { src: this.src, raw: '${String(p.photo_path || '').replace(/'/g, "\\'")}' })"
           loading="lazy">
         <div class="gallery-card-body">
           <div class="gallery-card-info">
@@ -339,7 +349,19 @@ async function loadGallery() {
   try {
     const r = await fetch('/api/gallery');
     const d = await r.json();
-    photos = d.photos || [];
+    photos = (d.photos || []).map((p) => {
+      const frontendSrc = resolveImageUrl(p.photo_path);
+      console.debug('[image-debug] gallery_photo', {
+        id: p.photo_ref || p.id,
+        stored_image_path: p.storage_path || null,
+        resolved_public_url: p.photo_path,
+        frontend_src_used: frontendSrc,
+        tournament_id: p.tournament_id || null,
+        hole_number: p.hole_number || null,
+        round_id: p.round_id || null
+      });
+      return { ...p, photo_path: frontendSrc };
+    });
     renderWinner(photos);
     renderGallery(photos);
   } catch(_) {}

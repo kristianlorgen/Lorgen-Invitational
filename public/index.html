@@ -418,6 +418,14 @@ async function loadChampion() {
   } catch(_) {}
 }
 
+function resolveImageUrl(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return '';
+  if (/^https?:\/\//i.test(raw) || /^data:/i.test(raw)) return raw;
+  if (raw.startsWith('/')) return `${window.location.origin}${raw}`;
+  return `${window.location.origin}/${raw.replace(/^\/+/, '')}`;
+}
+
 async function loadGallery() {
   try {
     const r = await fetch('/api/gallery');
@@ -432,8 +440,9 @@ async function loadGallery() {
     empty.classList.add('d-none');
     grid.innerHTML = d.photos.map(p => `
       <div style="border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow-sm);border:1px solid var(--gold-border)">
-        <a href="${p.photo_path}" target="_blank">
-          <img src="${p.photo_path}" alt="Hull ${p.hole_number}" loading="lazy"
+        <a href="${resolveImageUrl(p.photo_path)}" target="_blank">
+          <img src="${resolveImageUrl(p.photo_path)}" alt="Hull ${p.hole_number}" loading="lazy"
+            onerror="console.error('[image-debug] home_gallery_failed', { src: this.src, raw: '${String(p.photo_path || '').replace(/'/g, "\\'")}' })"
             style="width:100%;aspect-ratio:4/3;object-fit:contain;background:var(--dark);display:block;transition:transform .3s"
             onmouseover="this.style.transform='scale(1.04)'" onmouseout="this.style.transform=''">
         </a>
@@ -477,7 +486,7 @@ async function loadCoinBack() {
     const chosen = active.length ? active[Math.floor(Math.random() * active.length)] : null;
     if (chosen?.photo_path || d.photo_path) {
       const img = document.getElementById('coinBackImg');
-      img.src = chosen?.photo_path || d.photo_path;
+      img.src = resolveImageUrl(chosen?.photo_path || d.photo_path);
       img.style.objectPosition = chosen?.focal_point || d.focal_point || '50% 50%';
     }
   } catch(_) {}
