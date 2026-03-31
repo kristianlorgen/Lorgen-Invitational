@@ -5,11 +5,15 @@ const FileStore = require('session-file-store')(session);
 const multer  = require('multer');
 const path    = require('path');
 const fs      = require('fs');
+const crypto  = require('crypto');
 const db      = require('./database');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'LorgenAdmin2025';
+const SESSION_SECRET = process.env.SESSION_SECRET || 'lorgen-inv-secret';
+const ADMIN_COOKIE_NAME = 'admin_session';
+const ADMIN_COOKIE_TTL_MS = 24 * 60 * 60 * 1000;
 const storageRoot = process.env.LORGEN_STORAGE_DIR
   ? path.resolve(process.env.LORGEN_STORAGE_DIR)
   : (process.env.VERCEL ? '/tmp/lorgen-storage' : process.cwd());
@@ -107,18 +111,66 @@ try {
 }
 app.use(session({
   ...(sessionStore ? { store: sessionStore } : {}),
-  secret: process.env.SESSION_SECRET || 'lorgen-inv-secret',
+  secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   cookie: { maxAge: 24 * 60 * 60 * 1000 }
 }));
+
+function parseCookies(req) {
+  const cookieHeader = req.headers.cookie || '';
+  return cookieHeader
+    .split(';')
+    .map(part => part.trim())
+    .filter(Boolean)
+    .reduce((acc, item) => {
+      const idx = item.indexOf('=');
+      if (idx < 0) return acc;
+      const key = item.slice(0, idx).trim();
+      const value = decodeURIComponent(item.slice(idx + 1));
+      if (key) acc[key] = value;
+      return acc;
+    }, {});
+}
+
+function sign(value) {
+  return crypto.createHmac('sha256', SESSION_SECRET).update(value).digest('hex');
+}
+
+function createAdminToken() {
+  const payload = Buffer.from(JSON.stringify({
+    role: 'admin',
+    exp: Date.now() + ADMIN_COOKIE_TTL_MS
+  })).toString('base64url');
+  return `${payload}.${sign(payload)}`;
+}
+
+function decodeAdminToken(token) {
+  if (!token) return null;
+  const [payload, signature] = String(token).split('.');
+  if (!payload || !signature) return null;
+  if (sign(payload) !== signature) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    if (parsed.exp < Date.now() || parsed.role !== 'admin') return null;
+    return parsed;
+  } catch (_) {
+    return null;
+  }
+}
+
+function isAdminAuthenticated(req) {
+  if (req.session?.isAdmin) return true;
+  const cookies = parseCookies(req);
+  return !!decodeAdminToken(cookies[ADMIN_COOKIE_NAME]);
+}
 
 // ── Auth guards ──────────────────────────────────────────────────────────────
 const requireTeam = (req, res, next) =>
   req.session.teamId ? next() : res.status(401).json({ error: 'Laginnlogging påkrevd' });
 
 const requireAdmin = (req, res, next) =>
-  req.session.isAdmin ? next() : res.status(401).json({ error: 'Admininnlogging påkrevd' });
+  isAdminAuthenticated(req) ? next() : res.status(401).json({ error: 'Admininnlogging påkrevd' });
 
 // ── Platform health checks ──────────────────────────────────────────────────
 app.get('/health', (req, res) => {
@@ -551,18 +603,25 @@ app.post('/api/auth/admin-login', (req, res) => {
   const { password } = req.body;
   if (password === ADMIN_PASSWORD) {
     req.session.isAdmin = true;
-    return res.json({ success: true });
+    res.cookie(ADMIN_COOKIE_NAME, createAdminToken(), {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: !!process.env.VERCEL,
+      maxAge: ADMIN_COOKIE_TTL_MS,
+      path: '/'
+    });
+    return req.session.save(() => res.json({ success: true }));
   }
   res.status(401).json({ error: 'Ugyldig passord' });
 });
 
 app.post('/api/auth/logout', (req, res) => {
-  req.session.destroy();
-  res.json({ success: true });
+  res.clearCookie(ADMIN_COOKIE_NAME, { path: '/' });
+  req.session.destroy(() => res.json({ success: true }));
 });
 
 app.get('/api/auth/status', (req, res) => {
-  if (req.session.isAdmin) {
+  if (isAdminAuthenticated(req)) {
     return res.json({ type: 'admin' });
   }
   if (req.session.teamId) {
