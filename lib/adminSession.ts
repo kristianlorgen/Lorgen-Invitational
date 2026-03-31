@@ -43,3 +43,15 @@ export async function getAdminSession() {
   const store = await cookies();
   return decode(store.get(COOKIE_NAME)?.value);
 }
+
+
+export async function clearAdminSession() {
+  const store = await cookies();
+  store.set(COOKIE_NAME, '', {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: true,
+    path: '/',
+    maxAge: 0
+  });
+}
