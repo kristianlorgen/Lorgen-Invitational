@@ -128,9 +128,14 @@ async function loadTeamMembersSafe(teamId, route) {
 }
 
 function buildTournamentStoragePath({ tournamentId, teamId, holeNumber, extension }) {
-  const safeTournamentId = Number.isFinite(Number(tournamentId)) ? Number(tournamentId) : 0;
-  const safeTeamId = Number.isFinite(Number(teamId)) ? Number(teamId) : 0;
-  const holeSegment = String(holeNumber ?? 0).trim() || '0';
+  const sanitizePathSegment = (value, fallback) => {
+    const raw = String(value ?? '').trim();
+    if (!raw) return fallback;
+    return raw.toLowerCase().replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '') || fallback;
+  };
+  const safeTournamentId = sanitizePathSegment(tournamentId, 'unknown-tournament');
+  const safeTeamId = sanitizePathSegment(teamId, 'unknown-team');
+  const holeSegment = sanitizePathSegment(holeNumber, '0');
   return `tournament/${safeTournamentId}/team/${safeTeamId}/hole/${holeSegment}/${Date.now()}-${crypto.randomUUID()}${extension}`;
 }
 
@@ -303,9 +308,7 @@ async function saveScoreCompat(payload) {
     .limit(1);
   if (existingResp.error) throw existingResp.error;
 
-  const existingId = Array.isArray(existingResp.data) && existingResp.data[0]?.id
-    ? Number(existingResp.data[0].id)
-    : null;
+  const existingId = normalizeEntityId(existingResp.data?.[0]?.id);
 
   if (existingId) {
     const { data, error } = await supabase
@@ -340,9 +343,7 @@ async function saveAwardClaimCompat(payload) {
     .limit(1);
   if (existingResp.error) throw existingResp.error;
 
-  const existingId = Array.isArray(existingResp.data) && existingResp.data[0]?.id
-    ? Number(existingResp.data[0].id)
-    : null;
+  const existingId = normalizeEntityId(existingResp.data?.[0]?.id);
 
   if (existingId) {
     const { data, error } = await supabase
@@ -573,11 +574,7 @@ async function resolveTeamFromCookie(req, { requirePin = false } = {}) {
     }
   }
 
-  const { data: members, error: membersError } = await supabase
-    .from('team_members')
-    .select('players(name, handicap)')
-    .eq('team_id', normalized.id);
-  if (membersError) throw membersError;
+  const members = await loadTeamMembersSafe(normalized.id, 'resolveTeamFromCookie');
   const players = (members || []).map((row) => row.players).filter(Boolean);
   return {
     ...normalized,
@@ -2270,7 +2267,7 @@ app.post('/api/team/claim-award', async (req, res) => {
     const parsedDistance = req.body?.distance === undefined || req.body?.distance === null || req.body?.distance === ''
       ? null
       : Number(req.body.distance);
-    const roundId = asInt(req.body?.round_id ?? req.body?.roundId);
+    const roundId = normalizeEntityId(req.body?.round_id ?? req.body?.roundId);
     const imageUrl = String(req.body?.image_url ?? req.body?.imageUrl ?? '').trim() || null;
     const payload = {
       hole_number: asInt(req.body?.hole_number),
@@ -2288,7 +2285,7 @@ app.post('/api/team/claim-award', async (req, res) => {
     if (!payload.hole_number || !payload.award_type || !payload.player_name) {
       return res.status(400).json({ success: false, error: 'hole_number, award_type og player_name er påkrevd' });
     }
-    const fallbackRoundId = asInt(req.body?.hole_round_id ?? req.body?.score_round_id);
+    const fallbackRoundId = normalizeEntityId(req.body?.hole_round_id ?? req.body?.score_round_id);
     let resolvedRoundId = payload.round_id || fallbackRoundId || null;
     if (!resolvedRoundId) {
       const { data: roundsData, error: roundLookupError } = await supabase
@@ -2298,7 +2295,7 @@ app.post('/api/team/claim-award', async (req, res) => {
         .order('round_order', { ascending: true })
         .limit(1);
       if (roundLookupError) throw roundLookupError;
-      resolvedRoundId = Array.isArray(roundsData) && roundsData[0]?.id ? Number(roundsData[0].id) : null;
+      resolvedRoundId = normalizeEntityId(roundsData?.[0]?.id);
     }
     if (!resolvedRoundId) {
       return res.status(400).json({ success: false, error: 'Kunne ikke finne round_id for turneringen.' });
