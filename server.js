@@ -232,6 +232,10 @@ function getUploadFsPath(publicUploadPath = '') {
   return path.join(uploadsDir, normalized.replace(/^\/uploads\//, ''));
 }
 
+function tournamentExists(tournamentId) {
+  return !!db.prepare('SELECT id FROM tournaments WHERE id=? LIMIT 1').get(tournamentId);
+}
+
 function syncScorePhotoToGallery({ tournamentId, scoreId, photoPath }) {
   const existing = db.prepare(
     `SELECT id FROM gallery_photos
@@ -827,6 +831,9 @@ app.post('/api/admin/tournament/:id/sponsors', requireAdmin, (req, res) => {
 
 app.post('/api/admin/tournament/:id/sponsor-logo', requireAdmin, (req, res) => {
   const tournamentId = parseInt(req.params.id, 10);
+  if (!Number.isInteger(tournamentId) || !tournamentExists(tournamentId)) {
+    return res.status(404).json({ error: 'Turnering ikke funnet' });
+  }
   const uploadDir = path.join(uploadsDir, 'admin', `t${tournamentId}`, 'sponsors');
   ensureDir(uploadDir);
 
@@ -889,6 +896,9 @@ app.post('/api/admin/team', requireAdmin, (req, res) => {
   if (!tournament_id || !team_name || !player1 || !player2 || !pin_code)
     return res.status(400).json({ error: 'Alle felt er påkrevd' });
   try {
+    if (!tournamentExists(tournament_id)) {
+      return res.status(404).json({ error: 'Valgt turnering finnes ikke lenger. Oppdater siden og prøv igjen.' });
+    }
     const existing = db.prepare('SELECT id FROM teams WHERE tournament_id=? AND pin_code=?').get(tournament_id, pin_code);
     if (existing) return res.status(400).json({ error: 'PIN allerede i bruk i denne turneringen' });
     const result = db.prepare(
@@ -1305,6 +1315,9 @@ app.get('/api/admin/tournament/:id/gallery', requireAdmin, (req, res) => {
 app.post('/api/admin/tournament/:id/gallery', requireAdmin, galleryUpload.single('photo'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Ingen fil lastet opp' });
   try {
+    if (!tournamentExists(req.params.id)) {
+      return res.status(404).json({ error: 'Turnering ikke funnet' });
+    }
     const photoPath = `/uploads/glimtskudd/${req.file.filename}`;
     const caption = req.body.caption || '';
     const result = db.prepare(
@@ -1575,22 +1588,54 @@ app.put('/api/admin/photo/:id/publish', requireAdmin, (req, res) => {
 
 // ── Coin back image ───────────────────────────────────────────────────────────
 app.get('/api/coin-back', (req, res) => {
+  try {
+    const active = db.prepare(
+      `SELECT photo_path, focal_point
+       FROM coin_back_images
+       WHERE is_active=1
+       ORDER BY created_at DESC, id DESC
+       LIMIT 1`
+    ).get();
+
+    if (active?.photo_path) {
+      return res.json({
+        photo_path: normalizePhotoPath(active.photo_path),
+        focal_point: active.focal_point || '50% 50%'
+      });
+    }
+  } catch (_) {}
+
   const configPath = path.join(uploadsDir, 'coin-back.json');
   if (fs.existsSync(configPath)) {
     try {
       const data = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-      return res.json({ photo_path: data.photo_path || null, focal_point: data.focal_point || null });
-    } catch(_) {}
+      return res.json({
+        photo_path: normalizePhotoPath(data.photo_path || ''),
+        focal_point: data.focal_point || '50% 50%'
+      });
+    } catch (_) {}
   }
-  res.json({ photo_path: null, focal_point: null });
+  res.json({ photo_path: null, focal_point: '50% 50%' });
 });
 
 app.put('/api/admin/coin-back/focus', requireAdmin, (req, res) => {
-  const configPath = path.join(uploadsDir, 'coin-back.json');
   try {
+    const focalPoint = req.body.focal_point || '50% 50%';
+    const active = db.prepare(
+      `SELECT id FROM coin_back_images
+       WHERE is_active=1
+       ORDER BY created_at DESC, id DESC
+       LIMIT 1`
+    ).get();
+
+    if (active?.id) {
+      db.prepare('UPDATE coin_back_images SET focal_point=? WHERE id=?').run(focalPoint, active.id);
+    }
+
+    const configPath = path.join(uploadsDir, 'coin-back.json');
     let data = {};
     if (fs.existsSync(configPath)) data = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    data.focal_point = req.body.focal_point || '50% 50%';
+    data.focal_point = focalPoint;
     fs.writeFileSync(configPath, JSON.stringify(data));
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -1614,8 +1659,26 @@ app.post('/api/admin/coin-back', requireAdmin, (req, res) => {
     if (err) return res.status(400).json({ error: err.message });
     if (!req.file) return res.status(400).json({ error: 'Ingen fil lastet opp' });
     const photoPath = `/uploads/coin/${req.file.filename}`;
-    fs.writeFileSync(path.join(uploadsDir, 'coin-back.json'), JSON.stringify({ photo_path: photoPath }));
-    res.json({ success: true, photo_path: photoPath });
+    const existingFocus = db.prepare(
+      `SELECT focal_point FROM coin_back_images
+       WHERE is_active=1
+       ORDER BY created_at DESC, id DESC
+       LIMIT 1`
+    ).get()?.focal_point || '50% 50%';
+
+    const tx = db.transaction(() => {
+      db.prepare('UPDATE coin_back_images SET is_active=0 WHERE is_active=1').run();
+      db.prepare(
+        'INSERT INTO coin_back_images (photo_path, focal_point, is_active) VALUES (?,?,1)'
+      ).run(photoPath, existingFocus);
+    });
+    tx();
+
+    fs.writeFileSync(
+      path.join(uploadsDir, 'coin-back.json'),
+      JSON.stringify({ photo_path: photoPath, focal_point: existingFocus })
+    );
+    res.json({ success: true, photo_path: normalizePhotoPath(photoPath), focal_point: existingFocus });
   });
 });
 

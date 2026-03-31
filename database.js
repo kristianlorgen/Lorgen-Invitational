@@ -165,6 +165,14 @@ db.exec(`
     FOREIGN KEY (tournament_id) REFERENCES tournaments(id),
     UNIQUE(tournament_id, placement, slot_key)
   );
+
+  CREATE TABLE IF NOT EXISTS coin_back_images (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    photo_path TEXT NOT NULL,
+    focal_point TEXT DEFAULT '50% 50%',
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 // Migrate existing databases
@@ -193,6 +201,16 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS photo_votes (
   voted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(tournament_id, photo_ref, voter_ip)
 )`); } catch(_) {}
+try { db.exec(`CREATE TABLE IF NOT EXISTS coin_back_images (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  photo_path TEXT NOT NULL,
+  focal_point TEXT DEFAULT '50% 50%',
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`); } catch(_) {}
+try { db.exec(`ALTER TABLE coin_back_images ADD COLUMN focal_point TEXT DEFAULT '50% 50%'`); } catch(_) {}
+try { db.exec(`ALTER TABLE coin_back_images ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1`); } catch(_) {}
+try { db.exec(`ALTER TABLE coin_back_images ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP`); } catch(_) {}
 
 module.exports = db;
 
