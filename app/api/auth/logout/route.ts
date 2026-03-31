@@ -2,6 +2,8 @@ import { clearAdminSession } from '@/lib/adminSession';
 import { fail, ok } from '@/lib/apiResponse';
 import { clearTeamSession } from '@/lib/teamSession';
 
+export const runtime = 'nodejs';
+
 export async function POST() {
   try {
     await Promise.all([clearAdminSession(), clearTeamSession()]);

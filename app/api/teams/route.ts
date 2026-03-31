@@ -4,7 +4,7 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin';
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const tournamentId = Number(searchParams.get('tournament_id'));
+    const tournamentId = Number(searchParams.get('tournament_id') ?? searchParams.get('tournamentId'));
 
     if (!Number.isInteger(tournamentId) || tournamentId <= 0) {
       return fail('Valid tournament_id query param is required', 400);

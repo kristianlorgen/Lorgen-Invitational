@@ -2,6 +2,8 @@ import { createTeamSession } from '@/lib/teamSession';
 import { fail, ok } from '@/lib/apiResponse';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
+export const runtime = 'nodejs';
+
 type TeamRow = {
   id: number | string;
   tournament_id: number | string;
