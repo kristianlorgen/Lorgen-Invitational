@@ -18,7 +18,17 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       .order('id', { ascending: true });
 
     if (error) return fail('Failed to fetch teams', 500, error.message);
-    return ok({ teams: data ?? [] });
+
+    const teams = (data ?? []).map((team) => ({
+      ...team,
+      team_name: team.name,
+      player1: '',
+      player2: '',
+      player1_handicap: team.player1_hcp ?? 0,
+      player2_handicap: team.player2_hcp ?? 0
+    }));
+
+    return ok({ teams });
   } catch (error) {
     return fail('Unexpected server error', 500, error);
   }
