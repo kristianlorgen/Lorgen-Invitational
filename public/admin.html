@@ -734,14 +734,23 @@ function showToast(msg, type='success') {
 }
 
 async function api(url, options={}) {
+  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
   const r = await fetch(url, {
     credentials: 'same-origin',
-    headers:{'Content-Type':'application/json'},
-    ...options
+    ...options,
+    headers
   });
-  const d = await r.json();
-  if (!r.ok) throw new Error(d.error || 'Forespørsel mislyktes');
-  return d;
+  const contentType = r.headers.get('content-type') || '';
+  const isJson = contentType.includes('application/json');
+  const payload = isJson ? await r.json() : await r.text();
+  if (!r.ok) {
+    const fallback = `Serverfeil (${r.status})`;
+    if (isJson && payload && typeof payload === 'object') {
+      throw new Error(payload.error || fallback);
+    }
+    throw new Error(fallback);
+  }
+  return isJson ? payload : {};
 }
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
@@ -916,7 +925,7 @@ async function createTournament() {
   const year = date ? new Date(date).getFullYear() : null;
   if (!year||!date) { showToast('Dato og klokkeslett er påkrevd','error'); return; }
   try {
-    await api('/api/admin/tournaments',{method:'POST',body:JSON.stringify({year,name,date,course,description,slope_rating,status:'upcoming'})});
+    await api('/api/admin/tournament',{method:'POST',body:JSON.stringify({year,name,date,course,description,slope_rating,status:'upcoming'})});
     showToast('Turnering opprettet!');
     ['tDate','tCourse','tDesc'].forEach(id=>document.getElementById(id).value='');
     document.getElementById('tName').value='Lorgen Invitational';
