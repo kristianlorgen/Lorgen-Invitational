@@ -543,7 +543,15 @@ function clearTeamAuthCookie(res) {
   res.setHeader('Set-Cookie', next);
 }
 
-async function resolveTeamFromCookie(req) {
+function readProvidedTeamPin(req) {
+  const headerPin = String(req.headers['x-team-pin'] || '').trim();
+  if (headerPin) return headerPin;
+  const bodyPin = String(req.body?.pin || '').trim();
+  if (bodyPin) return bodyPin;
+  return String(req.query?.pin || '').trim();
+}
+
+async function resolveTeamFromCookie(req, { requirePin = false } = {}) {
   const cookies = readCookies(req);
   const parsed = verifyTeamCookieValue(cookies[TEAM_COOKIE_NAME]);
   if (!parsed) return null;
@@ -558,7 +566,18 @@ async function resolveTeamFromCookie(req) {
   if (!team) return null;
 
   const normalized = normalizeTeamRow(team);
-  const members = await loadTeamMembersSafe(normalized.id, 'resolveTeamFromCookie');
+  if (requirePin) {
+    const providedPin = readProvidedTeamPin(req);
+    if (!providedPin || providedPin !== String(normalized.pin || '').trim()) {
+      return null;
+    }
+  }
+
+  const { data: members, error: membersError } = await supabase
+    .from('team_members')
+    .select('players(name, handicap)')
+    .eq('team_id', normalized.id);
+  if (membersError) throw membersError;
   const players = (members || []).map((row) => row.players).filter(Boolean);
   return {
     ...normalized,
@@ -1930,7 +1949,7 @@ app.get('/api/events', (req, res) => {
 });
 
 async function requireTeamContext(req, { allowPinFallback = false } = {}) {
-  const teamFromCookie = await resolveTeamFromCookie(req);
+  const teamFromCookie = await resolveTeamFromCookie(req, { requirePin: true });
   if (teamFromCookie) {
     return { team: teamFromCookie, tournamentId: teamFromCookie.tournament_id };
   }
