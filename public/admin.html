@@ -833,7 +833,15 @@ async function doAdminLogin() {
   btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
   document.getElementById('adminLoginErr').textContent = '';
   try {
-    const d = await api('/api/auth/admin-login', { method:'POST', body:JSON.stringify({password:pw}) });
+    let d;
+    try {
+      d = await api('/api/auth/admin-login', { method:'POST', body:JSON.stringify({password:pw}) });
+    } catch (primaryError) {
+      const msg = String(primaryError?.message || '');
+      const looksLikeMissingRoute = msg.includes('NOT_FOUND') || msg.includes('non-JSON response (404)') || msg.includes('404');
+      if (!looksLikeMissingRoute) throw primaryError;
+      d = await api('/api/admin-login', { method:'POST', body:JSON.stringify({password:pw}) });
+    }
     if (d.success) {
       document.getElementById('adminLogin').classList.add('d-none');
       document.getElementById('adminPanel').classList.remove('d-none');
