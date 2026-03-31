@@ -1,6 +1,89 @@
-const Database = require('better-sqlite3');
 const fs = require('fs');
 const path = require('path');
+
+function createDatabase(dbPath) {
+  const preferredDriver = (process.env.LORGEN_SQLITE_DRIVER || 'auto').toLowerCase();
+  const tryBetterSqlite3 = preferredDriver === 'auto' || preferredDriver === 'better-sqlite3';
+  const tryNodeSqlite = preferredDriver === 'auto' || preferredDriver === 'node:sqlite';
+
+  if (tryBetterSqlite3) {
+    try {
+      const BetterSqlite3 = require('better-sqlite3');
+      const db = new BetterSqlite3(dbPath);
+      db.__driver = 'better-sqlite3';
+      return db;
+    } catch (error) {
+      if (!isModuleLoadError(error)) throw error;
+    }
+  }
+
+  if (tryNodeSqlite) {
+    try {
+      // Node.js >= 22 includes a built-in synchronous sqlite driver.
+      const sqlite = require('node:sqlite');
+      const DatabaseSync = sqlite.DatabaseSync || (sqlite.default && sqlite.default.DatabaseSync);
+      if (!DatabaseSync) {
+        throw new Error('DatabaseSync not available in node:sqlite');
+      }
+      const db = new DatabaseSync(dbPath);
+      const wrapped = wrapNodeSqliteDatabase(db);
+      wrapped.__driver = 'node:sqlite';
+      return wrapped;
+    } catch (error) {
+      if (!isModuleLoadError(error)) throw error;
+    }
+  }
+
+  throw new Error(
+    'Unable to initialize SQLite driver. Install better-sqlite3 (Node 20.x) or run on Node.js 22+ with node:sqlite available.'
+  );
+}
+
+function isModuleLoadError(error) {
+  return error && (
+    error.code === 'MODULE_NOT_FOUND' ||
+    error.code === 'ERR_UNKNOWN_BUILTIN_MODULE' ||
+    /Cannot find module/.test(error.message)
+  );
+}
+
+function wrapNodeSqliteDatabase(db) {
+  return {
+    exec(sql) {
+      return db.exec(sql);
+    },
+    prepare(sql) {
+      const statement = db.prepare(sql);
+      return {
+        run(...params) {
+          return statement.run(...params);
+        },
+        get(...params) {
+          return statement.get(...params);
+        },
+        all(...params) {
+          return statement.all(...params);
+        }
+      };
+    },
+    pragma(sql) {
+      return db.exec(`PRAGMA ${sql}`);
+    },
+    transaction(fn) {
+      return (...args) => {
+        db.exec('BEGIN');
+        try {
+          const result = fn(...args);
+          db.exec('COMMIT');
+          return result;
+        } catch (error) {
+          db.exec('ROLLBACK');
+          throw error;
+        }
+      };
+    }
+  };
+}
 
 const runningOnVercel = Boolean(process.env.VERCEL);
 const dataRoot = process.env.LORGEN_DATA_DIR
@@ -14,9 +97,10 @@ if (runningOnVercel && !process.env.LORGEN_DATA_DIR) {
 if (!fs.existsSync(dataRoot)) fs.mkdirSync(dataRoot, { recursive: true });
 
 const dbPath = path.join(dataRoot, 'tournament.db');
-const db = new Database(dbPath);
+const db = createDatabase(dbPath);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
+console.log(`[Lorgen] SQLite driver: ${db.__driver || 'unknown'}`);
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS tournaments (
