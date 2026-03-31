@@ -15,6 +15,7 @@ const supabase = supabaseAdmin;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 12 * 1024 * 1024 } });
 const PORT = Number(process.env.PORT || 3000);
 const GALLERY_BUCKET = 'tournament-gallery';
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -23,6 +24,82 @@ app.use(express.static('public'));
 function asInt(value) {
   const parsed = Number.parseInt(String(value ?? '').trim(), 10);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isUuid(value) {
+  return UUID_PATTERN.test(String(value || '').trim());
+}
+
+function normalizeIdValue(value, expectedType) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+
+  if (expectedType === 'uuid') return raw;
+  if (expectedType === 'integer') {
+    const parsed = Number.parseInt(raw, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  if (isUuid(raw)) return raw;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) ? parsed : raw;
+}
+
+function extractDbError(error) {
+  if (!error) return null;
+  return {
+    message: error.message || null,
+    details: error.details || null,
+    hint: error.hint || null,
+    code: error.code || null
+  };
+}
+
+function hasId(value) {
+  return value !== null && value !== undefined && String(value).trim() !== '';
+}
+
+let schemaMetaCache = null;
+let schemaMetaLoadedAt = 0;
+
+async function loadSchemaMeta() {
+  const now = Date.now();
+  if (schemaMetaCache && now - schemaMetaLoadedAt < 60_000) return schemaMetaCache;
+
+  const { data, error } = await supabase
+    .from('information_schema.columns')
+    .select('table_name,column_name,data_type,is_nullable,column_default,udt_name')
+    .eq('table_schema', 'public')
+    .in('table_name', ['teams', 'tournaments'])
+    .in('column_name', ['id', 'tournament_id', 'status', 'name', 'date', 'course', 'slope_rating', 'description']);
+
+  if (error) throw error;
+
+  const columns = new Map();
+  for (const row of data || []) {
+    columns.set(`${row.table_name}.${row.column_name}`, row);
+  }
+  schemaMetaCache = columns;
+  schemaMetaLoadedAt = now;
+  return schemaMetaCache;
+}
+
+async function resolveIdTypes() {
+  try {
+    const columns = await loadSchemaMeta();
+    const teamIdType = columns.get('teams.id')?.data_type === 'uuid' ? 'uuid' : 'integer';
+    const tournamentIdType = columns.get('tournaments.id')?.data_type === 'uuid' ? 'uuid' : 'integer';
+    return { teamIdType, tournamentIdType, source: 'information_schema', columns };
+  } catch (error) {
+    const tournament = await getActiveTournament().catch(() => null);
+    const inferredTournamentType = tournament?.id && isUuid(tournament.id) ? 'uuid' : 'integer';
+    return {
+      teamIdType: inferredTournamentType,
+      tournamentIdType: inferredTournamentType,
+      source: 'fallback',
+      columns: new Map()
+    };
+  }
 }
 
 function canonicalStorageUrl(storagePath) {
@@ -64,17 +141,18 @@ async function getTeamWithPin({ tournamentId, teamId, pin }) {
   return data?.[0] || null;
 }
 
-function resolveTeamAuthPayload(req) {
+async function resolveTeamAuthPayload(req) {
+  const { teamIdType, tournamentIdType } = await resolveIdTypes();
   return {
-    teamId: asInt(req.query.team_id ?? req.body.team_id),
-    tournamentId: asInt(req.query.tournament_id ?? req.body.tournament_id),
+    teamId: normalizeIdValue(req.query.team_id ?? req.body.team_id, teamIdType),
+    tournamentId: normalizeIdValue(req.query.tournament_id ?? req.body.tournament_id, tournamentIdType),
     pin: String(req.headers['x-team-pin'] || req.query.pin || req.body.pin || '').trim()
   };
 }
 
 async function requireTeamAuth(req, res) {
-  const { teamId, tournamentId, pin } = resolveTeamAuthPayload(req);
-  if (!teamId || !tournamentId || !pin) {
+  const { teamId, tournamentId, pin } = await resolveTeamAuthPayload(req);
+  if (!hasId(teamId) || !hasId(tournamentId) || !pin) {
     jsonError(res, 'TEAM_SESSION_MISSING', 'Team session mangler', 401);
     return null;
   }
@@ -115,13 +193,12 @@ async function broadcastSeedIds(tournamentId, teamId) {
     supabase.from('scores').select('id').eq('tournament_id', tournamentId).order('id', { ascending: false }).limit(1),
     supabase.from('award_claims').select('id').eq('tournament_id', tournamentId).order('id', { ascending: false }).limit(1)
   ]);
-  const chatResp = await supabase
+  let chatQuery = supabase
     .from('chat_messages')
     .select('id')
-    .eq('tournament_id', tournamentId)
-    .eq('team_id', teamId)
-    .order('id', { ascending: false })
-    .limit(1);
+    .eq('tournament_id', tournamentId);
+  if (hasId(teamId)) chatQuery = chatQuery.eq('team_id', teamId);
+  const chatResp = await chatQuery.order('id', { ascending: false }).limit(1);
 
   return {
     scoreId: scoresResp.data?.[0]?.id || 0,
@@ -141,6 +218,71 @@ app.get('/api/tournament', async (_req, res) => {
     return jsonError(res, 'TOURNAMENT_LOAD_FAILED', error.message, 500);
   }
 });
+
+app.get('/api/admin/tournaments', async (_req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('tournaments')
+      .select('id, year, name, date, course, slope_rating, description, status, is_active, created_at')
+      .order('date', { ascending: false });
+    if (error) throw error;
+    return res.json({ success: true, tournaments: data || [] });
+  } catch (error) {
+    return jsonError(res, 'ADMIN_TOURNAMENTS_LOAD_FAILED', error.message, 500, { db_error: extractDbError(error) });
+  }
+});
+
+async function createTournamentHandler(req, res) {
+  try {
+    const body = req.body || {};
+    const name = String(body.name || '').trim();
+    const date = body.date ? new Date(body.date).toISOString() : null;
+    const course = String(body.course || '').trim();
+    const description = String(body.description || '').trim();
+    const slopeRating = Number.parseInt(String(body.slope_rating ?? body.slope ?? '').trim(), 10);
+    const status = String(body.status || 'upcoming').trim() || 'upcoming';
+    const year = Number.parseInt(String(body.year || '').trim(), 10) || (date ? new Date(date).getUTCFullYear() : null);
+
+    if (!name || !date || !year) {
+      return jsonError(res, 'TOURNAMENT_INVALID', 'name, date og year er påkrevd', 400);
+    }
+
+    const meta = await resolveIdTypes();
+    const idMeta = meta.columns.get('tournaments.id');
+    const insertPayload = {
+      year,
+      name,
+      date,
+      course: course || null,
+      slope_rating: Number.isFinite(slopeRating) ? slopeRating : 113,
+      description: description || null,
+      status
+    };
+
+    if (idMeta?.is_nullable === 'NO' && !idMeta?.column_default && meta.tournamentIdType === 'uuid') {
+      insertPayload.id = crypto.randomUUID();
+    }
+
+    const { data, error } = await supabase
+      .from('tournaments')
+      .insert(insertPayload)
+      .select('id, year, name, date, course, slope_rating, description, status, is_active, created_at')
+      .single();
+
+    if (error) {
+      console.error('[admin:create-tournament] db error', extractDbError(error), { insertPayload });
+      return jsonError(res, 'TOURNAMENT_CREATE_FAILED', 'Kunne ikke opprette turnering', 500, { db_error: extractDbError(error) });
+    }
+
+    return res.json({ success: true, tournament: data });
+  } catch (error) {
+    console.error('[admin:create-tournament] unexpected error', extractDbError(error));
+    return jsonError(res, 'TOURNAMENT_CREATE_FAILED', 'Kunne ikke opprette turnering', 500, { db_error: extractDbError(error) });
+  }
+}
+
+app.post('/api/admin/tournament', createTournamentHandler);
+app.post('/api/admin/tournaments', createTournamentHandler);
 
 app.post('/api/auth/team-login', async (req, res) => {
   try {
@@ -362,11 +504,14 @@ app.post('/api/chat/send', upload.single('image'), async (req, res) => {
     let imagePath = null;
     if (req.file) {
       const ext = path.extname(req.file.originalname || '.jpg') || '.jpg';
-      const storagePath = `chat/${team.tournament_id}/${team.id}/${Date.now()}-${crypto.randomUUID()}${ext}`;
+      const storagePath = `tournament/${team.tournament_id}/chat/${team.id}/${Date.now()}-${crypto.randomUUID()}${ext}`;
       const { error: uploadError } = await supabase.storage
         .from(GALLERY_BUCKET)
         .upload(storagePath, req.file.buffer, { contentType: req.file.mimetype || 'image/jpeg', upsert: false });
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        console.error('[chat:upload] storage error', extractDbError(uploadError), { bucket: GALLERY_BUCKET, storagePath });
+        throw uploadError;
+      }
       imagePath = storagePath;
     }
 
@@ -520,12 +665,15 @@ app.post('/api/team/upload-photo/:holeNum', upload.single('photo'), async (req, 
     if (!holeNumber) return jsonError(res, 'INVALID_HOLE', 'Ugyldig hullnummer', 400);
 
     const ext = path.extname(req.file.originalname || '.jpg') || '.jpg';
-    const storagePath = `hole-images/${team.tournament_id}/${team.id}/${holeNumber}/${Date.now()}-${crypto.randomUUID()}${ext}`;
+    const storagePath = `tournament/${team.tournament_id}/hole-images/${team.id}/${holeNumber}/${Date.now()}-${crypto.randomUUID()}${ext}`;
 
     const { error: uploadError } = await supabase.storage
       .from(GALLERY_BUCKET)
       .upload(storagePath, req.file.buffer, { contentType: req.file.mimetype || 'image/jpeg', upsert: false });
-    if (uploadError) throw uploadError;
+    if (uploadError) {
+      console.error('[team:upload-photo] storage error', extractDbError(uploadError), { bucket: GALLERY_BUCKET, storagePath });
+      throw uploadError;
+    }
 
     const imageUrl = canonicalStorageUrl(storagePath);
 
@@ -630,8 +778,9 @@ app.get('/api/events', async (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
 
-  const tournamentId = asInt(req.query.tournament_id);
-  const teamId = asInt(req.query.team_id);
+  const idMeta = await resolveIdTypes();
+  const tournamentId = normalizeIdValue(req.query.tournament_id, idMeta.tournamentIdType);
+  const teamId = normalizeIdValue(req.query.team_id, idMeta.teamIdType);
 
   let scopeTournamentId = tournamentId;
   let scopeTeamId = teamId;
@@ -646,16 +795,16 @@ app.get('/api/events', async (req, res) => {
     }
   }
 
-  if (!scopeTournamentId) {
+  if (!hasId(scopeTournamentId)) {
     const tournament = await getActiveTournament();
     scopeTournamentId = tournament?.id || null;
   }
-  if (!scopeTournamentId) {
+  if (!hasId(scopeTournamentId)) {
     res.write('event: ping\ndata: {"type":"ping"}\n\n');
     return res.end();
   }
 
-  const seeds = await broadcastSeedIds(scopeTournamentId, scopeTeamId || -1);
+  const seeds = await broadcastSeedIds(scopeTournamentId, scopeTeamId || null);
   let lastScoreId = seeds.scoreId;
   let lastAwardId = seeds.awardId;
   let lastChatId = seeds.chatId;
