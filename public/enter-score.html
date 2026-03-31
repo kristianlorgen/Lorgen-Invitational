@@ -8,7 +8,7 @@
 
   <meta property="og:title" content="Lorgen Invitational">
   <meta property="og:description" content="Power · Precision · Party — Live resultater, regler og galleri.">
-  <meta property="og:image" content="/images/logo.png">
+  <meta property="og:image" content="https://lorgen-invitational-production.up.railway.app/images/logo.png">
   <meta property="og:type" content="website">
   <meta name="twitter:card" content="summary_large_image">
   <link rel="icon" type="image/png" href="/images/logo.png">
@@ -255,7 +255,6 @@
     .team-chat-name { font-weight: 700; color: var(--gold-dark); }
     .team-chat-time { color: var(--text-muted); }
     .team-chat-text { color: var(--text); font-size: .82rem; line-height: 1.35; white-space: pre-wrap; }
-    .team-chat-note { color: var(--text-muted); font-size: .76rem; line-height: 1.35; margin-top: 4px; white-space: pre-wrap; }
     .team-chat-form {
       display: flex;
       gap: 8px;
@@ -330,31 +329,6 @@
       width: 100%;
       justify-content: center;
     }
-    .login-debug-panel {
-      margin-top: 14px;
-      text-align: left;
-      border: 1px dashed rgba(201,168,76,.35);
-      border-radius: var(--radius-sm);
-      background: rgba(7, 10, 18, .55);
-      color: rgba(255,255,255,.88);
-      padding: 12px;
-      font-size: .75rem;
-      line-height: 1.4;
-      word-break: break-word;
-    }
-    .login-debug-panel pre {
-      margin: 4px 0 10px;
-      white-space: pre-wrap;
-      font-size: .71rem;
-      color: rgba(255,255,255,.86);
-    }
-    .login-debug-label {
-      color: var(--gold);
-      text-transform: uppercase;
-      letter-spacing: .08em;
-      font-size: .62rem;
-      font-weight: 700;
-    }
 
   </style>
 </head>
@@ -363,7 +337,9 @@
 <!-- ── Navigasjon ──────────────────────────────────────────────────────────── -->
 <nav class="navbar" id="navbar">
   <div class="container">
-    <div id="chatToggleMount"></div>
+    <button class="chat-widget-toggle" id="chatWidgetToggle" type="button" onclick="toggleChatWidget()" aria-label="Åpne chat" data-unread="0">
+      <i class="fas fa-comment-dots"></i>
+    </button>
     <ul class="navbar-nav">
       <li><a href="/" class="nav-link">Hjem</a></li>
       <li><a href="/gameday" class="nav-link">Spilleregler &amp; Informasjon</a></li>
@@ -406,32 +382,26 @@
 
 <div class="toast-container" id="toastContainer"></div>
 
-<div id="chatWidgetMount"></div>
-<template id="chatTemplate">
-  <button class="chat-widget-toggle" id="chatWidgetToggle" type="button" onclick="toggleChatWidget()" aria-label="Åpne chat" data-unread="0">
-    <i class="fas fa-comment-dots"></i>
-  </button>
-  <section class="chat-widget" id="chatWidget" aria-label="Felles chat">
-    <div class="team-chat-header"><span><i class="fas fa-comments"></i> Felles chat</span><button type="button" class="birdie-shout-btn" id="birdieShoutBtn" onclick="sendBirdieShoutout()"><i class="fas fa-bullhorn"></i> Birdie shoutout</button></div>
-    <div class="notification-banner" id="notificationBanner"></div>
-    <div class="team-chat-messages" id="chatMessages">
-      <div class="team-chat-empty">Laster chat…</div>
+<section class="chat-widget" id="chatWidget" aria-label="Felles chat">
+  <div class="team-chat-header"><span><i class="fas fa-comments"></i> Felles chat</span><button type="button" class="birdie-shout-btn" id="birdieShoutBtn" onclick="sendBirdieShoutout()"><i class="fas fa-bullhorn"></i> Birdie shoutout</button></div>
+  <div class="notification-banner" id="notificationBanner"></div>
+  <div class="team-chat-messages" id="chatMessages">
+    <div class="team-chat-empty">Laster chat…</div>
+  </div>
+  <form class="team-chat-form" onsubmit="sendChatMessage(event)">
+    <label class="chat-upload-btn" for="chatImageInput" title="Ta bilde med kamera" aria-label="Ta bilde med kamera">
+      <i class="fas fa-camera"></i>
+    </label>
+    <input type="file" id="chatImageInput" class="chat-upload-input" accept="image/*" capture="environment">
+    <div class="team-chat-actions">
+      <input type="text" id="chatInput" class="team-chat-input" maxlength="400" placeholder="Skriv en melding til de andre lagene…" autocomplete="off">
+      <button class="btn btn--gold btn--sm" id="chatSendBtn" style="justify-content:center" type="submit">
+        <i class="fas fa-paper-plane"></i>
+      </button>
     </div>
-    <form class="team-chat-form" onsubmit="sendChatMessage(event)">
-      <label class="chat-upload-btn" for="chatImageInput" title="Ta bilde med kamera" aria-label="Ta bilde med kamera">
-        <i class="fas fa-camera"></i>
-      </label>
-      <input type="file" id="chatImageInput" class="chat-upload-input" accept="image/*" capture="environment">
-      <div class="team-chat-actions">
-        <input type="text" id="chatInput" class="team-chat-input" maxlength="400" placeholder="Skriv en melding til de andre lagene…" autocomplete="off">
-        <button class="btn btn--gold btn--sm" id="chatSendBtn" style="justify-content:center" type="submit">
-          <i class="fas fa-paper-plane"></i>
-        </button>
-      </div>
-    </form>
-    <div class="chat-upload-meta" id="chatUploadMeta"></div>
-  </section>
-</template>
+  </form>
+  <div class="chat-upload-meta" id="chatUploadMeta"></div>
+</section>
 
 <!-- ── INNLOGGINGSSKJERM ───────────────────────────────────────────────────── -->
 <div id="loginScreen" style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;padding-top:calc(var(--nav-height)+40px);background:linear-gradient(160deg,var(--dark),var(--dark-mid))">
@@ -452,17 +422,6 @@
       <button onclick="doLogin()" class="btn btn--gold" style="width:100%;justify-content:center" id="loginBtn">
         <i class="fas fa-arrow-right-to-bracket"></i> Logg inn
       </button>
-      <div id="loginDebugPanel" class="login-debug-panel" style="display:none">
-        <div class="login-debug-label">PIN login debug (temporary)</div>
-        <div><strong>Endpoint:</strong> <span id="debugLoginEndpoint">—</span></div>
-        <div><strong>HTTP status:</strong> <span id="debugLoginStatus">—</span></div>
-        <div><strong>Frontend validation:</strong> <span id="debugLoginValidation">—</span></div>
-        <div><strong>Rejection reason:</strong> <span id="debugLoginReason">—</span></div>
-        <div><strong>sessionStorage team_id:</strong> <span id="debugStoredTeamId">—</span></div>
-        <div><strong>sessionStorage tournament_id:</strong> <span id="debugStoredTournamentId">—</span></div>
-        <div class="login-debug-label" style="margin-top:8px">Raw response JSON</div>
-        <pre id="debugLoginResponse">—</pre>
-      </div>
       <p style="font-size:.75rem;color:rgba(255,255,255,.25);margin-top:16px">PIN-koden ble tildelt av turneringsadministrator</p>
     </div>
   </div>
@@ -496,7 +455,7 @@
     </div>
   </section>
 
-  <div id="activeRoundContent" class="d-none">
+  <div id="activeRoundContent">
   <!-- Hullnavigasjon (prikker) -->
   <div style="background:var(--white);padding:12px 16px;border-bottom:1px solid var(--gold-border)">
     <div class="container" style="max-width:600px">
@@ -595,7 +554,6 @@
 
 <input type="file" id="photoInput" accept="image/*" capture="environment" style="display:none">
 
-<script src="/js/scramble-handicap.js"></script>
 <script>
 window.addEventListener('scroll', () => {
   document.getElementById('navbar').classList.toggle('scrolled', window.scrollY > 40);
@@ -610,10 +568,7 @@ function toggleChatWidget() {
   const widget = document.getElementById('chatWidget');
   if (!widget) return;
   widget.classList.toggle('open');
-  if (widget.classList.contains('open')) {
-    markChatAsSeen();
-    scrollChatToNewest(true);
-  }
+  if (widget.classList.contains('open')) markChatAsSeen();
 }
 
 document.addEventListener('click', e => {
@@ -666,282 +621,6 @@ let chatEventSource = null;
 let notificationRegistration = null;
 let unreadChatCount = 0;
 let lastSeenChatId = 0;
-let chatUiMounted = false;
-let chatSyntheticIdCounter = 0;
-let birdieBannerTimer = null;
-let birdieRealtimeReady = false;
-let birdieRealtimeReadyTimer = null;
-let chatInitialized = false;
-let positionFetchPromise = null;
-let positionLastFetchedAt = 0;
-let positionPollIntervalId = null;
-let startupInProgress = false;
-const seenBirdieMessageIds = new Set();
-const TEAM_ID_STORAGE_KEY = 'team_id';
-const TOURNAMENT_ID_STORAGE_KEY = 'tournament_id';
-const SUPABASE_URL = String(window.NEXT_PUBLIC_SUPABASE_URL || window.SUPABASE_URL || window.__SUPABASE_URL__ || 'https://uxaurdxmdnnflbdwpfhx.supabase.co').replace(/\/+$/, '');
-let activeTeamSession = null;
-function clearStoredSession() {
-  localStorage.removeItem(TEAM_ID_STORAGE_KEY);
-  localStorage.removeItem(TOURNAMENT_ID_STORAGE_KEY);
-  sessionStorage.removeItem(TEAM_ID_STORAGE_KEY);
-  sessionStorage.removeItem(TOURNAMENT_ID_STORAGE_KEY);
-  sessionStorage.removeItem('team_pin');
-}
-function isInvalidStoredId(value) {
-  const normalized = String(value ?? '').trim().toLowerCase();
-  return !normalized || normalized === 'undefined' || normalized === 'null';
-}
-
-function getSession() {
-  const teamId = activeTeamSession?.team_id;
-  const tournamentId = activeTeamSession?.tournament_id;
-  if (isInvalidStoredId(teamId) || isInvalidStoredId(tournamentId)) {
-    return null;
-  }
-  return {
-    team_id: teamId,
-    tournament_id: tournamentId
-  };
-}
-
-function isSessionErrorPayload(payload) {
-  return String(payload?.error || '').includes('Team session mangler');
-}
-
-function hasSessionAuthError(response, payload) {
-  return response?.status === 401 || response?.status === 403 || isSessionErrorPayload(payload);
-}
-
-function startLoginMode() {
-  console.log('startLoginMode');
-  activeTeamSession = null;
-  teamPin = '';
-  clearStoredSession();
-  applyLoginUi();
-}
-
-function applyLoginUi() {
-  stopBackgroundPolling();
-  closeRealtimeConnections();
-  teamData = null;
-  tournamentData = null;
-  chatMessages = [];
-  chatInitialized = false;
-  unreadChatCount = 0;
-  lastSeenChatId = 0;
-  hideScorecardErrorCard();
-  document.getElementById('scorecardScreen')?.classList.add('d-none');
-  document.getElementById('loginScreen')?.classList.remove('d-none');
-  document.getElementById('loginError').textContent = '';
-  const chatWrap = document.getElementById('chatMessages');
-  if (chatWrap) chatWrap.innerHTML = '';
-  document.getElementById('chatWidget')?.classList.remove('open');
-  syncChatUnreadIndicator();
-}
-
-function hideScorecardErrorCard() {
-  document.getElementById('scoreStatusScreen')?.classList.add('d-none');
-  document.getElementById('activeRoundContent')?.classList.add('d-none');
-}
-
-function closeRealtimeConnections() {
-  if (chatEventSource) {
-    chatEventSource.close();
-    chatEventSource = null;
-  }
-  birdieRealtimeReady = false;
-  if (birdieRealtimeReadyTimer) {
-    clearTimeout(birdieRealtimeReadyTimer);
-    birdieRealtimeReadyTimer = null;
-  }
-}
-
-function stopBackgroundPolling() {
-  if (positionPollIntervalId) {
-    clearInterval(positionPollIntervalId);
-    positionPollIntervalId = null;
-  }
-}
-
-function startBackgroundPolling() {
-  if (positionPollIntervalId) return;
-  positionPollIntervalId = setInterval(() => {
-    loadPosition();
-  }, 60000);
-}
-
-function requireSession() {
-  const session = getSession();
-  if (!session?.team_id || !session?.tournament_id) {
-    console.error('[session] Missing team session in localStorage', session);
-    startLoginMode();
-    return null;
-  }
-  return session;
-}
-
-function withSessionParams(url, session) {
-  const nextUrl = new URL(url, window.location.origin);
-  nextUrl.searchParams.set('team_id', session.team_id);
-  nextUrl.searchParams.set('tournament_id', session.tournament_id);
-  const resolvedPin = String(teamPin || '').trim();
-  if (resolvedPin) nextUrl.searchParams.set('pin', resolvedPin);
-  return nextUrl.pathname + nextUrl.search;
-}
-
-async function apiFetch(url, options = {}, requireAuthSession = true) {
-  const opts = { ...options };
-  if (!requireAuthSession) return fetch(url, opts);
-  const session = requireSession();
-  if (!session) throw new Error('TEAM_SESSION_MISSING');
-  const method = String(opts.method || 'GET').toUpperCase();
-  const hasJsonBody = opts.body && typeof opts.body === 'string';
-  const isFormData = typeof FormData !== 'undefined' && opts.body instanceof FormData;
-  const requestUrl = withSessionParams(url, session);
-  const resolvedPin = String(teamPin || '').trim();
-  if (!resolvedPin) {
-    startLoginMode();
-    throw new Error('TEAM_PIN_MISSING');
-  }
-
-  const nextHeaders = new Headers(opts.headers || {});
-  nextHeaders.set('x-team-pin', resolvedPin);
-  opts.headers = nextHeaders;
-
-  if (hasJsonBody) {
-    let parsedBody = {};
-    try {
-      parsedBody = JSON.parse(opts.body);
-    } catch (_) {
-      parsedBody = {};
-    }
-    opts.body = JSON.stringify({ ...parsedBody, team_id: session.team_id, tournament_id: session.tournament_id });
-  } else if (isFormData && method !== 'GET') {
-    opts.body.set('team_id', session.team_id);
-    opts.body.set('tournament_id', session.tournament_id);
-  }
-
-  if (startupInProgress) {
-    console.log(`[startup api] ${method} ${requestUrl}`);
-  }
-  const response = await fetch(requestUrl, opts);
-  if (response.status === 401 || response.status === 403) {
-    startLoginMode();
-    throw new Error('TEAM_SESSION_INVALID');
-  }
-  return response;
-}
-
-function resolveImageUrl(url) {
-  const raw = String(url || '').trim();
-  if (!raw) return '';
-  if (/^https?:\/\//i.test(raw) || /^data:/i.test(raw)) return raw;
-  if (raw.startsWith('/')) return `${window.location.origin}${raw}`;
-  return `${window.location.origin}/${raw.replace(/^\/+/, '')}`;
-}
-
-function getBirdieMessageId(payload) {
-  if (!payload || typeof payload !== 'object') return '';
-  const rawId = payload.id;
-  if (rawId !== null && rawId !== undefined && String(rawId).trim()) return String(rawId).trim();
-  const fallback = [payload.team_id || '', payload.team_name || '', payload.created_at || '', payload.note || ''].join('|').trim();
-  return fallback;
-}
-
-
-function isBirdieEventType(type) {
-  return type === 'birdie_shot' || type === 'birdie_shout';
-}
-
-function resolveImageSrc(path) {
-  if (!path) return '';
-  if (/^(https?:)?\/\//i.test(path) || path.startsWith('data:') || path.startsWith('blob:')) return path;
-  if (path.startsWith('/')) return `${window.location.origin}${path}`;
-  return path;
-}
-
-function getPublicUrl(path) {
-  const raw = String(path || '').trim();
-  if (!raw) return '';
-  if (raw.startsWith('http')) return raw;
-  if (raw.startsWith('data:') || raw.startsWith('blob:')) return raw;
-  const cleanedPath = raw
-    .replace(/^\/+/, '')
-    .replace(/^storage\/v1\/object\/public\/tournament-gallery\//, '')
-    .replace(/^tournament-gallery\//, '');
-  return `${SUPABASE_URL}/storage/v1/object/public/tournament-gallery/${cleanedPath}`;
-}
-
-function getCanonicalImageUrl(payload) {
-  return payload?.image_url || '';
-}
-
-function getHoleImageUrl(hole, scoreRow) {
-  return (scoreRow?.image_url || hole?.image_url || '').trim();
-}
-
-
-function normalizeChatMessage(message, fallbackPrefix = 'msg') {
-  if (!message || typeof message !== 'object') return null;
-  const normalized = { ...message };
-  const rawId = normalized.id;
-  const stringId = rawId === null || rawId === undefined ? '' : String(rawId).trim();
-  if (stringId) {
-    normalized.id = stringId;
-    return normalized;
-  }
-  chatSyntheticIdCounter += 1;
-  normalized.id = `${fallbackPrefix}-${Date.now()}-${chatSyntheticIdCounter}`;
-  return normalized;
-}
-
-function mergeChatMessages(messages) {
-  const incoming = Array.isArray(messages) ? messages : [messages];
-  const byId = new Map();
-  const addedIds = [];
-
-  chatMessages.forEach((message) => {
-    const normalized = normalizeChatMessage(message, 'existing');
-    if (!normalized) return;
-    byId.set(normalized.id, normalized);
-  });
-
-  incoming.forEach((message) => {
-    const normalized = normalizeChatMessage(message, 'incoming');
-    if (!normalized) return;
-    const alreadyPresent = byId.has(normalized.id);
-    byId.set(normalized.id, normalized);
-    if (!alreadyPresent) addedIds.push(normalized.id);
-  });
-
-  chatMessages = Array.from(byId.values())
-    .sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime())
-    .slice(-100);
-
-  return { addedIds };
-}
-
-function isTeamAuthenticated() {
-  return !!teamData?.id && document.getElementById('scorecardScreen') && !document.getElementById('scorecardScreen').classList.contains('d-none');
-}
-
-function mountChatUi() {
-  if (chatUiMounted) return;
-  const template = document.getElementById('chatTemplate');
-  const toggleMount = document.getElementById('chatToggleMount');
-  const widgetMount = document.getElementById('chatWidgetMount');
-  if (!template || !toggleMount || !widgetMount) return;
-  const fragment = template.content.cloneNode(true);
-  const toggle = fragment.querySelector('#chatWidgetToggle');
-  const widget = fragment.querySelector('#chatWidget');
-  if (toggle) toggleMount.appendChild(toggle);
-  if (widget) widgetMount.appendChild(widget);
-  document.getElementById('chatImageInput')?.addEventListener('change', updateChatUploadMeta);
-  chatUiMounted = true;
-  syncChatUnreadIndicator();
-  updateNotificationBanner();
-}
 
 function isIOSDevice() {
   return /iPad|iPhone|iPod/.test(navigator.userAgent || '') ||
@@ -1030,36 +709,6 @@ function isChatWidgetOpen() {
   return document.getElementById('chatWidget')?.classList.contains('open');
 }
 
-function isChatNearBottom(wrap, threshold = 72) {
-  if (!wrap) return false;
-  return (wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight) <= threshold;
-}
-
-function scrollChatToNewest(force = false) {
-  const wrap = document.getElementById('chatMessages');
-  if (!wrap) return;
-  if (!force && !isChatNearBottom(wrap)) return;
-  requestAnimationFrame(() => {
-    wrap.scrollTop = wrap.scrollHeight;
-    requestAnimationFrame(() => {
-      wrap.scrollTop = wrap.scrollHeight;
-    });
-  });
-}
-
-function showBirdieBanner(payload) {
-  const banner = document.getElementById('notificationBanner');
-  if (!banner) return;
-  const teamName = escapeHtml(payload?.team_name || 'Et lag');
-  banner.classList.add('show');
-  banner.innerHTML = `<strong>⛳ ${teamName}</strong> roper birdie! Alle spillere må ta birdie shots! 🥃`;
-  if (birdieBannerTimer) clearTimeout(birdieBannerTimer);
-  birdieBannerTimer = setTimeout(() => {
-    birdieBannerTimer = null;
-    updateNotificationBanner();
-  }, 4200);
-}
-
 async function notifyBirdieShot(payload) {
   if (!(await ensureNotificationPermission())) return;
   const teamName = payload?.team_name || 'Et lag';
@@ -1085,7 +734,7 @@ function allHolesCompleted() {
   return holesData.length > 0 && holesData.every(h => (scoresData[h.hole_number]?.score || 0) > 0);
 }
 
-function renderScoreStatus(kind, payload = {}) {
+function renderScoreStatus(kind) {
   const statusWrap = document.getElementById('scoreStatusScreen');
   const statusCard = document.getElementById('scoreStatusCard');
   const activeWrap = document.getElementById('activeRoundContent');
@@ -1125,21 +774,6 @@ function renderScoreStatus(kind, payload = {}) {
     return;
   }
 
-  if (kind === 'error') {
-    const detail = payload?.detail ? `<p class="empty-state__description" style="margin-top:8px;color:var(--text-muted)">${payload.detail}</p>` : '';
-    statusCard.innerHTML = `
-      <div class="empty-state__icon">⚠️</div>
-      <h2 class="empty-state__title">Kunne ikke laste scorekortdata</h2>
-      ${detail}
-      <div class="empty-state__actions">
-        <button onclick="loadScorecard()" class="btn btn--gold"><i class="fas fa-rotate-right"></i> Prøv igjen</button>
-        <a href="/scoreboard" class="btn btn--outline" style="color:var(--gold-dark);border-color:var(--gold-border)">
-          <i class="fas fa-list-ol"></i> Gå til Live Resultater
-        </a>
-      </div>`;
-    return;
-  }
-
   statusCard.innerHTML = `
     <div class="empty-state__icon">🏁</div>
     <h2 class="empty-state__title">Runden er fullført!</h2>
@@ -1151,155 +785,41 @@ function renderScoreStatus(kind, payload = {}) {
 }
 
 async function doLogin() {
-  const loginEndpoint = '/api/auth/team-login';
-  const debugPanel = document.getElementById('loginDebugPanel');
-  const debugFields = {
-    endpoint: document.getElementById('debugLoginEndpoint'),
-    status: document.getElementById('debugLoginStatus'),
-    response: document.getElementById('debugLoginResponse'),
-    validation: document.getElementById('debugLoginValidation'),
-    reason: document.getElementById('debugLoginReason'),
-    storedTeamId: document.getElementById('debugStoredTeamId'),
-    storedTournamentId: document.getElementById('debugStoredTournamentId')
-  };
-  const setLoginDebug = ({
-    status = '—',
-    response = null,
-    validation = 'pending',
-    reason = '',
-    forceVisible = true
-  } = {}) => {
-    if (debugFields.endpoint) debugFields.endpoint.textContent = `${window.location.origin}${loginEndpoint}`;
-    if (debugFields.status) debugFields.status.textContent = String(status);
-    if (debugFields.response) {
-      const formatted = response === null
-        ? '—'
-        : typeof response === 'string'
-          ? response
-          : JSON.stringify(response, null, 2);
-      debugFields.response.textContent = formatted;
-    }
-    if (debugFields.validation) debugFields.validation.textContent = validation;
-    if (debugFields.reason) debugFields.reason.textContent = reason || '—';
-    if (debugFields.storedTeamId) debugFields.storedTeamId.textContent = activeTeamSession?.team_id || '(memory only)';
-    if (debugFields.storedTournamentId) debugFields.storedTournamentId.textContent = activeTeamSession?.tournament_id || '(memory only)';
-    if (forceVisible && debugPanel) debugPanel.style.display = 'block';
-  };
-
-  setLoginDebug({
-    status: 'not sent',
-    response: null,
-    validation: 'pending',
-    reason: 'Awaiting PIN submit'
-  });
-
   const pin = getPin();
-  if (pin.length < 4) {
-    document.getElementById('loginError').textContent = 'Vennligst skriv inn din 4-sifrede PIN';
-    setLoginDebug({
-      status: 'not sent',
-      response: { error: 'PIN_TOO_SHORT', entered_length: pin.length },
-      validation: 'invalid',
-      reason: 'PIN shorter than 4 digits'
-    });
-    return;
-  }
+  if (pin.length < 4) { document.getElementById('loginError').textContent = 'Vennligst skriv inn din 4-sifrede PIN'; return; }
   const btn = document.getElementById('loginBtn');
   btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Bekrefter...';
   document.getElementById('loginError').textContent = '';
   try {
-    const r = await apiFetch(loginEndpoint, {
+    const r = await fetch('/api/auth/team-login', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin })
-    }, false);
-    let d = null;
-    try {
-      d = await r.json();
-    } catch (parseErr) {
-      setLoginDebug({
-        status: r.status,
-        response: `Failed to parse JSON response: ${parseErr?.message || 'unknown parse error'}`,
-        validation: 'invalid',
-        reason: 'Response body was not valid JSON'
-      });
-      throw new Error('LOGIN_RESPONSE_NOT_JSON');
-    }
-    console.log('[login] raw response JSON from server', d);
-    const responseTeamId = String(d?.team_id || '').trim();
-    const responseTournamentId = String(d?.tournament_id || '').trim();
-    const responsePin = String(d?.pin || d?.pin_code || pin).trim();
-    const failedChecks = [];
-    if (d?.success !== true) failedChecks.push('success !== true');
-    if (!responseTeamId) failedChecks.push('team_id missing');
-    if (!responseTournamentId) failedChecks.push('tournament_id missing');
-
-    if (d?.success === true && responseTeamId && responseTournamentId) {
-      teamPin = responsePin;
-      activeTeamSession = { team_id: responseTeamId, tournament_id: responseTournamentId };
-      const storedTeamId = activeTeamSession.team_id;
-      const storedTournamentId = activeTeamSession.tournament_id;
-      console.log('[login] stored team_id', storedTeamId);
-      console.log('[login] stored tournament_id', storedTournamentId);
-      if (!storedTeamId || !storedTournamentId) {
-        setLoginDebug({
-          status: r.status,
-          response: d,
-          validation: 'invalid',
-          reason: 'Session persistence failed: sessionStorage keys missing after setItem'
-        });
-        throw new Error('LOGIN_SESSION_PERSIST_FAILED');
-      }
-      setLoginDebug({
-        status: r.status,
-        response: d,
-        validation: 'valid',
-        reason: 'Session accepted, continuing to scorecard flow'
-      });
-      await startTeamMode({ team_id: responseTeamId, tournament_id: responseTournamentId });
-    } else if (d?.success !== true) {
-      setLoginDebug({
-        status: r.status,
-        response: d,
-        validation: 'invalid',
-        reason: `Server rejected login: ${d?.error || 'Ugyldig PIN'}`
-      });
+    });
+    const d = await r.json();
+    if (d.success) {
+      teamPin = pin;
+      sessionStorage.setItem('team_pin', pin);
+      teamData = d.team;
+      updateNotificationBanner();
+      document.getElementById('loginScreen').classList.add('d-none');
+      document.getElementById('scorecardScreen').classList.remove('d-none');
+      renderScoreStatus('idle');
+      await loadScorecard();
+    } else {
       document.getElementById('loginError').textContent = d.error || 'Ugyldig PIN';
       digits.forEach(d => d.value = ''); digits[0].focus();
-    } else {
-      console.error('[login] field check failed before invalid session error', {
-        failedChecks,
-        response: d
-      });
-      setLoginDebug({
-        status: r.status,
-        response: d,
-        validation: 'invalid',
-        reason: `Response contract check failed: ${failedChecks.join(', ') || 'unknown'}`
-      });
-      throw new Error('LOGIN_INVALID_RESPONSE_CONTRACT');
     }
-  } catch (e) {
-    if (e?.message !== 'LOGIN_INVALID_RESPONSE_CONTRACT' && e?.message !== 'LOGIN_SESSION_PERSIST_FAILED') {
-      setLoginDebug({
-        validation: 'invalid',
-        reason: e?.message || 'Unknown frontend exception'
-      });
-    }
-    document.getElementById('loginError').textContent = e?.message === 'LOGIN_INVALID_RESPONSE_CONTRACT'
-      ? 'Ugyldig lagøkt fra server. Kontakt administrator.'
-      : e?.message === 'LOGIN_SESSION_PERSIST_FAILED'
-        ? 'Kunne ikke lagre lagøkt lokalt. Prøv igjen.'
-        : e?.message === 'LOGIN_RESPONSE_NOT_JSON'
-          ? 'Ugyldig respons fra server. Kontakt administrator.'
-        : 'Tilkoblingsfeil, prøv igjen';
-  }
+  } catch (e) { document.getElementById('loginError').textContent = 'Tilkoblingsfeil, prøv igjen'; }
   btn.disabled = false; btn.innerHTML = '<i class="fas fa-arrow-right-to-bracket"></i> Logg inn';
 }
 
 async function doLogout() {
-  try {
-    await apiFetch('/api/auth/logout', { method: 'POST' }, false);
-  } catch (_) {}
-  startLoginMode();
+  if (!allHolesCompleted()) {
+    showToast('Du må fylle ut alle hull før du kan lukke scorekortet.', 'error');
+    return;
+  }
+  await fetch('/api/auth/logout', { method: 'POST' });
+  sessionStorage.removeItem('team_pin');
+  location.reload();
 }
 
 function scrollToScoreInput() {
@@ -1318,99 +838,26 @@ window.addEventListener('beforeunload', (e) => {
   }
 });
 
-async function loadScorecard({ displayErrorState = true } = {}) {
-  if (!getSession()) {
-    console.log('[guard] blocked fetch loadScorecard: missing session');
-    return false;
+async function loadScorecard() {
+  const r = await fetch('/api/team/scorecard');
+  const d = await r.json();
+  teamData = d.team; holesData = d.holes; tournamentData = d.tournament || null;
+  d.scores.forEach(s => { scoresData[s.hole_number] = s; });
+  if (d.claims) d.claims.forEach(c => { claimsData[c.hole_number + '_' + c.award_type] = c; });
+  holeSponsorsMap = {};
+  if (d.hole_sponsors) d.hole_sponsors.forEach(s => { holeSponsorsMap[s.hole_number] = s; });
+  renderAll();
+  loadPosition();
+  await loadChatMessages();
+  startChatEvents();
+  if (teamData.locked) {
+    showLockedState();
+    return;
   }
-  try {
-    const session = requireSession();
-    if (!session) return false;
-    console.log('[scorecard:init] using stored session', session);
-
-    const r = await apiFetch('/api/team/scorecard');
-    const d = await r.json();
-    if (!r.ok || !d?.success) {
-      if (hasSessionAuthError(r, d)) {
-        startLoginMode();
-        return false;
-      }
-      const setupError = d?.error === 'Turneringen mangler hulloppsett';
-      if (displayErrorState) {
-        renderScoreStatus('error', { detail: setupError ? 'Turneringen mangler hulloppsett' : undefined });
-      }
-      showToast(d?.error || 'Kunne ikke laste scorekortdata', 'error');
-      return false;
-    }
-
-    const nextTeam = d.team || null;
-    const nextTournament = d.tournament || null;
-    const nextHoles = Array.isArray(d.holes) ? d.holes : [];
-    const nextScores = Array.isArray(d.scores) ? d.scores : [];
-    console.debug('[scorecard-api] payload image fields:', nextScores.slice(0, 3).map((s) => ({
-      id: s.id,
-      hole_number: s.hole_number,
-      photo_path: s.photo_path || null,
-      image_url: s.image_url || null
-    })));
-    const nextClaims = Array.isArray(d.claims) ? d.claims : [];
-    const nextHoleSponsors = Array.isArray(d.hole_sponsors) ? d.hole_sponsors : [];
-
-    if (!nextTeam?.id) {
-      if (displayErrorState) renderScoreStatus('error');
-      showToast('Kunne ikke laste scorekortdata', 'error');
-      return false;
-    }
-    const resolvedTournamentId = nextTeam?.tournament_id || nextTournament?.id;
-    if (!resolvedTournamentId) {
-      console.error('[scorecard] Missing tournament_id in API payload', {
-        team_id: nextTeam.id,
-        tournament_id: resolvedTournamentId
-      });
-      if (displayErrorState) renderScoreStatus('error', { detail: 'Mangler tournament_id i svar fra API' });
-      return false;
-    }
-    if (!nextHoles.length) {
-      if (displayErrorState) renderScoreStatus('error', { detail: 'Turneringen mangler hulloppsett' });
-      showToast('Turneringen mangler hulloppsett', 'error');
-      return false;
-    }
-
-    teamData = nextTeam;
-    tournamentData = nextTournament;
-    activeTeamSession = { team_id: String(nextTeam.id), tournament_id: String(resolvedTournamentId) };
-    holesData = nextHoles;
-    scoresData = {};
-    claimsData = {};
-    holeSponsorsMap = {};
-    nextScores.forEach((s) => {
-      scoresData[s.hole_number] = { ...s, image_url: s.image_url || null };
-    });
-    nextClaims.forEach((c) => { claimsData[c.hole_number + '_' + c.award_type] = c; });
-    nextHoleSponsors.forEach((s) => { holeSponsorsMap[s.hole_number] = s; });
-
-    renderAll();
-    loadPosition();
-    if (isTeamAuthenticated()) {
-      chatInitialized = false;
-      await loadChatMessages();
-      startChatEvents();
-    }
-    if (teamData.locked) {
-      showLockedState();
-      return true;
-    }
-    if (allHolesCompleted()) {
-      renderScoreStatus('finished');
-    } else {
-      renderScoreStatus('active');
-    }
-    return true;
-  } catch (error) {
-    if (error?.message === 'TEAM_SESSION_MISSING' || error?.message === 'TEAM_SESSION_INVALID') return false;
-    if (displayErrorState) renderScoreStatus('error');
-    showToast('Kunne ikke laste scorekortdata', 'error');
-    return false;
+  if (allHolesCompleted()) {
+    renderScoreStatus('finished');
+  } else {
+    renderScoreStatus('active');
   }
 }
 
@@ -1430,13 +877,11 @@ function escapeHtml(text) {
     .replaceAll("'", '&#39;');
 }
 
-function renderChatMessages({ autoScroll = false, forceScroll = false } = {}) {
+function renderChatMessages() {
   const wrap = document.getElementById('chatMessages');
   if (!wrap) return;
-  const shouldStickToBottom = forceScroll || (autoScroll && isChatNearBottom(wrap));
   if (!chatMessages.length) {
     wrap.innerHTML = '<div class="team-chat-empty">Ingen meldinger ennå. Vær førstemann ut! 💬</div>';
-    if (forceScroll) scrollChatToNewest(true);
     return;
   }
   wrap.innerHTML = chatMessages.map(m => `
@@ -1447,167 +892,80 @@ function renderChatMessages({ autoScroll = false, forceScroll = false } = {}) {
       </div>
       ${m.message ? `<div class="team-chat-text">${escapeHtml(m.message)}</div>` : ''}
       ${m.image_path ? `<img class="team-chat-image" src="${escapeHtml(m.image_path)}" alt="Bilde sendt i chat" loading="lazy">` : ''}
-      ${m.note ? `<div class="team-chat-note">${escapeHtml(m.note)}</div>` : ''}
     </div>
   `).join('');
-  if (shouldStickToBottom) scrollChatToNewest(true);
+  wrap.scrollTop = wrap.scrollHeight;
   const newestMessage = chatMessages[chatMessages.length - 1];
   if (newestMessage?.id) lastSeenChatId = Math.max(lastSeenChatId, Number(newestMessage.id) || 0);
   if (isChatWidgetOpen()) markChatAsSeen();
 }
 
 async function loadChatMessages() {
-  if (!getSession()) {
-    console.log('[guard] blocked fetch loadChatMessages: missing session');
-    return;
-  }
-  const session = requireSession();
-  if (!session) return;
-  if (!isTeamAuthenticated()) return;
   try {
-    const r = await apiFetch('/api/chat/messages?private=1');
+    const r = await fetch('/api/chat/messages');
     const d = await r.json();
-    if (!r.ok || !d?.success) {
-      if (hasSessionAuthError(r, d)) {
-        startLoginMode();
-        return;
-      }
-      const wrap = document.getElementById('chatMessages');
-      if (wrap) wrap.innerHTML = `<div class="team-chat-empty">${escapeHtml(d?.error || 'Kunne ikke hente chat nå.')}</div>`;
-      return;
-    }
-    chatMessages = [];
-    mergeChatMessages(Array.isArray(d.messages) ? d.messages : []);
-    renderChatMessages({ autoScroll: true, forceScroll: true });
-    chatInitialized = true;
+    chatMessages = Array.isArray(d.messages) ? d.messages : [];
+    renderChatMessages();
   } catch (_) {
     const wrap = document.getElementById('chatMessages');
     if (wrap) wrap.innerHTML = '<div class="team-chat-empty">Kunne ikke hente chat nå.</div>';
-    chatInitialized = true;
   }
 }
 
 function startChatEvents() {
-  if (!getSession()) {
-    console.log('[guard] blocked fetch startChatEvents: missing session');
-    return;
-  }
-  const session = requireSession();
-  if (!session) return;
-  if (!isTeamAuthenticated()) return;
   if (chatEventSource) return;
-  birdieRealtimeReady = false;
-  if (birdieRealtimeReadyTimer) {
-    clearTimeout(birdieRealtimeReadyTimer);
-    birdieRealtimeReadyTimer = null;
-  }
-  chatEventSource = new EventSource(withSessionParams('/api/events', session));
-  const handleRealtimePayload = (payload) => {
-    if (!payload || typeof payload !== 'object') return;
-    if (payload.type === 'chat_message' && payload.data) {
-      const wrap = document.getElementById('chatMessages');
-      const shouldScroll = isChatWidgetOpen() && isChatNearBottom(wrap);
-      const normalizedIncoming = normalizeChatMessage(payload.data, 'realtime');
-      const mergeResult = mergeChatMessages(normalizedIncoming);
-      const incomingId = Number(normalizedIncoming?.id) || 0;
-      if (!isChatWidgetOpen() && mergeResult.addedIds.length) {
-        if (!incomingId || incomingId > lastSeenChatId) {
-          unreadChatCount += mergeResult.addedIds.length;
-          syncChatUnreadIndicator();
-        }
-      }
-      renderChatMessages({ autoScroll: shouldScroll, forceScroll: false });
-    }
-    if (isBirdieEventType(payload.type) && payload.data) {
-      const birdiePayload = payload.data;
-      const birdieMessageId = getBirdieMessageId(birdiePayload);
-      if (birdieMessageId && seenBirdieMessageIds.has(birdieMessageId)) {
-        return;
-      }
-      if (birdieMessageId) seenBirdieMessageIds.add(birdieMessageId);
-      if (!chatInitialized || !birdieRealtimeReady) return;
-
-      const shoutBtn = document.getElementById('birdieShoutBtn');
-      if (shoutBtn) {
-        shoutBtn.classList.add('is-celebrating');
-        setTimeout(() => shoutBtn.classList.remove('is-celebrating'), 1700);
-      }
-      if (navigator.vibrate) navigator.vibrate([120, 90, 120]);
-      notifyBirdieShot(birdiePayload);
-      showBirdieBanner(birdiePayload);
-      if (payload.type === 'birdie_shout') {
-        const shoutMessage = birdiePayload.message || `${birdiePayload.team_name || 'Et lag'} roper birdie! Alle spillere må ta birdie shots! 🥃`;
-        showToast(`🍺 ${shoutMessage}`, 'info');
-      } else {
-        showToast(`⛳ ${birdiePayload.team_name || 'Et lag'} roper birdie! Alle spillere må ta birdie shots! 🥃`, 'info');
-      }
-    }
-  };
-
+  chatEventSource = new EventSource('/api/events');
   chatEventSource.onmessage = (evt) => {
     try {
-      handleRealtimePayload(JSON.parse(evt.data));
+      const payload = JSON.parse(evt.data);
+      if (payload.type === 'chat_message' && payload.data) {
+        chatMessages.push(payload.data);
+        if (chatMessages.length > 100) chatMessages = chatMessages.slice(-100);
+        const incomingId = Number(payload.data.id) || 0;
+        if (!isChatWidgetOpen() && incomingId > lastSeenChatId) {
+          unreadChatCount += 1;
+          syncChatUnreadIndicator();
+        }
+        renderChatMessages();
+      }
+      if (payload.type === 'birdie_shot' && payload.data) {
+        const shoutBtn = document.getElementById('birdieShoutBtn');
+        if (shoutBtn) {
+          shoutBtn.classList.add('is-celebrating');
+          setTimeout(() => shoutBtn.classList.remove('is-celebrating'), 1700);
+        }
+        if (navigator.vibrate) navigator.vibrate([120, 90, 120]);
+        notifyBirdieShot(payload.data);
+        updateNotificationBanner();
+        showToast(`⛳ ${payload.data.team_name || 'Et lag'} roper birdie! Alle spillere må ta birdie shots! 🥃`, 'info');
+      }
     } catch (_) {}
   };
-  chatEventSource.onopen = () => {
-    birdieRealtimeReadyTimer = setTimeout(() => {
-      birdieRealtimeReady = chatInitialized;
-      birdieRealtimeReadyTimer = null;
-    }, 1000);
-  };
-  chatEventSource.addEventListener('chat_message', (evt) => {
-    try { handleRealtimePayload(JSON.parse(evt.data)); } catch (_) {}
-  });
-  chatEventSource.addEventListener('birdie_shout', (evt) => {
-    try { handleRealtimePayload({ ...JSON.parse(evt.data), type: 'birdie_shout' }); } catch (_) {}
-  });
-  chatEventSource.addEventListener('birdie_shot', (evt) => {
-    try { handleRealtimePayload({ ...JSON.parse(evt.data), type: 'birdie_shot' }); } catch (_) {}
-  });
   chatEventSource.onerror = () => {
     if (chatEventSource) {
       chatEventSource.close();
       chatEventSource = null;
-      birdieRealtimeReady = false;
-      if (birdieRealtimeReadyTimer) {
-        clearTimeout(birdieRealtimeReadyTimer);
-        birdieRealtimeReadyTimer = null;
-      }
-      setTimeout(() => {
-        if (!getSession()) {
-          console.log('[guard] blocked fetch startChatEvents(retry): missing session');
-          return;
-        }
-        startChatEvents();
-      }, 3000);
+      setTimeout(startChatEvents, 3000);
     }
   };
 }
 
 
 async function sendBirdieShoutout() {
-  if (!isTeamAuthenticated()) {
-    showToast('Du må være logget inn for å bruke chat.', 'error');
-    return;
-  }
   const btn = document.getElementById('birdieShoutBtn');
   if (btn) btn.classList.add('is-celebrating');
   if (navigator.vibrate) navigator.vibrate([120, 80, 120, 80, 180]);
   try {
-    const r = await apiFetch('/api/team/birdie-shot', {
+    const r = await fetch('/api/team/birdie-shot', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ note: 'Alle spillere må ta birdie shots! 🥃' })
+      body: JSON.stringify({ note: 'Alle spillere må ta birdie shots! 🥃', ...(teamPin ? { pin: teamPin } : {}) })
     });
     const d = await r.json();
-    if (hasSessionAuthError(r, d)) {
-      startLoginMode();
-      return;
-    }
     if (!d.success) {
       showToast(d.error || 'Kunne ikke sende birdie shoutout', 'error');
     } else {
-      // Realtime birdie_shot / birdie_shout events are the single source of truth for user-visible shoutout alerts.
+      showToast('Birdie shoutout sendt! Alle spillere må ta birdie shots! 🥃', 'success');
     }
   } catch (_) {
     showToast('Tilkoblingsfeil ved birdie shoutout', 'error');
@@ -1626,10 +984,6 @@ function updateChatUploadMeta() {
 document.getElementById('chatImageInput')?.addEventListener('change', updateChatUploadMeta);
 
 async function sendChatMessage(event) {
-  if (!isTeamAuthenticated()) {
-    showToast('Du må være logget inn for å sende melding.', 'error');
-    return;
-  }
   event.preventDefault();
   const input = document.getElementById('chatInput');
   const imageInput = document.getElementById('chatImageInput');
@@ -1643,33 +997,24 @@ async function sendChatMessage(event) {
     let r;
     if (imageFile) {
       const formData = new FormData();
+      if (teamPin) formData.append('pin', teamPin);
       formData.append('message', message);
       formData.append('image', imageFile);
-      r = await apiFetch('/api/chat/send', { method: 'POST', body: formData });
+      r = await fetch('/api/chat/send', { method: 'POST', body: formData });
     } else {
-      r = await apiFetch('/api/chat/send', {
+      r = await fetch('/api/chat/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message })
+        body: JSON.stringify({ message, ...(teamPin ? { pin: teamPin } : {}) })
       });
     }
     const d = await r.json();
-    if (hasSessionAuthError(r, d)) {
-      startLoginMode();
-      return;
-    }
     if (!d.success) {
-      if (d.code === 'STORAGE_BUCKET_NOT_FOUND' && d.bucket) {
-        showToast('Chat-bilde feilet: mangler bucket "' + d.bucket + '"', 'error');
-      } else {
-        showToast(d.error || 'Kunne ikke sende melding', 'error');
-      }
+      showToast(d.error || 'Kunne ikke sende melding', 'error');
     } else {
       input.value = '';
       if (imageInput) imageInput.value = '';
       updateChatUploadMeta();
-      // Realtime stream is the single source of truth for new chat rows.
-      // Do not insert locally here to avoid duplicates when the event arrives.
     }
   } catch (_) {
     showToast('Tilkoblingsfeil ved sending av melding', 'error');
@@ -1684,7 +1029,7 @@ function getCourseHandicap() {
   const hcp2 = parseFloat(teamData.player2_handicap) || 0;
   if (!hcp1 && !hcp2) return 0;
   const slope = (tournamentData && tournamentData.slope_rating) || 113;
-  return ScrambleHandicap.calculateTwoManScrambleHandicap(hcp1, hcp2, slope);
+  return Math.round((hcp1 + hcp2) * 0.5 * slope / 113);
 }
 
 function renderAll() {
@@ -1724,36 +1069,15 @@ function updateSummary() {
   }
 }
 
-async function loadPosition(force = false) {
-  if (!getSession()) {
-    console.log('[guard] blocked fetch loadPosition: missing session');
-    return;
-  }
-  const session = requireSession();
-  if (!session) return;
-  const now = Date.now();
-  if (!force && now - positionLastFetchedAt < 5000) return;
-  if (positionFetchPromise) return positionFetchPromise;
-  positionFetchPromise = (async () => {
+async function loadPosition() {
   try {
-    const r = await apiFetch('/api/scoreboard');
+    const r = await fetch('/api/scoreboard');
     const d = await r.json();
-    if (hasSessionAuthError(r, d)) {
-      startLoginMode();
-      return;
-    }
     if (d.scoreboard && teamData) {
       const idx = d.scoreboard.findIndex(t => t.team_id === teamData.id);
       document.getElementById('summaryPos').textContent = idx >= 0 ? '#' + (idx + 1) : '—';
     }
   } catch(_) {}
-  positionLastFetchedAt = Date.now();
-  })();
-  try {
-    await positionFetchPromise;
-  } finally {
-    positionFetchPromise = null;
-  }
 }
 
 function renderDots() {
@@ -1762,7 +1086,7 @@ function renderDots() {
     const saved = scoresData[h.hole_number];
     const hasScore = saved && saved.score > 0;
     const needsPhoto = h.requires_photo;
-    const hasPhoto = !!getHoleImageUrl(h, saved);
+    const hasPhoto = saved && saved.photo_path;
     let cls = 'hole-dot';
     if (hasScore) cls += ' done';
     if (i === currentHoleIndex) cls += ' active';
@@ -1776,7 +1100,7 @@ function renderCurrentHole() {
   const h = holesData[currentHoleIndex];
   const card = document.getElementById('singleHoleCard');
   const saved    = scoresData[h.hole_number];
-  const hasPhoto = !!getHoleImageUrl(h, saved);
+  const hasPhoto = saved && saved.photo_path;
   const hasScore = saved && saved.score > 0;
   const needsPhoto = h.requires_photo;
   const blocked    = needsPhoto && !hasPhoto;
@@ -1829,9 +1153,6 @@ function renderCurrentHole() {
       <button class="claim-btn" onclick="submitClaim(${h.hole_number},'closest_to_pin')">Meld inn kandidat</button>
     </div>` : '';
 
-  const holePhotoSrc = hasPhoto ? resolveImageSrc(getHoleImageUrl(h, saved)) : '';
-  if (holePhotoSrc) console.debug('[hole-photo-preview] final frontend img.src:', holePhotoSrc);
-
   card.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
       <div>
@@ -1853,7 +1174,7 @@ function renderCurrentHole() {
           ? '<i class="fas fa-circle-check"></i> Bilde lagret'
           : '<i class="fas fa-camera"></i> Last opp bilde først'}
       </div>
-      ${hasPhoto ? `<img class="photo-preview" src="${getPublicUrl(holePhotoSrc)}" alt="Hull ${h.hole_number} bilde">` : ''}
+      ${hasPhoto ? `<img class="photo-preview" src="${saved.photo_path}" alt="Hull ${h.hole_number} bilde">` : ''}
     ` : ''}
 
     <div class="score-stepper">
@@ -2006,12 +1327,8 @@ async function lockAndClose() {
   const btn = document.getElementById('summaryLockBtn');
   btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Låser...';
   try {
-    const r = await apiFetch('/api/team/lock-scorecard', { method: 'POST' });
+    const r = await fetch('/api/team/lock-scorecard', { method: 'POST' });
     const d = await r.json();
-    if (hasSessionAuthError(r, d)) {
-      startLoginMode();
-      return;
-    }
     if (d.success) {
       teamData.locked = 1;
       closeSummary(); showLockedState();
@@ -2039,15 +1356,11 @@ async function submitScore(holeNum) {
   btn.disabled = true;
 
   try {
-    const r = await apiFetch('/api/team/submit-score', {
+    const r = await fetch('/api/team/submit-score', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ hole_number: holeNum, score })
     });
     const d = await r.json();
-    if (hasSessionAuthError(r, d)) {
-      startLoginMode();
-      return;
-    }
     if (d.success) {
       if (!scoresData[holeNum]) scoresData[holeNum] = {};
       scoresData[holeNum].score = score;
@@ -2055,7 +1368,7 @@ async function submitScore(holeNum) {
       updateSummary();
       renderDots();
       renderCurrentHole();
-      loadPosition(true);
+      loadPosition();
       renderScoreStatus(allHolesCompleted() ? 'finished' : 'active');
     } else {
       showToast(d.error || 'Kunne ikke lagre poengsum', 'error');
@@ -2083,34 +1396,15 @@ document.getElementById('photoInput').addEventListener('change', async e => {
   const fd = new FormData();
   fd.append('photo', file);
   try {
-    const r = await apiFetch('/api/team/upload-photo/' + holeNum, { method: 'POST', body: fd });
+    const r = await fetch('/api/team/upload-photo/' + holeNum, { method: 'POST', body: fd });
     const d = await r.json();
-    if (hasSessionAuthError(r, d)) {
-      startLoginMode();
-      return;
-    }
     if (d.success) {
       if (!scoresData[holeNum]) scoresData[holeNum] = {};
-      const resolvedSrc = resolveImageUrl(d.image_url);
-      console.debug('[image-debug] upload_response', {
-        hole_number: holeNum,
-        resolved_public_url: d.image_url || null,
-        frontend_src_used: resolvedSrc
-      });
-      console.debug('[hole-photo-preview] final frontend img.src:', resolvedSrc);
-      scoresData[holeNum].image_url = resolvedSrc;
+      scoresData[holeNum].photo_path = d.photo_path;
       showToast('Bilde lastet opp for hull ' + holeNum + '!', 'success');
-    } else {
-      if (d.code === 'STORAGE_BUCKET_NOT_FOUND' && d.bucket) {
-        showToast('Opplasting feilet: mangler bucket "' + d.bucket + '"', 'error');
-      } else {
-        showToast(d.error || 'Opplasting mislyktes', 'error');
-      }
-    }
-  } catch (e) {
-    showToast('Opplasting mislyktes: ' + (e?.message || 'sjekk tilkoblingen'), 'error');
-  }
-  renderDots(); renderCurrentHole();
+      renderDots(); renderCurrentHole();
+    } else { showToast(d.error || 'Opplasting mislyktes', 'error'); }
+  } catch (e) { showToast('Opplasting mislyktes — sjekk tilkoblingen', 'error'); }
   e.target.value = ''; pendingPhotoHole = null;
 });
 
@@ -2120,15 +1414,11 @@ async function submitClaim(holeNum, awardType) {
   const detail = document.getElementById(prefix + '-detail-' + holeNum)?.value || '';
   if (!player_name) { showToast('Velg en spiller', 'error'); return; }
   try {
-    const r = await apiFetch('/api/team/claim-award', {
+    const r = await fetch('/api/team/claim-award', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ hole_number: holeNum, award_type: awardType, player_name, detail })
     });
     const d = await r.json();
-    if (hasSessionAuthError(r, d)) {
-      startLoginMode();
-      return;
-    }
     if (d.success) {
       claimsData[holeNum + '_' + awardType] = { player_name, detail, hole_number: holeNum, award_type: awardType };
       showToast('Kandidatur registrert!', 'success');
@@ -2137,49 +1427,27 @@ async function submitClaim(holeNum, awardType) {
   } catch(e) { showToast('Tilkoblingsfeil — prøv igjen', 'error'); }
 }
 
-function showTeamModeUi() {
-  document.getElementById('loginScreen')?.classList.add('d-none');
-  document.getElementById('scorecardScreen')?.classList.remove('d-none');
-  mountChatUi();
-}
-
-async function startTeamMode(session, options = {}) {
-  const { showErrorState = true } = options;
-  const activeSession = session || getSession();
-  if (!activeSession?.team_id || !activeSession?.tournament_id) {
-    console.log('[guard] blocked fetch startTeamMode: missing session');
-    startLoginMode();
-    return false;
-  }
-  console.log('startTeamMode', activeSession);
-  activeTeamSession = { team_id: String(activeSession.team_id), tournament_id: String(activeSession.tournament_id) };
-  teamData = { id: activeSession.team_id, tournament_id: activeSession.tournament_id };
-  hideScorecardErrorCard();
-  startupInProgress = true;
+async function checkSession() {
   try {
     await initNotifications();
-    await ensureNotificationPermission();
-    const loaded = await loadScorecard({ displayErrorState: showErrorState });
-    if (!loaded) {
-      if (!showErrorState) startLoginMode();
-      return false;
+    teamPin = sessionStorage.getItem('team_pin') || '';
+    const r = await fetch('/api/auth/status');
+    const d = await r.json();
+    if (d.type === 'team') {
+      teamData = d.team;
+      await ensureNotificationPermission();
+      document.getElementById('loginScreen').classList.add('d-none');
+      document.getElementById('scorecardScreen').classList.remove('d-none');
+      renderScoreStatus('idle');
+      await loadScorecard();
     }
-    showTeamModeUi();
-    startBackgroundPolling();
-    await loadChatMessages();
-    startChatEvents();
-    return true;
-  } finally {
-    startupInProgress = false;
-  }
+  } catch (_) {}
 }
 
-async function initPageSessionFlow() {
-  applyLoginUi();
-  startLoginMode();
-}
+// Oppdater posisjon hvert minutt
+setInterval(loadPosition, 60000);
 
-initPageSessionFlow();
+checkSession();
 </script>
 </body>
 </html>

@@ -8,7 +8,7 @@ Read this before making any changes to the codebase.
 ## Project Overview
 
 Annual 2-man scramble golf tournament website.
-**Stack:** Node.js · Express · Supabase (Postgres) · Vanilla HTML/CSS/JS · Server-Sent Events
+**Stack:** Node.js · Express · SQLite (better-sqlite3) · Vanilla HTML/CSS/JS · Server-Sent Events
 
 ---
 
@@ -173,12 +173,13 @@ Sidebar order:
 ```
 lorgen-invitational/
 ├── server.js          ← Express server + all API routes
+├── database.js        ← SQLite schema + db instance
 ├── package.json
 ├── .env               ← NOT committed
 ├── .env.example
 ├── .gitignore
 ├── data/              ← NOT committed
-├── tournament-gallery/           ← NOT committed
+├── uploads/           ← NOT committed
 └── public/
     ├── index.html         ← Hjemmeside
     ├── gameday.html       ← Spilledag informasjon
@@ -194,7 +195,7 @@ lorgen-invitational/
 - All styles in `public/css/style.css` — no per-page `<style>` blocks except page-specific overrides
 - No JavaScript frameworks — vanilla JS only
 - No separate JS files — page JS lives in `<script>` at bottom of each HTML file
-- Bruk Supabase-klientlag for dataoperasjoner; unngå lokal DB-adapter
+- `database.js` is the only file that touches SQLite
 
 ---
 
@@ -241,7 +242,7 @@ legacy       (id, year, winner_team, player1, player2, score, score_to_par, cour
 ```
 
 `gameday_info` — free text for the Spilledag page schedule/info.
-`scores.photo_path` — stored as `/tournament-gallery/filename.jpg`
+`scores.photo_path` — stored as `/uploads/filename.jpg`
 
 ---
 
@@ -265,4 +266,4 @@ ADMIN_PASSWORD=LorgenAdmin2025
 - Append: `https://claude.ai/code/session_01PaBQbJ2b1RkRigDhKkZhfL`
 
 ### What NOT to commit
-`.env` · `data/` · `tournament-gallery/` · `node_modules/`
+`.env` · `data/` · `uploads/` · `node_modules/`

@@ -2,7 +2,7 @@
 
 > Power. Precision. Party.
 
-An annual 2-man scramble golf tournament website built with Node.js + Express + Supabase.
+An annual 2-man scramble golf tournament website built with Node.js + Express + SQLite.
 
 ## Features
 
@@ -28,18 +28,6 @@ npm start              # Runs on http://localhost:3000
 | `PORT` | `3000` | Server port |
 | `SESSION_SECRET` | `lorgen-inv-secret` | Session encryption key |
 | `ADMIN_PASSWORD` | `LorgenAdmin2025` | Admin panel password |
-| `NEXT_PUBLIC_SUPABASE_URL` | _(required)_ | Supabase project URL (required for client init) |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | _(required)_ | Supabase anon/public key (required for client init) |
-
-## Deployment architecture
-
-Production deployment is intended to run with:
-
-- **Vercel** for static pages and API routes (via `api/[...route].js`)
-- **Supabase** for persistent relational data (`tournaments`, `courses`, `course_holes`, `tournament_holes`, `teams`, `players`, `scores`, etc.)
-- Environment-based admin auth (`ADMIN_PASSWORD`) with signed cookie sessions
-
-No runtime feature should rely on Railway-specific process state.
 
 ## Tournament Day Flow
 
@@ -56,7 +44,7 @@ No runtime feature should rely on Railway-specific process state.
 ## Tech Stack
 
 - **Backend**: Node.js + Express
-- **Database**: Supabase (Postgres)
+- **Database**: SQLite (better-sqlite3)
 - **Live Updates**: Server-Sent Events (SSE)
 - **File Uploads**: Multer
 - **Auth**: Express-session (PIN for teams, password for admin)
