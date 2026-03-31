@@ -28,22 +28,6 @@
     .dash-card-label { font-size:.72rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--gold-dark);margin-bottom:12px; }
     .dash-card-main { font-family:var(--font-heading);font-size:1.3rem;color:var(--dark);margin-bottom:4px;line-height:1.3; }
     .dash-card-sub { font-size:.82rem;color:var(--text-muted); }
-    .sponsor-row { display:grid;grid-template-columns:120px 1fr 1fr 220px 140px;gap:12px;align-items:start;margin-bottom:12px;padding:14px;border:1px solid var(--gold-border);border-radius:12px;background:var(--off-white); }
-    .sponsor-row-title { font-weight:700;color:var(--dark);padding-top:8px; }
-    .sponsor-row .form-input,
-    .sponsor-row .form-textarea { min-height:46px; }
-    .sponsor-row .form-textarea { resize:vertical;min-height:80px; }
-    .sponsor-row .form-group { margin:0; }
-    .sponsor-row--single { grid-template-columns:1fr 1fr 260px 140px; }
-    .sponsor-section-header { display:flex;flex-wrap:wrap;gap:12px;align-items:end;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--gold-border); }
-    @media(max-width:1024px){
-      .sponsor-row,
-      .sponsor-row--single { grid-template-columns:1fr 1fr; }
-    }
-    @media(max-width:680px){
-      .sponsor-row,
-      .sponsor-row--single { grid-template-columns:1fr; }
-    }
   </style>
 </head>
 <body>
@@ -176,7 +160,7 @@
           <div class="card-header"><strong><i class="fas fa-circle" style="color:var(--gold)"></i> &nbsp;Myntlogo — bakside</strong></div>
           <div class="card-body">
             <p style="font-size:.82rem;color:var(--text-muted);margin-bottom:16px">
-              Last opp ett eller flere bilder som vises på baksiden av den roterende myntlogoen på forsiden.
+              Last opp et bilde som vises på baksiden av den roterende myntlogoen på forsiden.
             </p>
             <div style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
               <div id="coinBackPreviewWrap" style="display:none;flex-shrink:0">
@@ -192,12 +176,6 @@
                 </button>
               </div>
             </div>
-            <div style="margin-top:12px">
-              <table class="data-table" style="font-size:.82rem">
-                <thead><tr><th>Bilde</th><th>Status</th><th>Handlinger</th></tr></thead>
-                <tbody id="coinBackTable"><tr><td colspan="3" style="text-align:center;color:var(--text-muted);padding:12px">Ingen bilder lastet opp</td></tr></tbody>
-              </table>
-            </div>
           </div>
         </div>
       </div>
@@ -212,13 +190,13 @@
           <div class="card-body">
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px">
               <div class="form-group"><label class="form-label">Turneringsnavn</label><input class="form-input" id="tName" type="text" value="Lorgen Invitational" readonly></div>
-              <div class="form-group"><label class="form-label">Dato og klokkeslett</label><input class="form-input" id="tDate" type="datetime-local" step="60"></div>
+              <div class="form-group"><label class="form-label">Dato og klokkeslett</label><input class="form-input" id="tDate" type="datetime-local"></div>
               <div class="form-group"><label class="form-label">Bane</label><input class="form-input" id="tCourse" type="text" placeholder="f.eks. Bogstad Golfklubb"></div>
               <div class="form-group"><label class="form-label">Slope Rating</label><input class="form-input" id="tSlope" type="number" min="55" max="155" value="113" placeholder="113"></div>
               <div class="form-group" style="grid-column:1/-1"><label class="form-label">Beskrivelse</label><textarea class="form-input form-textarea" id="tDesc" placeholder="Kort beskrivelse til forsiden..." style="min-height:70px"></textarea></div>
             </div>
             <div style="margin-top:16px">
-              <button type="button" onclick="createTournament()" class="btn btn--gold btn--sm"><i class="fas fa-plus"></i> Opprett turnering</button>
+              <button onclick="createTournament()" class="btn btn--gold btn--sm"><i class="fas fa-plus"></i> Opprett turnering</button>
             </div>
           </div>
         </div>
@@ -240,7 +218,7 @@
             <input type="hidden" id="editTStatus">
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px">
               <div class="form-group"><label class="form-label">Navn</label><input class="form-input" id="editTName" value="Lorgen Invitational" readonly></div>
-              <div class="form-group"><label class="form-label">Dato og klokkeslett</label><input class="form-input" id="editTDate" type="datetime-local" step="60"></div>
+              <div class="form-group"><label class="form-label">Dato og klokkeslett</label><input class="form-input" id="editTDate" type="datetime-local"></div>
               <div class="form-group"><label class="form-label">Bane</label><input class="form-input" id="editTCourse"></div>
               <div class="form-group"><label class="form-label">Slope Rating</label><input class="form-input" id="editTSlope" type="number" min="55" max="155" value="113"></div>
               <div class="form-group" style="grid-column:1/-1"><label class="form-label">Beskrivelse</label><textarea class="form-input form-textarea" id="editTDesc" style="min-height:60px"></textarea></div>
@@ -562,7 +540,7 @@
             <button onclick="uploadAdminTurneringsbilder()" class="btn btn--gold btn--sm" style="justify-content:center"><i class="fas fa-upload"></i> Last opp</button>
           </div>
           <div class="card-footer" style="font-size:.8rem;color:var(--text-muted)">
-            Bildene lagres i <code>/tournament-gallery/glimtskudd</code> og vises i Turneringsbilder.
+            Bildene lagres i <code>/uploads/glimtskudd</code> og vises i Turneringsbilder.
           </div>
         </div>
 
@@ -597,15 +575,7 @@
 
         <div class="card" style="margin-bottom:20px">
           <div class="card-header"><strong>Forside — 5 sponsorplasser</strong></div>
-          <div class="card-body">
-            <div class="sponsor-section-header">
-              <div class="form-group" style="margin:0;max-width:260px">
-                <label class="form-label">Velg sponsorplass</label>
-                <select class="form-select" id="homeSponsorSpotSelect" onchange="changeHomeSponsorSpot()"></select>
-              </div>
-            </div>
-            <div id="homeSponsorRows"></div>
-          </div>
+          <div class="card-body" id="homeSponsorRows"></div>
         </div>
 
         <div class="card">
@@ -764,55 +734,9 @@ function showToast(msg, type='success') {
 }
 
 async function api(url, options={}) {
-  const method = (options.method || 'GET').toUpperCase();
-  let r;
-  try {
-    r = await fetch(url, { headers:{'Content-Type':'application/json'}, ...options });
-  } catch (error) {
-    console.error('[admin:api] network failure', {
-      url,
-      method,
-      error: error?.message || String(error)
-    });
-    if (url.includes('/api/admin/tournaments') && method === 'GET') {
-      throw new Error('Kunne ikke laste turneringer');
-    }
-    if ((url.includes('/api/admin/tournaments') || url.includes('/api/admin/tournament')) && method === 'POST') {
-      throw new Error('Kunne ikke opprette turnering');
-    }
-    throw new Error(error?.message || 'Forespørsel mislyktes');
-  }
-
-  const contentType = (r.headers.get('content-type') || '').toLowerCase();
-  let d = {};
-  if (contentType.includes('application/json')) {
-    d = await r.json().catch(() => ({}));
-  } else {
-    const text = await r.text().catch(() => '');
-    console.error('[admin:api] non-json response', { url, method, status: r.status, responseText: text.slice(0, 500) });
-    const looksLikeHtml = text.trim().startsWith('<');
-    d = {
-      error: looksLikeHtml
-        ? `API returned non-JSON response (${r.status}) for ${url}. Sjekk at Vercel API-ruten finnes.`
-        : (text ? text.slice(0, 160) : 'Serveren svarte ikke med JSON')
-    };
-  }
-
-  if (!r.ok) {
-    console.error('[admin:api] request failed', {
-      url,
-      method,
-      status: r.status,
-      payload: d
-    });
-    if (url.includes('/api/admin/tournaments') && method === 'GET') {
-      throw new Error('Kunne ikke laste turneringer');
-    }
-    if ((url.includes('/api/admin/tournaments') || url.includes('/api/admin/tournament')) && method === 'POST') {
-      throw new Error('Kunne ikke opprette turnering');
-    }
-    throw new Error(d.error || d.message || `Forespørsel mislyktes (${r.status})`);
-  }
+  const r = await fetch(url, { headers:{'Content-Type':'application/json'}, ...options });
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error || 'Forespørsel mislyktes');
   return d;
 }
 
@@ -833,30 +757,7 @@ async function doAdminLogin() {
   btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
   document.getElementById('adminLoginErr').textContent = '';
   try {
-    const loginEndpoints = [
-      '/api/auth/admin-login',
-      '/api/admin-login',
-      '/api/auth/admin',
-      '/api/admin/auth/login'
-    ];
-
-    let d = null;
-    let lastErr = null;
-
-    for (const endpoint of loginEndpoints) {
-      try {
-        d = await api(endpoint, { method:'POST', body:JSON.stringify({password:pw}) });
-        break;
-      } catch (err) {
-        const msg = String(err?.message || '');
-        const missingRoute = msg.includes('NOT_FOUND') || msg.includes('non-JSON response (404)') || msg.includes('404');
-        lastErr = err;
-        if (!missingRoute) throw err;
-      }
-    }
-
-    if (!d) throw lastErr || new Error('Ingen gyldig admin-login API-rute ble funnet');
-
+    const d = await api('/api/auth/admin-login', { method:'POST', body:JSON.stringify({password:pw}) });
     if (d.success) {
       document.getElementById('adminLogin').classList.add('d-none');
       document.getElementById('adminPanel').classList.remove('d-none');
@@ -938,62 +839,14 @@ async function initAdmin() {
 
 // ── Turneringer ───────────────────────────────────────────────────────────────
 async function loadTournaments() {
-  try {
-    const d = await api('/api/admin/tournaments');
-    allTournaments = d.tournaments || [];
-    renderTournamentsTable();
-    populateTournamentSelects();
-  } catch (error) {
-    console.error('[admin:loadTournaments] failed', { url: '/api/admin/tournaments', error: error?.message || String(error) });
-    allTournaments = [];
-    renderTournamentsTable();
-    populateTournamentSelects();
-    throw error;
-  }
+  const d = await api('/api/admin/tournaments');
+  allTournaments = d.tournaments;
+  renderTournamentsTable();
+  populateTournamentSelects();
 }
 
 function statusLabel(s) {
   return s==='upcoming'?'Kommende':s==='active'?'Aktiv':s==='completed'?'Fullført':s;
-}
-
-function parseTournamentDateInput(rawValue) {
-  if (!rawValue) return null;
-  const value = String(rawValue).trim();
-  if (!value) return null;
-
-  const isoDateTime = value.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})$/);
-  if (isoDateTime) {
-    const [, year, month, day, hour, minute] = isoDateTime;
-    return `${year}-${month}-${day}T${hour}:${minute}`;
-  }
-
-  const nbDateTime = value.match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{4})(?:[ ,]+(\d{1,2})[:.](\d{2}))?$/);
-  if (!nbDateTime) return null;
-
-  const day = Number(nbDateTime[1]);
-  const month = Number(nbDateTime[2]);
-  const year = Number(nbDateTime[3]);
-  const hour = nbDateTime[4] != null ? Number(nbDateTime[4]) : 0;
-  const minute = nbDateTime[5] != null ? Number(nbDateTime[5]) : 0;
-
-  if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59) return null;
-
-  const dt = new Date(year, month - 1, day, hour, minute);
-  if (
-    dt.getFullYear() !== year ||
-    dt.getMonth() !== month - 1 ||
-    dt.getDate() !== day ||
-    dt.getHours() !== hour ||
-    dt.getMinutes() !== minute
-  ) return null;
-
-  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
-}
-
-function formatDateTimeInputValue(dateValue) {
-  const dt = new Date(dateValue);
-  if (Number.isNaN(dt.getTime())) return '';
-  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}T${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`;
 }
 
 function formatTournamentDate(dateValue, includeWeekday = false) {
@@ -1053,55 +906,19 @@ function renderTournamentsTable() {
 }
 
 async function createTournament() {
-  const name='Lorgen Invitational', rawDate=document.getElementById('tDate').value, course=document.getElementById('tCourse').value,
+  const name='Lorgen Invitational', date=document.getElementById('tDate').value, course=document.getElementById('tCourse').value,
         description=document.getElementById('tDesc').value,
-        slope=document.getElementById('tSlope').value||113;
-  const date = parseTournamentDateInput(rawDate);
+        slope_rating=document.getElementById('tSlope').value||113;
   const year = date ? new Date(date).getFullYear() : null;
-  if (!year||!date) { showToast('Ugyldig dato. Bruk format DD.MM.ÅÅÅÅ TT:MM','error'); return; }
-
-  const payload = { year, name, date, course, slope: Number(slope) || 113, description };
-  console.info('[admin:createTournament] incoming payload', payload);
+  if (!year||!date) { showToast('Dato og klokkeslett er påkrevd','error'); return; }
   try {
-    console.info('[admin:createTournament] create start');
-    const created = await createTournamentRequest(payload);
-    const createdId = created?.tournament?.id || created?.tournamentId || null;
-    console.info('[admin:createTournament] create success', { tournamentId: createdId });
-    showToast('Turneringen ble opprettet.');
+    await api('/api/admin/tournament',{method:'POST',body:JSON.stringify({year,name,date,course,description,slope_rating})});
+    showToast('Turnering opprettet!');
     ['tDate','tCourse','tDesc'].forEach(id=>document.getElementById(id).value='');
     document.getElementById('tName').value='Lorgen Invitational';
     document.getElementById('tSlope').value='113';
-    try {
-      await loadTournaments();
-      await loadDashboard();
-    } catch (refreshError) {
-      console.error('[admin:createTournament] list refresh failed', refreshError);
-      showToast('Turneringen ble opprettet, men listen kunne ikke oppdateres automatisk. Last siden på nytt.', 'error');
-    }
-  } catch(e) {
-    console.error('[admin:createTournament] caught error', e);
-    showToast(e.message || 'Kunne ikke opprette turnering','error');
-  }
-}
-
-async function createTournamentRequest(payload) {
-  const createEndpoints = ['/api/admin/tournament', '/api/admin/tournaments'];
-  let lastError = null;
-
-  for (const endpoint of createEndpoints) {
-    try {
-      console.info('[admin:createTournament] trying endpoint', endpoint);
-      return await api(endpoint,{method:'POST',body:JSON.stringify(payload)});
-    } catch (error) {
-      lastError = error;
-      console.warn('[admin:createTournament] endpoint failed', { endpoint, error: error?.message || String(error) });
-      const msg = String(error?.message || '').toLowerCase();
-      const isNotFound = msg.includes('404') || msg.includes('not found') || msg.includes('could not be found');
-      if (!isNotFound) throw error;
-    }
-  }
-
-  throw lastError || new Error('Kunne ikke opprette turnering.');
+    await loadTournaments(); await loadDashboard();
+  } catch(e) { showToast(e.message,'error'); }
 }
 
 async function changeTournamentStatus(id, status) {
@@ -1120,7 +937,7 @@ function editTournament(id) {
   document.getElementById('editTId').value = t.id;
   document.getElementById('editTStatus').value = t.status;
   document.getElementById('editTName').value = 'Lorgen Invitational';
-  document.getElementById('editTDate').value = formatDateTimeInputValue(t.date);
+  document.getElementById('editTDate').value = (t.date || '').slice(0,16);
   document.getElementById('editTCourse').value = t.course || '';
   document.getElementById('editTSlope').value = t.slope_rating || 113;
   document.getElementById('editTDesc').value = t.description || '';
@@ -1131,13 +948,13 @@ function editTournament(id) {
 async function saveTournamentEdit() {
   const id = document.getElementById('editTId').value;
   const name = 'Lorgen Invitational';
-  const date = parseTournamentDateInput(document.getElementById('editTDate').value);
+  const date = document.getElementById('editTDate').value;
   const year = date ? new Date(date).getFullYear() : null;
   const course = document.getElementById('editTCourse').value;
   const slope_rating = document.getElementById('editTSlope').value || 113;
   const description = document.getElementById('editTDesc').value;
   const status = document.getElementById('editTStatus').value;
-  if (!year || !date) { showToast('Ugyldig dato. Bruk format DD.MM.ÅÅÅÅ TT:MM', 'error'); return; }
+  if (!year || !date) { showToast('Dato og klokkeslett er påkrevd', 'error'); return; }
   try {
     await api('/api/admin/tournament/' + id, { method: 'PUT', body: JSON.stringify({ year, name, date, course, slope_rating, description, status }) });
     showToast('Turnering oppdatert!');
@@ -1214,31 +1031,26 @@ async function loadDashboard() {
 async function loadTeams() {
   const tid = document.getElementById('teamsTournamentSelect').value;
   if (!tid) return;
-  const tbody = document.getElementById('teamsTable');
-  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)"><i class="fas fa-spinner fa-spin"></i> Laster lag...</td></tr>';
-  try {
-    const d = await api('/api/teams?tournamentId=' + tid);
-    document.getElementById('teamCount').textContent = `(${d.teams.length} lag)`;
-    tbody.innerHTML = !d.teams.length
-      ? '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen lag ennå. Legg til ett ovenfor.</td></tr>'
-      : d.teams.map((t,i) => {
-          const p1 = t.players?.[0]?.name || '—';
-          const p2 = t.players?.[1]?.name || '—';
-          return `
-          <tr>
-            <td>${i+1}</td>
-            <td><strong>${t.name}</strong></td>
-            <td>${p1}</td>
-            <td>${p2}</td>
-            <td><code style="background:var(--gold-pale);padding:2px 8px;border-radius:4px;font-weight:700;color:var(--gold-dark)">${t.pin}</code></td>
-            <td style="display:flex;gap:6px">
-              <button onclick='deleteTeam(${t.id},${JSON.stringify(t.name)})' class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
-            </td>
-          </tr>`;
-        }).join('');
-  } catch (e) {
-    tbody.innerHTML = `<tr><td colspan=\"6\" style=\"text-align:center;padding:24px;color:#ef4444\">Kunne ikke laste lag: ${e.message}</td></tr>`;
-  }
+  const d = await api('/api/admin/tournament/'+tid+'/teams');
+  document.getElementById('teamCount').textContent = `(${d.teams.length} lag)`;
+  document.getElementById('teamsTable').innerHTML = !d.teams.length
+    ? '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen lag ennå. Legg til ett ovenfor.</td></tr>'
+    : d.teams.map((t,i) => {
+        const hcp1 = t.player1_handicap || 0, hcp2 = t.player2_handicap || 0;
+        const hcpStr = (hcp1||hcp2) ? ` <span style="font-size:.75rem;color:var(--text-muted)">(Hcp: ${hcp1}/${hcp2})</span>` : '';
+        return `
+        <tr>
+          <td>${i+1}</td>
+          <td><strong>${t.team_name}</strong></td>
+          <td>${t.player1}${hcpStr ? '<br>' + hcpStr.replace('Hcp: ','Hcp '+hcp1+'/') : ''}</td>
+          <td>${t.player2}</td>
+          <td><code style="background:var(--gold-pale);padding:2px 8px;border-radius:4px;font-weight:700;color:var(--gold-dark)">${t.pin_code}</code></td>
+          <td style="display:flex;gap:6px">
+            <button onclick='editTeam(${t.id},${JSON.stringify(t.team_name)},${JSON.stringify(t.player1)},${JSON.stringify(t.player2)},${JSON.stringify(t.pin_code)},${hcp1},${hcp2})' class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)" title="Rediger"><i class="fas fa-pen"></i></button>
+            <button onclick='deleteTeam(${t.id},${JSON.stringify(t.team_name)})' class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
+          </td>
+        </tr>`;
+      }).join('');
 }
 
 async function addTeam() {
@@ -1253,23 +1065,7 @@ async function addTeam() {
   if (!team_name||!player1||!player2||!pin_code) { showToast('Alle felt er påkrevd','error'); return; }
   if (!/^\d{4}$/.test(pin_code)) { showToast('PIN må være nøyaktig 4 siffer','error'); return; }
   try {
-    const teamPayload = {
-      tournament_id: tid,
-      name: team_name,
-      team_name,
-      pin: pin_code,
-      pin_code,
-      player1,
-      player2,
-      player1_handicap,
-      player2_handicap
-    };
-    console.info('[admin:addTeam] payload', teamPayload);
-    const created = await api('/api/teams',{method:'POST',body:JSON.stringify(teamPayload)});
-    const p1 = await api('/api/players',{method:'POST',body:JSON.stringify({tournament_id:tid,name:player1,handicap:player1_handicap})});
-    const p2 = await api('/api/players',{method:'POST',body:JSON.stringify({tournament_id:tid,name:player2,handicap:player2_handicap})});
-    await api('/api/teams/'+created.team.id+'/add-player',{method:'POST',body:JSON.stringify({player_id:p1.player.id})});
-    await api('/api/teams/'+created.team.id+'/add-player',{method:'POST',body:JSON.stringify({player_id:p2.player.id})});
+    await api('/api/admin/team',{method:'POST',body:JSON.stringify({tournament_id:tid,team_name,player1,player2,pin_code,player1_handicap,player2_handicap})});
     showToast('Lag lagt til!');
     ['newTeamName','newPlayer1','newPlayer2','newPin','newHcp1','newHcp2'].forEach(id=>document.getElementById(id).value='');
     await loadTeams(); await loadDashboard(); loadAwardTeams();
@@ -1313,8 +1109,7 @@ function cancelTeamEdit() {
 async function deleteTeam(id, name) {
   if (!confirm(`Slett laget «${name}»? Alle tilknyttede poeng slettes også.`)) return;
   try {
-    const tid = document.getElementById('teamsTournamentSelect').value;
-    await api('/api/teams/'+id+'?tournamentId='+tid,{method:'DELETE'});
+    await api('/api/admin/team/'+id,{method:'DELETE'});
     showToast('Lag slettet');
     await loadTeams();
   } catch(e) { showToast(e.message,'error'); }
@@ -1482,17 +1277,16 @@ function renderTeamScores() {
   const scoresMap = {};
   teamScores.forEach(s => scoresMap[s.hole_number] = s);
 
-  const playedScores = teamScores.filter(s => Number(s.score) > 0);
-  const total = playedScores.reduce((sum, s) => sum + (s.score || 0), 0);
-  const parTotal = playedScores.reduce((sum, s) => sum + (s.par || 4), 0);
-  const toPar = playedScores.length > 0 ? total - parTotal : null;
+  const total = teamScores.reduce((sum, s) => sum + (s.score || 0), 0);
+  const parTotal = teamScores.reduce((sum, s) => sum + (s.par || 4), 0);
+  const toPar = total > 0 ? total - parTotal : null;
   const isLocked = !!team.locked;
 
   // Statuslinje
   document.getElementById('scoresTeamStatus').classList.remove('d-none');
   document.getElementById('scoresTeamInfo').innerHTML =
     `<strong>${team.team_name}</strong> · ${team.player1} &amp; ${team.player2} ·
-     ${playedScores.length}/18 hull innsendt
+     ${teamScores.filter(s=>s.score>0).length}/18 hull innsendt
      ${total ? ' · Totalt: ' + total + (toPar !== null ? (toPar > 0 ? ' (+'+toPar+')' : toPar===0 ? ' (E)' : ' ('+toPar+')') : '') : ''}
      ${isLocked ? '&nbsp;<span style="color:var(--danger)"><i class="fas fa-lock"></i> Låst</span>' : ''}`;
 
@@ -1748,84 +1542,19 @@ async function deleteGalleryPhoto(id) {
 
 // ── Myntlogo bakside ───────────────────────────────────────────────────────────
 let _coinBackData = {};
-let _coinBackSelectedId = null;
-
-function renderCoinBackTable() {
-  const rows = Array.isArray(_coinBackData.photos) ? _coinBackData.photos : [];
-  const tbody = document.getElementById('coinBackTable');
-  if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--text-muted);padding:12px">Ingen bilder lastet opp</td></tr>';
-    return;
-  }
-  tbody.innerHTML = rows.map(p => {
-    const isSelected = _coinBackSelectedId === p.id;
-    return `
-      <tr>
-        <td style="display:flex;align-items:center;gap:8px">
-          <img src="${p.photo_path}" alt="Bakside" style="height:36px;width:36px;border-radius:8px;object-fit:cover;border:1px solid var(--gold-border)">
-          <span>${p.photo_path.split('/').pop()}</span>
-        </td>
-        <td>
-          <span style="padding:2px 8px;border-radius:999px;background:${p.is_active ? 'rgba(34,197,94,.15)' : 'rgba(148,163,184,.15)'};color:${p.is_active ? '#166534' : '#64748b'};font-weight:600">
-            ${p.is_active ? 'Aktiv' : 'Inaktiv'}
-          </span>
-        </td>
-        <td style="display:flex;gap:6px;flex-wrap:wrap">
-          <button class="btn btn--outline btn--sm" onclick="selectCoinBack('${p.id}')" style="color:var(--gold-dark);border-color:var(--gold-border)">${isSelected ? 'Valgt' : 'Velg'}</button>
-          <button class="btn btn--outline btn--sm" onclick="setCoinBackActive('${p.id}', ${p.is_active ? 'false' : 'true'})" style="color:var(--gold-dark);border-color:var(--gold-border)">
-            ${p.is_active ? 'Sett inaktiv' : 'Sett aktiv'}
-          </button>
-        </td>
-      </tr>
-    `;
-  }).join('');
-}
 
 async function loadCoinBack() {
   try {
     const d = await fetch('/api/coin-back').then(r => r.json());
     _coinBackData = d;
-    const photos = Array.isArray(d.photos) ? d.photos : [];
-    if (!_coinBackSelectedId || !photos.find(p => p.id === _coinBackSelectedId)) {
-      _coinBackSelectedId = photos[0]?.id || null;
-    }
-    const selected = photos.find(p => p.id === _coinBackSelectedId);
-    if (selected?.photo_path || d.photo_path) {
+    if (d.photo_path) {
       const img = document.getElementById('coinBackPreview');
-      img.src = selected?.photo_path || d.photo_path;
-      img.style.objectPosition = selected?.focal_point || d.focal_point || '50% 50%';
+      img.src = d.photo_path;
+      img.style.objectPosition = d.focal_point || '50% 50%';
       document.getElementById('coinBackPreviewWrap').style.display = 'block';
       document.getElementById('coinFocusBtn').style.display = 'inline-flex';
-    } else {
-      document.getElementById('coinBackPreviewWrap').style.display = 'none';
-      document.getElementById('coinFocusBtn').style.display = 'none';
     }
-    renderCoinBackTable();
   } catch(_) {}
-}
-
-function selectCoinBack(id) {
-  _coinBackSelectedId = id;
-  const selected = (_coinBackData.photos || []).find(p => p.id === id);
-  if (selected) {
-    const img = document.getElementById('coinBackPreview');
-    img.src = selected.photo_path;
-    img.style.objectPosition = selected.focal_point || '50% 50%';
-  }
-  renderCoinBackTable();
-}
-
-async function setCoinBackActive(id, isActive) {
-  try {
-    await api('/api/admin/coin-back/' + id + '/active', {
-      method: 'PUT',
-      body: JSON.stringify({ is_active: isActive })
-    });
-    showToast(isActive ? 'Bakside-bilde satt aktivt' : 'Bakside-bilde satt inaktivt');
-    await loadCoinBack();
-  } catch(e) {
-    showToast(e.message, 'error');
-  }
 }
 
 async function uploadCoinBack() {
@@ -1838,8 +1567,11 @@ async function uploadCoinBack() {
     const d = await r.json();
     if (d.success) {
       showToast('Bakside-bilde oppdatert!');
-      _coinBackSelectedId = d.image?.id || _coinBackSelectedId;
-      await loadCoinBack();
+      _coinBackData.photo_path = d.photo_path;
+      const img = document.getElementById('coinBackPreview');
+      img.src = d.photo_path + '?t=' + Date.now();
+      document.getElementById('coinBackPreviewWrap').style.display = 'block';
+      document.getElementById('coinFocusBtn').style.display = 'inline-flex';
     } else {
       showToast(d.error || 'Opplasting mislyktes', 'error');
     }
@@ -1848,9 +1580,7 @@ async function uploadCoinBack() {
 }
 
 function openCoinFocusPicker() {
-  const selected = (_coinBackData.photos || []).find(p => p.id === _coinBackSelectedId);
-  if (!selected) return showToast('Velg et bilde først', 'error');
-  openFocusPicker(selected.photo_path, 'coin:' + selected.id, selected.focal_point || '50% 50%');
+  openFocusPicker(_coinBackData.photo_path, 'coin', _coinBackData.focal_point || '50% 50%');
 }
 
 // ── Utmerkelser ───────────────────────────────────────────────────────────────
@@ -2026,7 +1756,7 @@ async function deleteLegacy(id, year) {
 }
 
 // ── Fokuspunkt-velger ──────────────────────────────────────────────────────────
-let _focusTarget = null; // 'coin:<id>' | legacy_id
+let _focusTarget = null; // 'coin' | legacy_id
 let _focusPendingX = 50, _focusPendingY = 50;
 
 function openFocusPicker(imgSrc, target, currentFocus) {
@@ -2062,11 +1792,9 @@ function closeFocusPicker() {
 async function saveFocusPicker() {
   const focalPoint = _focusPendingX + '% ' + _focusPendingY + '%';
   try {
-    if (typeof _focusTarget === 'string' && _focusTarget.startsWith('coin:')) {
-      const coinId = _focusTarget.split(':')[1];
-      await api('/api/admin/coin-back/focus', { method: 'PUT', body: JSON.stringify({ focal_point: focalPoint, image_id: coinId }) });
-      const coin = (_coinBackData.photos || []).find(p => p.id === coinId);
-      if (coin) coin.focal_point = focalPoint;
+    if (_focusTarget === 'coin') {
+      await api('/api/admin/coin-back/focus', { method: 'PUT', body: JSON.stringify({ focal_point: focalPoint }) });
+      _coinBackData.focal_point = focalPoint;
       document.getElementById('coinBackPreview').style.objectPosition = focalPoint;
       showToast('Fokuspunkt lagret for myntlogo!');
     } else if (_focusTarget) {
@@ -2084,77 +1812,39 @@ function openLegacyFocusPicker(id, imgSrc, currentFocus) {
 
 
 let sponsorsCache = { home: [], hole: [] };
-let selectedHomeSponsorSpot = 1;
-
-function homeSponsorDefault(spotNumber) {
-  return { placement: 'home', spot_number: spotNumber, is_enabled: 0, sponsor_name: '', description: '', logo_path: '' };
-}
-
-function ensureHomeSponsorSelect() {
-  const select = document.getElementById('homeSponsorSpotSelect');
-  if (!select) return;
-  if (!select.options.length) {
-    select.innerHTML = [1,2,3,4,5].map(n => `<option value="${n}">Sponsorplass ${n}</option>`).join('');
-  }
-  select.value = String(selectedHomeSponsorSpot);
-}
-
-function renderSelectedHomeSponsorRow() {
-  const homeMap = {};
-  (sponsorsCache.home || []).forEach(r => { homeMap[r.spot_number] = r; });
-  const selectedRow = homeMap[selectedHomeSponsorSpot] || homeSponsorDefault(selectedHomeSponsorSpot);
-  document.getElementById('homeSponsorRows').innerHTML = sponsorRowHtml(selectedRow, 'home', selectedHomeSponsorSpot);
-}
-
-function changeHomeSponsorSpot() {
-  const select = document.getElementById('homeSponsorSpotSelect');
-  if (!select) return;
-  selectedHomeSponsorSpot = Number(select.value) || 1;
-  renderSelectedHomeSponsorRow();
-}
 
 function sponsorRowHtml(item, type, indexKey) {
   const rowId = `${type}-${indexKey}`;
-  const rowClass = type === 'home' ? 'sponsor-row sponsor-row--single' : 'sponsor-row';
   return `
-    <div data-row="${rowId}" class="${rowClass}">
-      ${type === 'home' ? '' : `<div class="sponsor-row-title">Hull ${indexKey}</div>`}
-      <div class="form-group">
-        <label class="form-label">Sponsornavn</label>
-        <input class="form-input" data-field="sponsor_name" value="${item.sponsor_name || ''}" placeholder="Sponsornavn">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Beskrivelse</label>
-        <textarea class="form-input form-textarea" data-field="description" placeholder="Kort beskrivelse">${item.description || ''}</textarea>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Logo</label>
+    <div data-row="${rowId}" style="display:grid;grid-template-columns:120px 1fr 1fr 170px 170px;gap:10px;align-items:center;margin-bottom:10px;padding:10px;border:1px solid var(--gold-border);border-radius:10px;background:var(--off-white)">
+      <div style="font-weight:700;color:var(--dark)">${type === 'home' ? `Spot ${indexKey}` : `Hull ${indexKey}`}</div>
+      <input class="form-input" data-field="sponsor_name" value="${item.sponsor_name || ''}" placeholder="Sponsornavn">
+      <input class="form-input" data-field="description" value="${item.description || ''}" placeholder="Kort beskrivelse">
+      <div>
         <input class="form-input" data-field="logo_path" value="${item.logo_path || ''}" placeholder="Logo URL eller last opp">
         <input type="file" data-field="logo_file" accept="image/*" style="margin-top:6px;font-size:.75rem" onchange="uploadSponsorLogo(this, '${rowId}')">
       </div>
-      <div class="form-group" style="display:flex;align-items:center;height:100%">
-        <label style="display:flex;align-items:center;gap:8px;font-size:.84rem;color:var(--text-muted)">
-          <input type="checkbox" data-field="is_enabled" ${item.is_enabled ? 'checked' : ''} style="accent-color:var(--gold)"> Vis sponsor
-        </label>
-      </div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:.84rem;color:var(--text-muted)">
+        <input type="checkbox" data-field="is_enabled" ${item.is_enabled ? 'checked' : ''} style="accent-color:var(--gold)"> Vis sponsor
+      </label>
     </div>`;
 }
 
 async function loadSponsorsAdmin() {
   const tid = document.getElementById('sponsorsTournamentSelect').value;
   if (!tid) {
-    ensureHomeSponsorSelect();
     document.getElementById('homeSponsorRows').innerHTML = '<div style="color:var(--text-muted)">Velg turnering først.</div>';
     document.getElementById('holeSponsorRows').innerHTML = '';
     return;
   }
   const d = await api('/api/admin/tournament/' + tid + '/sponsors');
   sponsorsCache = d;
-  ensureHomeSponsorSelect();
-  renderSelectedHomeSponsorRow();
+  const homeMap = {};
+  (d.home || []).forEach(r => { homeMap[r.spot_number] = r; });
   const holeMap = {};
   (d.hole || []).forEach(r => { holeMap[r.hole_number] = r; });
 
+  document.getElementById('homeSponsorRows').innerHTML = [1,2,3,4,5].map(n => sponsorRowHtml(homeMap[n] || { spot_number:n, is_enabled:0 }, 'home', n)).join('');
   document.getElementById('holeSponsorRows').innerHTML = Array.from({ length: 18 }, (_, i) => i + 1)
     .map(n => sponsorRowHtml(holeMap[n] || { hole_number:n, is_enabled:0 }, 'hole', n)).join('');
 }
@@ -2191,11 +1881,6 @@ async function saveSponsorsAdmin() {
       is_enabled: row.querySelector('[data-field="is_enabled"]').checked
     };
   });
-  for (let n = 1; n <= 5; n++) {
-    if (!sponsors.some(s => s.placement === 'home' && s.spot_number === n)) {
-      sponsors.push(homeSponsorDefault(n));
-    }
-  }
   await api('/api/admin/tournament/' + tid + '/sponsors', {
     method: 'POST',
     body: JSON.stringify({ sponsors })
@@ -2305,13 +1990,23 @@ async function importCourseHoles() {
   if (!tid) { showToast('Velg en turnering først', 'error'); return; }
   if (!confirm('Overskriv gjeldende hullkonfigurasjon med malen fra valgt bane?')) return;
   try {
-    await api('/api/admin/tournaments/' + tid + '/import-course-template', {
+    const d = await api(`/api/admin/course/${courseId}/holes`);
+    const importedHoles = d.holes;
+    // Apply hole config to tournament
+    await api('/api/admin/tournament/' + tid + '/holes', {
       method: 'POST',
-      body: JSON.stringify({ course_id: courseId })
+      body: JSON.stringify({ holes: importedHoles })
     });
+    // Also copy slope_rating from course to tournament
+    const course = _allCourses.find(c => c.id === parseInt(courseId));
+    if (course) {
+      await api('/api/admin/tournament/' + tid + '/slope', {
+        method: 'PUT',
+        body: JSON.stringify({ slope_rating: course.slope_rating })
+      });
+    }
     showToast('Hull-mal og slope importert!');
     await loadHoles();
-    await loadTournaments();
   } catch(e) { showToast(e.message, 'error'); }
 }
 
