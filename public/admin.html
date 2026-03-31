@@ -833,15 +833,30 @@ async function doAdminLogin() {
   btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
   document.getElementById('adminLoginErr').textContent = '';
   try {
-    let d;
-    try {
-      d = await api('/api/auth/admin-login', { method:'POST', body:JSON.stringify({password:pw}) });
-    } catch (primaryError) {
-      const msg = String(primaryError?.message || '');
-      const looksLikeMissingRoute = msg.includes('NOT_FOUND') || msg.includes('non-JSON response (404)') || msg.includes('404');
-      if (!looksLikeMissingRoute) throw primaryError;
-      d = await api('/api/admin-login', { method:'POST', body:JSON.stringify({password:pw}) });
+    const loginEndpoints = [
+      '/api/auth/admin-login',
+      '/api/admin-login',
+      '/api/auth/admin',
+      '/api/admin/auth/login'
+    ];
+
+    let d = null;
+    let lastErr = null;
+
+    for (const endpoint of loginEndpoints) {
+      try {
+        d = await api(endpoint, { method:'POST', body:JSON.stringify({password:pw}) });
+        break;
+      } catch (err) {
+        const msg = String(err?.message || '');
+        const missingRoute = msg.includes('NOT_FOUND') || msg.includes('non-JSON response (404)') || msg.includes('404');
+        lastErr = err;
+        if (!missingRoute) throw err;
+      }
     }
+
+    if (!d) throw lastErr || new Error('Ingen gyldig admin-login API-rute ble funnet');
+
     if (d.success) {
       document.getElementById('adminLogin').classList.add('d-none');
       document.getElementById('adminPanel').classList.remove('d-none');

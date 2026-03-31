@@ -2,6 +2,8 @@ import { createAdminSession } from '@/lib/adminSession';
 import { fail, ok } from '@/lib/apiResponse';
 import { env } from '@/lib/env';
 
+export const runtime = 'nodejs';
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();

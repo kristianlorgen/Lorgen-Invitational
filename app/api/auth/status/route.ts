@@ -2,6 +2,8 @@ import { fail, ok } from '@/lib/apiResponse';
 import { getAdminSession } from '@/lib/adminSession';
 import { getTeamSession } from '@/lib/teamSession';
 
+export const runtime = 'nodejs';
+
 export async function GET() {
   try {
     const admin = await getAdminSession();
