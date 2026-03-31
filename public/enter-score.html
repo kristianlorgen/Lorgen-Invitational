@@ -679,7 +679,7 @@ let startupInProgress = false;
 const seenBirdieMessageIds = new Set();
 const TEAM_ID_STORAGE_KEY = 'team_id';
 const TOURNAMENT_ID_STORAGE_KEY = 'tournament_id';
-const SUPABASE_URL = String(window.SUPABASE_URL || window.__SUPABASE_URL__ || '').replace(/\/+$/, '');
+const SUPABASE_URL = String(window.NEXT_PUBLIC_SUPABASE_URL || window.SUPABASE_URL || window.__SUPABASE_URL__ || 'https://uxaurdxmdnnflbdwpfhx.supabase.co').replace(/\/+$/, '');
 let activeTeamSession = null;
 function clearStoredSession() {
   localStorage.removeItem(TEAM_ID_STORAGE_KEY);
@@ -870,7 +870,6 @@ function getPublicUrl(path) {
     .replace(/^\/+/, '')
     .replace(/^storage\/v1\/object\/public\/tournament-gallery\//, '')
     .replace(/^tournament-gallery\//, '');
-  if (!SUPABASE_URL) return `/storage/v1/object/public/tournament-gallery/${cleanedPath}`;
   return `${SUPABASE_URL}/storage/v1/object/public/tournament-gallery/${cleanedPath}`;
 }
 
