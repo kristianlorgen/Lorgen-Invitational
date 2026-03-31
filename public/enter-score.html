@@ -679,9 +679,14 @@ let startupInProgress = false;
 const seenBirdieMessageIds = new Set();
 const TEAM_ID_STORAGE_KEY = 'team_id';
 const TOURNAMENT_ID_STORAGE_KEY = 'tournament_id';
+const SUPABASE_URL = String(window.SUPABASE_URL || window.__SUPABASE_URL__ || '').replace(/\/+$/, '');
+let activeTeamSession = null;
 function clearStoredSession() {
   localStorage.removeItem(TEAM_ID_STORAGE_KEY);
   localStorage.removeItem(TOURNAMENT_ID_STORAGE_KEY);
+  sessionStorage.removeItem(TEAM_ID_STORAGE_KEY);
+  sessionStorage.removeItem(TOURNAMENT_ID_STORAGE_KEY);
+  sessionStorage.removeItem('team_pin');
 }
 function isInvalidStoredId(value) {
   const normalized = String(value ?? '').trim().toLowerCase();
@@ -689,8 +694,8 @@ function isInvalidStoredId(value) {
 }
 
 function getSession() {
-  const teamId = sessionStorage.getItem(TEAM_ID_STORAGE_KEY);
-  const tournamentId = sessionStorage.getItem(TOURNAMENT_ID_STORAGE_KEY);
+  const teamId = activeTeamSession?.team_id;
+  const tournamentId = activeTeamSession?.tournament_id;
   if (isInvalidStoredId(teamId) || isInvalidStoredId(tournamentId)) {
     return null;
   }
@@ -710,8 +715,9 @@ function hasSessionAuthError(response, payload) {
 
 function startLoginMode() {
   console.log('startLoginMode');
+  activeTeamSession = null;
+  teamPin = '';
   clearStoredSession();
-  sessionStorage.removeItem('team_pin');
   applyLoginUi();
 }
 
@@ -779,7 +785,7 @@ function withSessionParams(url, session) {
   const nextUrl = new URL(url, window.location.origin);
   nextUrl.searchParams.set('team_id', session.team_id);
   nextUrl.searchParams.set('tournament_id', session.tournament_id);
-  const resolvedPin = String(teamPin || sessionStorage.getItem('team_pin') || '').trim();
+  const resolvedPin = String(teamPin || '').trim();
   if (resolvedPin) nextUrl.searchParams.set('pin', resolvedPin);
   return nextUrl.pathname + nextUrl.search;
 }
@@ -793,7 +799,7 @@ async function apiFetch(url, options = {}, requireAuthSession = true) {
   const hasJsonBody = opts.body && typeof opts.body === 'string';
   const isFormData = typeof FormData !== 'undefined' && opts.body instanceof FormData;
   const requestUrl = withSessionParams(url, session);
-  const resolvedPin = String(teamPin || sessionStorage.getItem('team_pin') || '').trim();
+  const resolvedPin = String(teamPin || '').trim();
   if (!resolvedPin) {
     startLoginMode();
     throw new Error('TEAM_PIN_MISSING');
@@ -853,6 +859,19 @@ function resolveImageSrc(path) {
   if (/^(https?:)?\/\//i.test(path) || path.startsWith('data:') || path.startsWith('blob:')) return path;
   if (path.startsWith('/')) return `${window.location.origin}${path}`;
   return path;
+}
+
+function getPublicUrl(path) {
+  const raw = String(path || '').trim();
+  if (!raw) return '';
+  if (raw.startsWith('http')) return raw;
+  if (raw.startsWith('data:') || raw.startsWith('blob:')) return raw;
+  const cleanedPath = raw
+    .replace(/^\/+/, '')
+    .replace(/^storage\/v1\/object\/public\/uploads\//, '')
+    .replace(/^uploads\//, '');
+  if (!SUPABASE_URL) return `/storage/v1/object/public/uploads/${cleanedPath}`;
+  return `${SUPABASE_URL}/storage/v1/object/public/uploads/${cleanedPath}`;
 }
 
 function getCanonicalImageUrl(payload) {
@@ -1163,8 +1182,8 @@ async function doLogin() {
     }
     if (debugFields.validation) debugFields.validation.textContent = validation;
     if (debugFields.reason) debugFields.reason.textContent = reason || '—';
-    if (debugFields.storedTeamId) debugFields.storedTeamId.textContent = sessionStorage.getItem('team_id') || '(empty)';
-    if (debugFields.storedTournamentId) debugFields.storedTournamentId.textContent = sessionStorage.getItem('tournament_id') || '(empty)';
+    if (debugFields.storedTeamId) debugFields.storedTeamId.textContent = activeTeamSession?.team_id || '(memory only)';
+    if (debugFields.storedTournamentId) debugFields.storedTournamentId.textContent = activeTeamSession?.tournament_id || '(memory only)';
     if (forceVisible && debugPanel) debugPanel.style.display = 'block';
   };
 
@@ -1216,11 +1235,9 @@ async function doLogin() {
 
     if (d?.success === true && responseTeamId && responseTournamentId) {
       teamPin = responsePin;
-      if (responsePin) sessionStorage.setItem('team_pin', responsePin);
-      sessionStorage.setItem("team_id", responseTeamId);
-      sessionStorage.setItem("tournament_id", responseTournamentId);
-      const storedTeamId = sessionStorage.getItem("team_id");
-      const storedTournamentId = sessionStorage.getItem("tournament_id");
+      activeTeamSession = { team_id: responseTeamId, tournament_id: responseTournamentId };
+      const storedTeamId = activeTeamSession.team_id;
+      const storedTournamentId = activeTeamSession.tournament_id;
       console.log('[login] stored team_id', storedTeamId);
       console.log('[login] stored tournament_id', storedTournamentId);
       if (!storedTeamId || !storedTournamentId) {
@@ -1362,8 +1379,7 @@ async function loadScorecard({ displayErrorState = true } = {}) {
 
     teamData = nextTeam;
     tournamentData = nextTournament;
-    localStorage.setItem(TEAM_ID_STORAGE_KEY, nextTeam.id);
-    localStorage.setItem(TOURNAMENT_ID_STORAGE_KEY, resolvedTournamentId);
+    activeTeamSession = { team_id: String(nextTeam.id), tournament_id: String(resolvedTournamentId) };
     holesData = nextHoles;
     scoresData = {};
     claimsData = {};
@@ -1838,7 +1854,7 @@ function renderCurrentHole() {
           ? '<i class="fas fa-circle-check"></i> Bilde lagret'
           : '<i class="fas fa-camera"></i> Last opp bilde først'}
       </div>
-      ${hasPhoto ? `<img class="photo-preview" src="${holePhotoSrc}" alt="Hull ${h.hole_number} bilde">` : ''}
+      ${hasPhoto ? `<img class="photo-preview" src="${getPublicUrl(holePhotoSrc)}" alt="Hull ${h.hole_number} bilde">` : ''}
     ` : ''}
 
     <div class="score-stepper">
@@ -2137,7 +2153,7 @@ async function startTeamMode(session, options = {}) {
     return false;
   }
   console.log('startTeamMode', activeSession);
-  teamPin = sessionStorage.getItem('team_pin') || '';
+  activeTeamSession = { team_id: String(activeSession.team_id), tournament_id: String(activeSession.tournament_id) };
   teamData = { id: activeSession.team_id, tournament_id: activeSession.tournament_id };
   hideScorecardErrorCard();
   startupInProgress = true;
@@ -2161,12 +2177,7 @@ async function startTeamMode(session, options = {}) {
 
 async function initPageSessionFlow() {
   applyLoginUi();
-  const session = getSession();
-  if (!session?.team_id || !session?.tournament_id) {
-    startLoginMode();
-    return;
-  }
-  await startTeamMode(session, { showErrorState: false });
+  startLoginMode();
 }
 
 initPageSessionFlow();
