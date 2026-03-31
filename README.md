@@ -35,6 +35,7 @@ npm start              # Runs on http://localhost:3000
 
 On Vercel the deployment bundle is read-only, so SQLite/session/upload paths must point to a writable folder (`/tmp`).  
 This repo now defaults to `/tmp` automatically when `VERCEL=1`, but **data in `/tmp` is ephemeral** between invocations/redeploys.  
+Typical symptoms are: newly created tournaments disappear, adding teams says the tournament does not exist, and uploaded images/coin backdrops vanish after refresh or tab close.  
 For persistent production data, move storage to an external service (for example Supabase Postgres + object storage).
 
 ## Tournament Day Flow
