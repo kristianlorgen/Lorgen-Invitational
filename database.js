@@ -1,11 +1,15 @@
 const Database = require('better-sqlite3');
 const fs = require('fs');
+const path = require('path');
 
-if (!fs.existsSync('./data')) {
-  fs.mkdirSync('./data', { recursive: true });
-}
+const dataRoot = process.env.LORGEN_DATA_DIR
+  ? path.resolve(process.env.LORGEN_DATA_DIR)
+  : (process.env.VERCEL ? '/tmp/lorgen-data' : path.resolve('./data'));
 
-const db = new Database('./data/tournament.db');
+if (!fs.existsSync(dataRoot)) fs.mkdirSync(dataRoot, { recursive: true });
+
+const dbPath = path.join(dataRoot, 'tournament.db');
+const db = new Database(dbPath);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 

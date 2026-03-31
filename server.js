@@ -10,6 +10,13 @@ const db      = require('./database');
 const app  = express();
 const PORT = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'LorgenAdmin2025';
+const storageRoot = process.env.LORGEN_STORAGE_DIR
+  ? path.resolve(process.env.LORGEN_STORAGE_DIR)
+  : (process.env.VERCEL ? '/tmp/lorgen-storage' : process.cwd());
+const uploadsDir = path.join(storageRoot, 'uploads');
+const galleryUploadsDir = path.join(uploadsDir, 'glimtskudd');
+const chatUploadsDir = path.join(uploadsDir, 'chat');
+const sessionsDir = path.join(storageRoot, 'data', 'sessions');
 
 const allowedImageExtensions = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.heic', '.heif', '.avif']);
 
@@ -24,10 +31,10 @@ function isAllowedImageUpload(file = {}) {
 }
 
 // Ensure required directories exist
-if (!fs.existsSync('uploads')) fs.mkdirSync('uploads', { recursive: true });
-if (!fs.existsSync('./uploads/glimtskudd')) fs.mkdirSync('./uploads/glimtskudd', { recursive: true });
-if (!fs.existsSync('./uploads/chat')) fs.mkdirSync('./uploads/chat', { recursive: true });
-if (!fs.existsSync('./data/sessions')) fs.mkdirSync('./data/sessions', { recursive: true });
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+if (!fs.existsSync(galleryUploadsDir)) fs.mkdirSync(galleryUploadsDir, { recursive: true });
+if (!fs.existsSync(chatUploadsDir)) fs.mkdirSync(chatUploadsDir, { recursive: true });
+if (!fs.existsSync(sessionsDir)) fs.mkdirSync(sessionsDir, { recursive: true });
 
 // ── SSE live-update clients ──────────────────────────────────────────────────
 const sseClients = new Map();
@@ -40,7 +47,7 @@ function broadcast(type, data = {}) {
 
 // ── File upload (local disk) ─────────────────────────────────────────────────
 const storage = multer.diskStorage({
-  destination: './uploads/',
+  destination: uploadsDir,
   filename: (req, file, cb) =>
     cb(null, `hole-${Date.now()}-${Math.round(Math.random() * 1e6)}${path.extname(file.originalname)}`)
 });
@@ -54,7 +61,7 @@ const upload = multer({
 });
 
 const galleryStorage = multer.diskStorage({
-  destination: './uploads/glimtskudd/',
+  destination: galleryUploadsDir,
   filename: (req, file, cb) =>
     cb(null, `glimt-${Date.now()}-${Math.round(Math.random() * 1e6)}${path.extname(file.originalname)}`)
 });
@@ -68,7 +75,7 @@ const galleryUpload = multer({
 });
 
 const chatStorage = multer.diskStorage({
-  destination: './uploads/chat/',
+  destination: chatUploadsDir,
   filename: (req, file, cb) =>
     cb(null, `chat-${Date.now()}-${Math.round(Math.random() * 1e6)}${path.extname(file.originalname)}`)
 });
@@ -84,7 +91,7 @@ const chatUpload = multer({
 // ── Middleware ───────────────────────────────────────────────────────────────
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use('/uploads', express.static('uploads', { fallthrough: true }));
+app.use('/uploads', express.static(uploadsDir, { fallthrough: true }));
 app.use(express.static('public', {
   setHeaders: (res, filePath) => {
     if (filePath.endsWith('.html')) {
@@ -94,7 +101,7 @@ app.use(express.static('public', {
 }));
 let sessionStore;
 try {
-  sessionStore = new FileStore({ path: './data/sessions', ttl: 86400, retries: 0, logFn: () => {} });
+  sessionStore = new FileStore({ path: sessionsDir, ttl: 86400, retries: 0, logFn: () => {} });
 } catch(_) {
   sessionStore = undefined; // falls back to MemoryStore
 }
@@ -165,6 +172,12 @@ function normalizePhotoPath(photoPath = '') {
 
 function ensureDir(dirPath) {
   if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
+}
+
+function getUploadFsPath(publicUploadPath = '') {
+  const normalized = normalizePhotoPath(publicUploadPath);
+  if (!normalized.startsWith('/uploads/')) return null;
+  return path.join(uploadsDir, normalized.replace(/^\/uploads\//, ''));
 }
 
 function syncScorePhotoToGallery({ tournamentId, scoreId, photoPath }) {
@@ -613,7 +626,7 @@ app.post('/api/team/upload-photo/:hole', requireTeam, (req, res) => {
   try {
     const hole = db.prepare('SELECT * FROM holes WHERE tournament_id=? AND hole_number=?').get(tid, holeNum);
     if (!hole) return res.status(404).json({ error: 'Hull ikke funnet' });
-    const uploadDir = `./uploads/admin/t${tid}/scoreboard/h${holeNum}`;
+    const uploadDir = path.join(uploadsDir, 'admin', `t${tid}`, 'scoreboard', `h${holeNum}`);
     ensureDir(uploadDir);
     const dynamicUpload = multer({
       storage: multer.diskStorage({
@@ -755,7 +768,7 @@ app.post('/api/admin/tournament/:id/sponsors', requireAdmin, (req, res) => {
 
 app.post('/api/admin/tournament/:id/sponsor-logo', requireAdmin, (req, res) => {
   const tournamentId = parseInt(req.params.id, 10);
-  const uploadDir = `./uploads/admin/t${tournamentId}/sponsors`;
+  const uploadDir = path.join(uploadsDir, 'admin', `t${tournamentId}`, 'sponsors');
   ensureDir(uploadDir);
 
   const dynamicUpload = multer({
@@ -869,7 +882,7 @@ app.post('/api/admin/tournament/:id/holes', requireAdmin, (req, res) => {
       for (const h of holes) {
         update.run(h.par, h.requires_photo ? 1 : 0, h.is_longest_drive ? 1 : 0, h.is_closest_to_pin ? 1 : 0, h.stroke_index || 0, tid, h.hole_number);
         if (h.requires_photo) {
-          const dir = `./uploads/t${tid}/h${h.hole_number}`;
+          const dir = path.join(uploadsDir, `t${tid}`, `h${h.hole_number}`);
           if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         }
       }
@@ -1256,7 +1269,8 @@ app.get('/api/admin/gallery/:id/download', requireAdmin, (req, res) => {
     if (!photo?.photo_path) return res.status(404).json({ error: 'Bilde ikke funnet' });
     const normalized = normalizePhotoPath(photo.photo_path);
     if (!normalized.startsWith('/uploads/')) return res.status(400).json({ error: 'Kan ikke laste ned eksternt bilde' });
-    const filePath = path.join(__dirname, normalized.replace(/^\//, ''));
+    const filePath = getUploadFsPath(normalized);
+    if (!filePath) return res.status(400).json({ error: 'Ugyldig filsti' });
     if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Filen finnes ikke på server' });
     return res.download(filePath, path.basename(filePath));
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -1268,7 +1282,8 @@ app.get('/api/admin/photo/:id/download', requireAdmin, (req, res) => {
     if (!score?.photo_path) return res.status(404).json({ error: 'Bilde ikke funnet' });
     const normalized = normalizePhotoPath(score.photo_path);
     if (!normalized.startsWith('/uploads/')) return res.status(400).json({ error: 'Kan ikke laste ned eksternt bilde' });
-    const filePath = path.join(__dirname, normalized.replace(/^\//, ''));
+    const filePath = getUploadFsPath(normalized);
+    if (!filePath) return res.status(400).json({ error: 'Ugyldig filsti' });
     if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Filen finnes ikke på server' });
     return res.download(filePath, path.basename(filePath));
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -1278,7 +1293,8 @@ app.delete('/api/admin/gallery/:id', requireAdmin, (req, res) => {
   try {
     const photo = db.prepare('SELECT photo_path FROM gallery_photos WHERE id=?').get(req.params.id);
     if (photo) {
-      const filePath = path.join(__dirname, photo.photo_path.replace(/^\//, ''));
+      const filePath = getUploadFsPath(photo.photo_path);
+      if (!filePath) return res.status(400).json({ error: 'Ugyldig filsti' });
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     }
     db.prepare('DELETE FROM gallery_photos WHERE id=?').run(req.params.id);
@@ -1437,7 +1453,7 @@ app.post('/api/admin/legacy/:id/photo', requireAdmin, (req, res) => {
   const legacyId = req.params.id;
   const entry = db.prepare('SELECT id FROM legacy WHERE id=?').get(legacyId);
   if (!entry) return res.status(404).json({ error: 'Oppføring ikke funnet' });
-  const dir = './uploads/legacy';
+  const dir = path.join(uploadsDir, 'legacy');
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   const legacyUpload = multer({
     storage: multer.diskStorage({
@@ -1479,7 +1495,8 @@ app.delete('/api/admin/photo/:id', requireAdmin, (req, res) => {
   try {
     const score = db.prepare('SELECT photo_path FROM scores WHERE id=?').get(req.params.id);
     if (score && score.photo_path) {
-      const filePath = path.join(__dirname, score.photo_path.replace(/^\//, ''));
+      const filePath = getUploadFsPath(score.photo_path);
+      if (!filePath) return res.status(400).json({ error: 'Ugyldig filsti' });
       if (fs.existsSync(filePath)) { try { fs.unlinkSync(filePath); } catch(_) {} }
     }
     db.prepare('UPDATE scores SET photo_path=NULL WHERE id=?').run(req.params.id);
@@ -1499,7 +1516,7 @@ app.put('/api/admin/photo/:id/publish', requireAdmin, (req, res) => {
 
 // ── Coin back image ───────────────────────────────────────────────────────────
 app.get('/api/coin-back', (req, res) => {
-  const configPath = path.join(__dirname, 'uploads', 'coin-back.json');
+  const configPath = path.join(uploadsDir, 'coin-back.json');
   if (fs.existsSync(configPath)) {
     try {
       const data = JSON.parse(fs.readFileSync(configPath, 'utf8'));
@@ -1510,7 +1527,7 @@ app.get('/api/coin-back', (req, res) => {
 });
 
 app.put('/api/admin/coin-back/focus', requireAdmin, (req, res) => {
-  const configPath = path.join(__dirname, 'uploads', 'coin-back.json');
+  const configPath = path.join(uploadsDir, 'coin-back.json');
   try {
     let data = {};
     if (fs.existsSync(configPath)) data = JSON.parse(fs.readFileSync(configPath, 'utf8'));
@@ -1521,7 +1538,7 @@ app.put('/api/admin/coin-back/focus', requireAdmin, (req, res) => {
 });
 
 app.post('/api/admin/coin-back', requireAdmin, (req, res) => {
-  const dir = './uploads/coin';
+  const dir = path.join(uploadsDir, 'coin');
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   const coinUpload = multer({
     storage: multer.diskStorage({
@@ -1538,7 +1555,7 @@ app.post('/api/admin/coin-back', requireAdmin, (req, res) => {
     if (err) return res.status(400).json({ error: err.message });
     if (!req.file) return res.status(400).json({ error: 'Ingen fil lastet opp' });
     const photoPath = `/uploads/coin/${req.file.filename}`;
-    fs.writeFileSync(path.join(__dirname, 'uploads', 'coin-back.json'), JSON.stringify({ photo_path: photoPath }));
+    fs.writeFileSync(path.join(uploadsDir, 'coin-back.json'), JSON.stringify({ photo_path: photoPath }));
     res.json({ success: true, photo_path: photoPath });
   });
 });

@@ -28,6 +28,14 @@ npm start              # Runs on http://localhost:3000
 | `PORT` | `3000` | Server port |
 | `SESSION_SECRET` | `lorgen-inv-secret` | Session encryption key |
 | `ADMIN_PASSWORD` | `LorgenAdmin2025` | Admin panel password |
+| `LORGEN_DATA_DIR` | `./data` (local) / `/tmp/lorgen-data` (Vercel) | Where SQLite DB is stored |
+| `LORGEN_STORAGE_DIR` | project root (local) / `/tmp/lorgen-storage` (Vercel) | Where uploads and session files are stored |
+
+### Vercel note
+
+On Vercel the deployment bundle is read-only, so SQLite/session/upload paths must point to a writable folder (`/tmp`).  
+This repo now defaults to `/tmp` automatically when `VERCEL=1`, but **data in `/tmp` is ephemeral** between invocations/redeploys.  
+For persistent production data, move storage to an external service (for example Supabase Postgres + object storage).
 
 ## Tournament Day Flow
 
