@@ -1,7 +1,7 @@
 -- Lorgen Invitational canonical Supabase schema
 
 CREATE TABLE IF NOT EXISTS tournaments (
-  id BIGSERIAL PRIMARY KEY,
+  id SERIAL PRIMARY KEY,
   year INTEGER NOT NULL,
   name TEXT NOT NULL,
   date TIMESTAMPTZ NOT NULL,
@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS course_holes (
 
 CREATE TABLE IF NOT EXISTS tournament_holes (
   id BIGSERIAL PRIMARY KEY,
-  tournament_id BIGINT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+  tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
   hole_number INTEGER NOT NULL,
   par INTEGER NOT NULL DEFAULT 4,
   stroke_index INTEGER NOT NULL DEFAULT 0,
@@ -53,15 +53,15 @@ CREATE TABLE IF NOT EXISTS tournament_holes (
 
 CREATE TABLE IF NOT EXISTS players (
   id BIGSERIAL PRIMARY KEY,
-  tournament_id BIGINT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+  tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   handicap NUMERIC NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS teams (
-  id BIGSERIAL PRIMARY KEY,
-  tournament_id BIGINT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+  id SERIAL PRIMARY KEY,
+  tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   pin TEXT NOT NULL,
   locked BOOLEAN NOT NULL DEFAULT FALSE,
@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS teams (
 
 CREATE TABLE IF NOT EXISTS team_members (
   id BIGSERIAL PRIMARY KEY,
-  team_id BIGINT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
   player_id BIGINT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (team_id, player_id)
@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS team_members (
 
 CREATE TABLE IF NOT EXISTS rounds (
   id BIGSERIAL PRIMARY KEY,
-  tournament_id BIGINT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+  tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   round_order INTEGER NOT NULL DEFAULT 1,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -88,9 +88,9 @@ CREATE TABLE IF NOT EXISTS rounds (
 
 CREATE TABLE IF NOT EXISTS scores (
   id BIGSERIAL PRIMARY KEY,
-  tournament_id BIGINT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+  tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
   round_id BIGINT REFERENCES rounds(id) ON DELETE SET NULL,
-  team_id BIGINT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
   hole_number INTEGER NOT NULL,
   par INTEGER,
   photo_path TEXT,
@@ -102,8 +102,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS scores_team_tournament_hole_uidx ON scores(tea
 
 CREATE TABLE IF NOT EXISTS hole_images (
   id BIGSERIAL PRIMARY KEY,
-  tournament_id BIGINT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
-  team_id BIGINT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+  team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
   hole_number INTEGER NOT NULL,
   image_url TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -113,8 +113,8 @@ CREATE INDEX IF NOT EXISTS hole_images_team_hole_created_idx ON hole_images(team
 
 CREATE TABLE IF NOT EXISTS chat_messages (
   id BIGSERIAL PRIMARY KEY,
-  tournament_id BIGINT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
-  team_id BIGINT REFERENCES teams(id) ON DELETE SET NULL,
+  tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+  team_id INTEGER REFERENCES teams(id) ON DELETE SET NULL,
   team_name TEXT,
   message TEXT,
   note TEXT,
@@ -128,7 +128,7 @@ CREATE INDEX IF NOT EXISTS chat_messages_tournament_created_idx ON chat_messages
 
 CREATE TABLE IF NOT EXISTS tournament_gallery_images (
   id BIGSERIAL PRIMARY KEY,
-  tournament_id BIGINT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+  tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
   photo_path TEXT NOT NULL,
   storage_path TEXT,
   caption TEXT,
@@ -153,9 +153,9 @@ CREATE TABLE IF NOT EXISTS legacy_entries (
 
 CREATE TABLE IF NOT EXISTS award_claims (
   id BIGSERIAL PRIMARY KEY,
-  tournament_id BIGINT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+  tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
   round_id BIGINT REFERENCES rounds(id) ON DELETE CASCADE,
-  team_id BIGINT REFERENCES teams(id) ON DELETE SET NULL,
+  team_id INTEGER REFERENCES teams(id) ON DELETE SET NULL,
   player_id BIGINT REFERENCES players(id) ON DELETE SET NULL,
   team_name TEXT,
   hole_number INTEGER NOT NULL,
@@ -173,7 +173,7 @@ CREATE TABLE IF NOT EXISTS award_claims (
 
 CREATE TABLE IF NOT EXISTS sponsors (
   id BIGSERIAL PRIMARY KEY,
-  tournament_id BIGINT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+  tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
   placement TEXT NOT NULL CHECK (placement IN ('home', 'hole')),
   spot_number INTEGER,
   hole_number INTEGER,
@@ -186,8 +186,8 @@ CREATE TABLE IF NOT EXISTS sponsors (
 
 CREATE TABLE IF NOT EXISTS awards (
   id BIGSERIAL PRIMARY KEY,
-  tournament_id BIGINT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
-  team_id BIGINT REFERENCES teams(id) ON DELETE SET NULL,
+  tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+  team_id INTEGER REFERENCES teams(id) ON DELETE SET NULL,
   team_name TEXT,
   award_type TEXT NOT NULL,
   player_name TEXT NOT NULL,
