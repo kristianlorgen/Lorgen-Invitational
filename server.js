@@ -330,6 +330,32 @@ async function saveScoreCompat(payload) {
   return data;
 }
 
+async function saveHoleImageCompat(payload) {
+  const insertResp = await supabase
+    .from('hole_images')
+    .insert(payload)
+    .select('*')
+    .single();
+
+  if (!insertResp.error) return insertResp.data;
+  if (!isMissingTableError(insertResp.error, 'hole_images')) throw insertResp.error;
+
+  const scorePayload = {
+    tournament_id: payload.tournament_id,
+    team_id: payload.team_id,
+    hole_number: payload.hole_number,
+    photo_path: payload.image_url
+  };
+  const scoreRow = await saveScoreCompat(scorePayload);
+  return {
+    id: scoreRow?.id || null,
+    tournament_id: payload.tournament_id,
+    team_id: payload.team_id,
+    hole_number: payload.hole_number,
+    image_url: payload.image_url
+  };
+}
+
 async function saveAwardClaimCompat(payload) {
   const existingResp = await supabase
     .from('award_claims')
@@ -2184,7 +2210,7 @@ app.post('/api/team/upload-photo/:holeNum', upload.single('photo'), async (req, 
   try {
     const holeNum = asInt(req.params.holeNum);
     routeLog(route, 'hit', { payload: { holeNum, hasFile: !!req.file } });
-    const { team, tournamentId } = await requireTeamContext(req);
+    const { team, tournamentId } = await requireTeamContext(req, { allowPinFallback: true });
     if (!team || !tournamentId) return res.status(401).json({ success: false, error: 'Team session mangler. Logg inn på nytt.' });
     if (!holeNum) return res.status(400).json({ success: false, error: 'Ugyldig hullnummer' });
     if (!req.file) return res.status(400).json({ success: false, error: 'Mangler bildefil' });
@@ -2215,12 +2241,7 @@ app.post('/api/team/upload-photo/:holeNum', upload.single('photo'), async (req, 
       hole_number: holeNum,
       image_url: imageUrl
     };
-    const { data, error: holeImageInsertError } = await supabase
-      .from('hole_images')
-      .insert(holeImagePayload)
-      .select('*')
-      .single();
-    if (holeImageInsertError) throw holeImageInsertError;
+    const data = await saveHoleImageCompat(holeImagePayload);
     const dbLoggedRow = {
       id: data?.id || null,
       tournament_id: data?.tournament_id || tournamentId,
