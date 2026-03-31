@@ -1,3 +1,5 @@
+import { redirect } from 'next/navigation';
+
 export default function HomePage() {
-  return <main>Lorgen Invitational API backend is running.</main>;
+  redirect('/index.html');
 }
