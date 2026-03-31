@@ -15,7 +15,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 12 * 1024 * 1024 } });
 const MEDIA_BUCKET = process.env.SUPABASE_MEDIA_BUCKET || 'tournament-gallery';
-const HOLE_IMAGE_BUCKET = process.env.SUPABASE_HOLE_IMAGE_BUCKET || MEDIA_BUCKET;
+const HOLE_IMAGE_BUCKET = process.env.SUPABASE_HOLE_IMAGE_BUCKET || 'uploads';
 const CHAT_BASE_COLUMNS = ['id', 'tournament_id', 'team_id', 'team_name', 'message', 'created_at'];
 const CHAT_OPTIONAL_COLUMNS = ['note', 'image_path'];
 
@@ -176,6 +176,18 @@ function buildBucketMissingError(bucketName = MEDIA_BUCKET) {
     bucket: bucketName,
     action: `Create bucket: ${bucketName}`
   };
+}
+
+function ensureBucketPublicUrl(value, bucketName) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  if (/^https?:\/\//i.test(raw) || /^data:/i.test(raw)) return raw;
+  let normalizedPath = raw.replace(/^\/+/, '');
+  if (normalizedPath.startsWith(`${bucketName}/`)) {
+    normalizedPath = normalizedPath.slice(bucketName.length + 1);
+  }
+  const { data } = supabase.storage.from(bucketName).getPublicUrl(normalizedPath);
+  return data?.publicUrl || null;
 }
 
 function getRequestBaseUrl(req) {
@@ -2232,7 +2244,7 @@ app.post('/api/team/upload-photo/:holeNum', upload.single('photo'), async (req, 
       throw uploadError;
     }
     const { data: publicData } = supabase.storage.from(HOLE_IMAGE_BUCKET).getPublicUrl(storagePath);
-    const imageUrl = publicData?.publicUrl || null;
+    const imageUrl = ensureBucketPublicUrl(publicData?.publicUrl || storagePath, HOLE_IMAGE_BUCKET);
     routeLog(route, 'upload_photo_url_debug', { storagePath, publicUrl: imageUrl });
 
     const holeImagePayload = {
