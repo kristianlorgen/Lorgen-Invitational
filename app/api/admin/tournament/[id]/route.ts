@@ -18,11 +18,25 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     if (!id) return fail('Invalid tournament id', 400);
 
     const body = await request.json();
-    const updates: { name?: string; course?: string; status?: TournamentStatus } = {};
+    const updates: {
+      name?: string;
+      course?: string;
+      status?: TournamentStatus;
+      date?: string;
+      year?: number;
+      description?: string;
+      slope_rating?: number;
+      gameday_info?: string;
+    } = {};
 
     if (typeof body.name === 'string') updates.name = body.name;
     if (typeof body.course === 'string') updates.course = body.course;
     if (typeof body.status === 'string') updates.status = body.status;
+    if (typeof body.date === 'string') updates.date = body.date;
+    if (typeof body.description === 'string') updates.description = body.description;
+    if (typeof body.gameday_info === 'string') updates.gameday_info = body.gameday_info;
+    if (Number.isFinite(Number(body.year))) updates.year = Number(body.year);
+    if (Number.isFinite(Number(body.slope_rating))) updates.slope_rating = Number(body.slope_rating);
 
     const { data, error } = await supabaseAdmin
       .from('tournaments')
