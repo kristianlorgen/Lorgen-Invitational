@@ -15,7 +15,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 12 * 1024 * 1024 } });
 const MEDIA_BUCKET = process.env.SUPABASE_MEDIA_BUCKET || 'tournament-gallery';
-const HOLE_IMAGE_BUCKET = process.env.SUPABASE_HOLE_IMAGE_BUCKET || 'uploads';
+const HOLE_IMAGE_BUCKET = process.env.SUPABASE_HOLE_IMAGE_BUCKET || 'tournament-gallery';
 const CHAT_BASE_COLUMNS = ['id', 'tournament_id', 'team_id', 'team_name', 'message', 'created_at'];
 const CHAT_OPTIONAL_COLUMNS = ['note', 'image_path'];
 
@@ -217,7 +217,7 @@ function resolveImageUrl(rawPath, req) {
     storagePath = storagePath.slice(MEDIA_BUCKET.length + 1);
   }
 
-  const looksLikeStoragePath = storagePath.includes('/') && !storagePath.startsWith('uploads/');
+  const looksLikeStoragePath = storagePath.includes('/') && !storagePath.startsWith('tournament-gallery/');
   if (looksLikeStoragePath) {
     const { data: publicData } = supabase.storage.from(MEDIA_BUCKET).getPublicUrl(storagePath);
     if (publicData?.publicUrl) return publicData.publicUrl;
