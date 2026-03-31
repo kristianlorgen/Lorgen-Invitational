@@ -21,6 +21,8 @@ const uploadsDir = path.join(storageRoot, 'uploads');
 const galleryUploadsDir = path.join(uploadsDir, 'glimtskudd');
 const chatUploadsDir = path.join(uploadsDir, 'chat');
 const sessionsDir = path.join(storageRoot, 'data', 'sessions');
+const runningOnVercel = Boolean(process.env.VERCEL);
+const usingEphemeralStorage = runningOnVercel && !process.env.LORGEN_DATA_DIR;
 
 const allowedImageExtensions = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.heic', '.heif', '.avif']);
 
@@ -95,6 +97,10 @@ const chatUpload = multer({
 // ── Middleware ───────────────────────────────────────────────────────────────
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use((req, res, next) => {
+  res.setHeader('X-Lorgen-Storage-Mode', usingEphemeralStorage ? 'ephemeral' : 'durable');
+  next();
+});
 app.use('/uploads', express.static(uploadsDir, { fallthrough: true }));
 app.use(express.static('public', {
   setHeaders: (res, filePath) => {
@@ -897,7 +903,10 @@ app.post('/api/admin/team', requireAdmin, (req, res) => {
     return res.status(400).json({ error: 'Alle felt er påkrevd' });
   try {
     if (!tournamentExists(tournament_id)) {
-      return res.status(404).json({ error: 'Valgt turnering finnes ikke lenger. Oppdater siden og prøv igjen.' });
+      const hint = usingEphemeralStorage
+        ? ' Appen kjører med midlertidig lagring på Vercel (/tmp), så data kan forsvinne mellom kall.'
+        : '';
+      return res.status(404).json({ error: 'Valgt turnering finnes ikke lenger. Oppdater siden og prøv igjen.' + hint });
     }
     const existing = db.prepare('SELECT id FROM teams WHERE tournament_id=? AND pin_code=?').get(tournament_id, pin_code);
     if (existing) return res.status(400).json({ error: 'PIN allerede i bruk i denne turneringen' });

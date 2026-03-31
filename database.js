@@ -2,9 +2,14 @@ const Database = require('better-sqlite3');
 const fs = require('fs');
 const path = require('path');
 
+const runningOnVercel = Boolean(process.env.VERCEL);
 const dataRoot = process.env.LORGEN_DATA_DIR
   ? path.resolve(process.env.LORGEN_DATA_DIR)
-  : (process.env.VERCEL ? '/tmp/lorgen-data' : path.resolve('./data'));
+  : (runningOnVercel ? '/tmp/lorgen-data' : path.resolve('./data'));
+
+if (runningOnVercel && !process.env.LORGEN_DATA_DIR) {
+  console.warn('[Lorgen] VERCEL detected without LORGEN_DATA_DIR. SQLite data is stored in /tmp and is not durable between function instances.');
+}
 
 if (!fs.existsSync(dataRoot)) fs.mkdirSync(dataRoot, { recursive: true });
 
