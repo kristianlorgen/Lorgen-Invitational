@@ -27,6 +27,11 @@ export async function POST(request: Request) {
 
     const body = await request.json();
     const status = (body.status ?? 'upcoming') as TournamentStatus;
+    const year = Number(body.year);
+    const slopeRating = Number(body.slope_rating);
+    const date = typeof body.date === 'string' ? body.date : '';
+    const description = typeof body.description === 'string' ? body.description : '';
+    const gamedayInfo = typeof body.gameday_info === 'string' ? body.gameday_info : '';
 
     if (!body.name || !body.course) {
       return fail('name and course are required', 400);
@@ -34,7 +39,16 @@ export async function POST(request: Request) {
 
     const { data, error } = await supabaseAdmin
       .from('tournaments')
-      .insert({ name: body.name, course: body.course, status })
+      .insert({
+        name: body.name,
+        course: body.course,
+        status,
+        ...(Number.isFinite(year) ? { year } : {}),
+        ...(date ? { date } : {}),
+        ...(description ? { description } : {}),
+        ...(gamedayInfo ? { gameday_info: gamedayInfo } : {}),
+        ...(Number.isFinite(slopeRating) ? { slope_rating: slopeRating } : {})
+      })
       .select('*')
       .single();
 
