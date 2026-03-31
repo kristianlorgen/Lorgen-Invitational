@@ -178,7 +178,7 @@ lorgen-invitational/
 ├── .env.example
 ├── .gitignore
 ├── data/              ← NOT committed
-├── uploads/           ← NOT committed
+├── tournament-gallery/           ← NOT committed
 └── public/
     ├── index.html         ← Hjemmeside
     ├── gameday.html       ← Spilledag informasjon
@@ -241,7 +241,7 @@ legacy       (id, year, winner_team, player1, player2, score, score_to_par, cour
 ```
 
 `gameday_info` — free text for the Spilledag page schedule/info.
-`scores.photo_path` — stored as `/uploads/filename.jpg`
+`scores.photo_path` — stored as `/tournament-gallery/filename.jpg`
 
 ---
 
@@ -265,4 +265,4 @@ ADMIN_PASSWORD=LorgenAdmin2025
 - Append: `https://claude.ai/code/session_01PaBQbJ2b1RkRigDhKkZhfL`
 
 ### What NOT to commit
-`.env` · `data/` · `uploads/` · `node_modules/`
+`.env` · `data/` · `tournament-gallery/` · `node_modules/`

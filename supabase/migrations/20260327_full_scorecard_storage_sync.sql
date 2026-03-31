@@ -25,7 +25,7 @@ ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAUL
 
 CREATE INDEX IF NOT EXISTS chat_messages_tournament_created_idx ON chat_messages (tournament_id, created_at);
 
--- Canonical storage bucket for scorecard/chat/gallery uploads.
+-- Canonical storage bucket for scorecard/chat/gallery media assets.
 -- If this statement cannot run in your environment, create it manually in Supabase:
 --   Create bucket: tournament-gallery
 DO $$

@@ -868,10 +868,10 @@ function getPublicUrl(path) {
   if (raw.startsWith('data:') || raw.startsWith('blob:')) return raw;
   const cleanedPath = raw
     .replace(/^\/+/, '')
-    .replace(/^storage\/v1\/object\/public\/uploads\//, '')
-    .replace(/^uploads\//, '');
-  if (!SUPABASE_URL) return `/storage/v1/object/public/uploads/${cleanedPath}`;
-  return `${SUPABASE_URL}/storage/v1/object/public/uploads/${cleanedPath}`;
+    .replace(/^storage\/v1\/object\/public\/tournament-gallery\//, '')
+    .replace(/^tournament-gallery\//, '');
+  if (!SUPABASE_URL) return `/storage/v1/object/public/tournament-gallery/${cleanedPath}`;
+  return `${SUPABASE_URL}/storage/v1/object/public/tournament-gallery/${cleanedPath}`;
 }
 
 function getCanonicalImageUrl(payload) {
