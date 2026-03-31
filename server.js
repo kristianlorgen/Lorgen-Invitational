@@ -15,7 +15,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 12 * 1024 * 1024 } });
 const MEDIA_BUCKET = process.env.SUPABASE_MEDIA_BUCKET || 'tournament-gallery';
-const HOLE_IMAGE_BUCKET = 'images';
+const HOLE_IMAGE_BUCKET = process.env.SUPABASE_HOLE_IMAGE_BUCKET || MEDIA_BUCKET;
 const CHAT_BASE_COLUMNS = ['id', 'tournament_id', 'team_id', 'team_name', 'message', 'created_at'];
 const CHAT_OPTIONAL_COLUMNS = ['note', 'image_path'];
 

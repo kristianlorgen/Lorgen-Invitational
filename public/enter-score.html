@@ -458,8 +458,8 @@
         <div><strong>HTTP status:</strong> <span id="debugLoginStatus">—</span></div>
         <div><strong>Frontend validation:</strong> <span id="debugLoginValidation">—</span></div>
         <div><strong>Rejection reason:</strong> <span id="debugLoginReason">—</span></div>
-        <div><strong>localStorage team_id:</strong> <span id="debugStoredTeamId">—</span></div>
-        <div><strong>localStorage tournament_id:</strong> <span id="debugStoredTournamentId">—</span></div>
+        <div><strong>sessionStorage team_id:</strong> <span id="debugStoredTeamId">—</span></div>
+        <div><strong>sessionStorage tournament_id:</strong> <span id="debugStoredTournamentId">—</span></div>
         <div class="login-debug-label" style="margin-top:8px">Raw response JSON</div>
         <pre id="debugLoginResponse">—</pre>
       </div>
@@ -679,14 +679,18 @@ let startupInProgress = false;
 const seenBirdieMessageIds = new Set();
 const TEAM_ID_STORAGE_KEY = 'team_id';
 const TOURNAMENT_ID_STORAGE_KEY = 'tournament_id';
+function clearStoredSession() {
+  localStorage.removeItem(TEAM_ID_STORAGE_KEY);
+  localStorage.removeItem(TOURNAMENT_ID_STORAGE_KEY);
+}
 function isInvalidStoredId(value) {
   const normalized = String(value ?? '').trim().toLowerCase();
   return !normalized || normalized === 'undefined' || normalized === 'null';
 }
 
 function getSession() {
-  const teamId = localStorage.getItem(TEAM_ID_STORAGE_KEY);
-  const tournamentId = localStorage.getItem(TOURNAMENT_ID_STORAGE_KEY);
+  const teamId = sessionStorage.getItem(TEAM_ID_STORAGE_KEY);
+  const tournamentId = sessionStorage.getItem(TOURNAMENT_ID_STORAGE_KEY);
   if (isInvalidStoredId(teamId) || isInvalidStoredId(tournamentId)) {
     return null;
   }
@@ -706,8 +710,7 @@ function hasSessionAuthError(response, payload) {
 
 function startLoginMode() {
   console.log('startLoginMode');
-  localStorage.removeItem(TEAM_ID_STORAGE_KEY);
-  localStorage.removeItem(TOURNAMENT_ID_STORAGE_KEY);
+  clearStoredSession();
   sessionStorage.removeItem('team_pin');
   applyLoginUi();
 }
@@ -1160,8 +1163,8 @@ async function doLogin() {
     }
     if (debugFields.validation) debugFields.validation.textContent = validation;
     if (debugFields.reason) debugFields.reason.textContent = reason || '—';
-    if (debugFields.storedTeamId) debugFields.storedTeamId.textContent = localStorage.getItem('team_id') || '(empty)';
-    if (debugFields.storedTournamentId) debugFields.storedTournamentId.textContent = localStorage.getItem('tournament_id') || '(empty)';
+    if (debugFields.storedTeamId) debugFields.storedTeamId.textContent = sessionStorage.getItem('team_id') || '(empty)';
+    if (debugFields.storedTournamentId) debugFields.storedTournamentId.textContent = sessionStorage.getItem('tournament_id') || '(empty)';
     if (forceVisible && debugPanel) debugPanel.style.display = 'block';
   };
 
@@ -1214,10 +1217,10 @@ async function doLogin() {
     if (d?.success === true && responseTeamId && responseTournamentId) {
       teamPin = responsePin;
       if (responsePin) sessionStorage.setItem('team_pin', responsePin);
-      localStorage.setItem("team_id", responseTeamId);
-      localStorage.setItem("tournament_id", responseTournamentId);
-      const storedTeamId = localStorage.getItem("team_id");
-      const storedTournamentId = localStorage.getItem("tournament_id");
+      sessionStorage.setItem("team_id", responseTeamId);
+      sessionStorage.setItem("tournament_id", responseTournamentId);
+      const storedTeamId = sessionStorage.getItem("team_id");
+      const storedTournamentId = sessionStorage.getItem("tournament_id");
       console.log('[login] stored team_id', storedTeamId);
       console.log('[login] stored tournament_id', storedTournamentId);
       if (!storedTeamId || !storedTournamentId) {
@@ -1225,7 +1228,7 @@ async function doLogin() {
           status: r.status,
           response: d,
           validation: 'invalid',
-          reason: 'Session persistence failed: localStorage keys missing after setItem'
+          reason: 'Session persistence failed: sessionStorage keys missing after setItem'
         });
         throw new Error('LOGIN_SESSION_PERSIST_FAILED');
       }
