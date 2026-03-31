@@ -776,6 +776,8 @@ function withSessionParams(url, session) {
   const nextUrl = new URL(url, window.location.origin);
   nextUrl.searchParams.set('team_id', session.team_id);
   nextUrl.searchParams.set('tournament_id', session.tournament_id);
+  const resolvedPin = String(teamPin || sessionStorage.getItem('team_pin') || '').trim();
+  if (resolvedPin) nextUrl.searchParams.set('pin', resolvedPin);
   return nextUrl.pathname + nextUrl.search;
 }
 
@@ -788,6 +790,15 @@ async function apiFetch(url, options = {}, requireAuthSession = true) {
   const hasJsonBody = opts.body && typeof opts.body === 'string';
   const isFormData = typeof FormData !== 'undefined' && opts.body instanceof FormData;
   const requestUrl = withSessionParams(url, session);
+  const resolvedPin = String(teamPin || sessionStorage.getItem('team_pin') || '').trim();
+  if (!resolvedPin) {
+    startLoginMode();
+    throw new Error('TEAM_PIN_MISSING');
+  }
+
+  const nextHeaders = new Headers(opts.headers || {});
+  nextHeaders.set('x-team-pin', resolvedPin);
+  opts.headers = nextHeaders;
 
   if (hasJsonBody) {
     let parsedBody = {};
