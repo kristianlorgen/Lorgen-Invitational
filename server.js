@@ -110,6 +110,23 @@ function isUuidInputSyntaxError(error) {
   return error?.code === '22P02' && message.includes('invalid input syntax for type uuid');
 }
 
+async function loadTeamMembersSafe(teamId, route) {
+  const membersResp = await supabase
+    .from('team_members')
+    .select('players(name, handicap)')
+    .eq('team_id', teamId);
+
+  if (membersResp.error && isUuidInputSyntaxError(membersResp.error)) {
+    routeLog(route, 'team_members_uuid_type_mismatch_fallback', {
+      teamId,
+      error: membersResp.error?.message || null
+    });
+    return [];
+  }
+  if (membersResp.error) throw membersResp.error;
+  return Array.isArray(membersResp.data) ? membersResp.data : [];
+}
+
 function buildTournamentStoragePath({ tournamentId, teamId, holeNumber, extension }) {
   const safeTournamentId = Number.isFinite(Number(tournamentId)) ? Number(tournamentId) : 0;
   const safeTeamId = Number.isFinite(Number(teamId)) ? Number(teamId) : 0;
@@ -406,12 +423,7 @@ async function resolveTeamByTournamentAndPin(tournamentId, pin) {
   if (!teamResult.data) return null;
 
   const team = normalizeTeamRow(teamResult.data);
-  const { data: members, error: membersError } = await supabase
-    .from('team_members')
-    .select('players(name, handicap)')
-    .eq('team_id', team.id);
-  if (membersError) throw membersError;
-
+  const members = await loadTeamMembersSafe(team.id, 'resolveTeamByTournamentAndPin');
   const players = (members || []).map((row) => row.players).filter(Boolean);
   const [player1, player2] = players;
   return {
@@ -546,11 +558,7 @@ async function resolveTeamFromCookie(req) {
   if (!team) return null;
 
   const normalized = normalizeTeamRow(team);
-  const { data: members, error: membersError } = await supabase
-    .from('team_members')
-    .select('players(name, handicap)')
-    .eq('team_id', normalized.id);
-  if (membersError) throw membersError;
+  const members = await loadTeamMembersSafe(normalized.id, 'resolveTeamFromCookie');
   const players = (members || []).map((row) => row.players).filter(Boolean);
   return {
     ...normalized,
