@@ -24,7 +24,8 @@ const sessionsDir = path.join(storageRoot, 'data', 'sessions');
 const runningOnVercel = Boolean(process.env.VERCEL);
 const usingEphemeralStorage = runningOnVercel && !process.env.LORGEN_DATA_DIR;
 const allowEphemeralStorage = process.env.LORGEN_ALLOW_EPHEMERAL_STORAGE === '1';
-const blockEphemeralStorage = usingEphemeralStorage && !allowEphemeralStorage;
+const strictPersistenceMode = process.env.LORGEN_STRICT_PERSISTENCE === '1';
+const blockEphemeralStorage = usingEphemeralStorage && strictPersistenceMode && !allowEphemeralStorage;
 const ephemeralStorageMessage = 'Persistens er ikke konfigurert for produksjon: sett LORGEN_DATA_DIR til varig lagring (ikke /tmp), eller sett LORGEN_ALLOW_EPHEMERAL_STORAGE=1 for midlertidig testbruk.';
 
 const allowedImageExtensions = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.heic', '.heif', '.avif']);
@@ -45,8 +46,9 @@ if (!fs.existsSync(galleryUploadsDir)) fs.mkdirSync(galleryUploadsDir, { recursi
 if (!fs.existsSync(chatUploadsDir)) fs.mkdirSync(chatUploadsDir, { recursive: true });
 if (!fs.existsSync(sessionsDir)) fs.mkdirSync(sessionsDir, { recursive: true });
 
-if (blockEphemeralStorage) {
-  console.error(`[Lorgen] ${ephemeralStorageMessage}`);
+if (usingEphemeralStorage) {
+  const level = blockEphemeralStorage ? 'error' : 'warn';
+  console[level](`[Lorgen] ${ephemeralStorageMessage}${blockEphemeralStorage ? '' : ' Kjører videre i kompatibilitetsmodus fordi LORGEN_STRICT_PERSISTENCE ikke er aktivert.'}`);
 }
 
 // ── SSE live-update clients ──────────────────────────────────────────────────
@@ -106,6 +108,9 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use((req, res, next) => {
   res.setHeader('X-Lorgen-Storage-Mode', usingEphemeralStorage ? 'ephemeral' : 'durable');
+  if (usingEphemeralStorage) {
+    res.setHeader('X-Lorgen-Storage-Warning', 'ephemeral');
+  }
   if (blockEphemeralStorage) {
     res.setHeader('X-Lorgen-Storage-Blocked', '1');
   }

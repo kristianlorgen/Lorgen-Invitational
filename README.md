@@ -30,7 +30,8 @@ npm start              # Runs on http://localhost:3000
 | `ADMIN_PASSWORD` | `LorgenAdmin2025` | Admin panel password |
 | `LORGEN_DATA_DIR` | `./data` (local) / `/tmp/lorgen-data` (Vercel) | Where SQLite DB is stored |
 | `LORGEN_STORAGE_DIR` | project root (local) / `/tmp/lorgen-storage` (Vercel) | Where uploads and session files are stored |
-| `LORGEN_ALLOW_EPHEMERAL_STORAGE` | `0` | Set to `1` only for temporary Vercel testing without durable storage |
+| `LORGEN_ALLOW_EPHEMERAL_STORAGE` | `0` | Set to `1` to acknowledge temporary Vercel `/tmp` storage in strict mode |
+| `LORGEN_STRICT_PERSISTENCE` | `0` | Set to `1` to hard-block write APIs when durable storage is missing |
 
 ### Vercel note
 
@@ -38,8 +39,9 @@ On Vercel the deployment bundle is read-only, so SQLite/session/upload paths mus
 This repo now defaults to `/tmp` automatically when `VERCEL=1`, but **data in `/tmp` is ephemeral** between invocations/redeploys.  
 Typical symptoms are: newly created tournaments disappear, adding teams says the tournament does not exist, and uploaded images/coin backdrops vanish after refresh or tab close.  
 
-To prevent these repeated production failures, API requests now return `503` on Vercel when durable storage is not configured.  
-If you deliberately want temporary testing behavior, set `LORGEN_ALLOW_EPHEMERAL_STORAGE=1`.  
+By default, the app now keeps login/API available and only warns when it detects ephemeral `/tmp` storage.  
+If you want strict safety mode (hard block with `503` until persistence is configured), set `LORGEN_STRICT_PERSISTENCE=1`.  
+In strict mode, you can temporarily bypass the block with `LORGEN_ALLOW_EPHEMERAL_STORAGE=1`.  
 For persistent production data, move storage to an external service (for example Supabase Postgres + object storage), or host on infrastructure with a persistent writable filesystem and set `LORGEN_DATA_DIR` accordingly.
 
 ## Tournament Day Flow
