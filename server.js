@@ -121,11 +121,33 @@ app.use((req, res, next) => {
 app.use('/api', (req, res, next) => {
   if (!blockEphemeralStorage) return next();
 
+  const allowedWhenBlocked = new Set([
+    '/health',
+    '/ready',
+    '/auth/status',
+    '/auth/logout',
+    '/auth/admin-login',
+    '/auth/team-login',
+    '/system/status'
+  ]);
+  if (allowedWhenBlocked.has(req.path)) return next();
+
   const isSafeRead = req.method === 'GET' && (req.path === '/health' || req.path === '/ready');
   if (isSafeRead) return next();
 
   return res.status(503).json({
     error: `${ephemeralStorageMessage} Nåværende Vercel-oppsett bruker /tmp, som mister turneringsdata mellom kall.`
+  });
+});
+
+app.get('/api/system/status', (req, res) => {
+  res.json({
+    success: true,
+    storage_mode: usingEphemeralStorage ? 'ephemeral' : 'durable',
+    writes_blocked: blockEphemeralStorage,
+    warning: usingEphemeralStorage
+      ? `${ephemeralStorageMessage} Nåværende oppsett bruker /tmp, så data kan forsvinne mellom kall.`
+      : null
   });
 });
 app.use('/uploads', express.static(uploadsDir, { fallthrough: true }));

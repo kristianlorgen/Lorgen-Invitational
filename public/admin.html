@@ -61,6 +61,7 @@
           style="background:rgba(255,255,255,.08);border-color:rgba(201,168,76,.3);color:var(--white);"
           onkeydown="if(event.key==='Enter')doAdminLogin()">
       </div>
+      <div id="backendStatus" style="display:none;text-align:left;font-size:.78rem;line-height:1.45;margin:-2px 0 12px;padding:10px 12px;border-radius:12px;border:1px solid rgba(201,168,76,.28);background:rgba(255,255,255,.04);color:rgba(255,255,255,.75)"></div>
       <div id="adminLoginErr" style="color:#f87171;font-size:.82rem;margin-bottom:12px;min-height:18px"></div>
       <button onclick="doAdminLogin()" class="btn btn--gold" style="width:100%;justify-content:center" id="adminLoginBtn">
         <i class="fas fa-lock-open"></i> Logg inn
@@ -789,8 +790,27 @@ async function doAdminLogout() {
   location.reload();
 }
 
+async function renderBackendStatus() {
+  const statusEl = document.getElementById('backendStatus');
+  if (!statusEl) return;
+  try {
+    const d = await api('/api/system/status');
+    if (!d?.warning) {
+      statusEl.style.display = 'none';
+      statusEl.textContent = '';
+      return;
+    }
+    statusEl.style.display = 'block';
+    statusEl.innerHTML = `<strong style="color:var(--gold-light)">Backend-status:</strong> ${d.warning}`;
+  } catch (_) {
+    statusEl.style.display = 'block';
+    statusEl.textContent = 'Backend-status kunne ikke hentes. Sjekk at API-serveren svarer.';
+  }
+}
+
 // Sjekk eksisterende sesjon ved sideinnlasting — inkludert GitHub OAuth-callback
 (async () => {
+  await renderBackendStatus();
   // Supabase OAuth redirects back with #access_token=... in the URL hash
   const hash = new URLSearchParams(window.location.hash.slice(1));
   const oauthToken = hash.get('access_token');
