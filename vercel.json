@@ -1,3 +1,13 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json"
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/[...route]" },
+    { "source": "/", "destination": "/index.html" },
+    { "source": "/admin", "destination": "/admin.html" },
+    { "source": "/enter-score", "destination": "/enter-score.html" },
+    { "source": "/gameday", "destination": "/gameday.html" },
+    { "source": "/gallery", "destination": "/gallery.html" },
+    { "source": "/legacy", "destination": "/legacy.html" },
+    { "source": "/scoreboard", "destination": "/scoreboard.html" }
+  ]
 }
