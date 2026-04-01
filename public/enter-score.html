@@ -914,41 +914,18 @@ async function loadChatMessages() {
 
 function startChatEvents() {
   if (chatEventSource) return;
-  chatEventSource = new EventSource('/api/events');
-  chatEventSource.onmessage = (evt) => {
-    try {
-      const payload = JSON.parse(evt.data);
-      if (payload.type === 'chat_message' && payload.data) {
-        chatMessages.push(payload.data);
-        if (chatMessages.length > 100) chatMessages = chatMessages.slice(-100);
-        const incomingId = Number(payload.data.id) || 0;
-        if (!isChatWidgetOpen() && incomingId > lastSeenChatId) {
-          unreadChatCount += 1;
-          syncChatUnreadIndicator();
-        }
-        renderChatMessages();
-      }
-      if (payload.type === 'birdie_shot' && payload.data) {
-        const shoutBtn = document.getElementById('birdieShoutBtn');
-        if (shoutBtn) {
-          shoutBtn.classList.add('is-celebrating');
-          setTimeout(() => shoutBtn.classList.remove('is-celebrating'), 1700);
-        }
-        if (navigator.vibrate) navigator.vibrate([120, 90, 120]);
-        notifyBirdieShot(payload.data);
-        updateNotificationBanner();
-        showToast(`⛳ ${payload.data.team_name || 'Et lag'} roper birdie! Alle spillere må ta birdie shots! 🥃`, 'info');
-      }
-    } catch (_) {}
-  };
-  chatEventSource.onerror = () => {
-    if (chatEventSource) {
-      chatEventSource.close();
-      chatEventSource = null;
-      setTimeout(startChatEvents, 3000);
+  setInterval(async () => {
+    const before = chatMessages.length ? Number(chatMessages[chatMessages.length - 1].id || 0) : 0;
+    await loadChatMessages();
+    const afterMsg = chatMessages.length ? chatMessages[chatMessages.length - 1] : null;
+    const after = Number(afterMsg?.id || 0);
+    if (after > before && afterMsg?.event_type === 'birdie_shot') {
+      notifyBirdieShot(afterMsg);
+      showToast(`⛳ ${afterMsg.team_name || 'Et lag'} roper birdie! Alle spillere må ta birdie shots! 🥃`, 'info');
     }
-  };
+  }, 4000);
 }
+
 
 
 async function sendBirdieShoutout() {
@@ -1430,17 +1407,8 @@ async function submitClaim(holeNum, awardType) {
 async function checkSession() {
   try {
     await initNotifications();
-    teamPin = sessionStorage.getItem('team_pin') || '';
-    const r = await fetch('/api/auth/status');
-    const d = await r.json();
-    if (d.type === 'team') {
-      teamData = d.team;
-      await ensureNotificationPermission();
-      document.getElementById('loginScreen').classList.add('d-none');
-      document.getElementById('scorecardScreen').classList.remove('d-none');
-      renderScoreStatus('idle');
-      await loadScorecard();
-    }
+    teamPin = '';
+    sessionStorage.removeItem('team_pin');
   } catch (_) {}
 }
 
