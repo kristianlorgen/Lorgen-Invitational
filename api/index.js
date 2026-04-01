@@ -68,6 +68,36 @@ function asyncRoute(fn) {
   };
 }
 
+function buildDefaultHoles(tournamentId) {
+  return Array.from({ length: 18 }, (_, index) => {
+    const holeNumber = index + 1;
+    return {
+      tournament_id: tournamentId,
+      hole_number: holeNumber,
+      par: 4,
+      stroke_index: holeNumber,
+      requires_photo: false,
+      is_longest_drive: false,
+      is_nearest_pin: false
+    };
+  });
+}
+
+function normalizeHoleInput(hole = {}, tournamentId, fallbackHoleNumber) {
+  const holeNumber = asInt(hole.hole_number) || fallbackHoleNumber;
+  const par = asInt(hole.par) || 4;
+  const strokeIndex = asInt(hole.stroke_index);
+  return {
+    tournament_id: tournamentId,
+    hole_number: holeNumber,
+    par,
+    stroke_index: strokeIndex || holeNumber,
+    requires_photo: Boolean(hole.requires_photo),
+    is_longest_drive: Boolean(hole.is_longest_drive),
+    is_nearest_pin: Boolean(hole.is_nearest_pin ?? hole.is_closest_to_pin)
+  };
+}
+
 async function getActiveTournament() {
   const { data } = await supabase.from('tournaments').select('*').in('status', ['active', 'upcoming']).order('status', { ascending: true }).order('id').limit(1).maybeSingle();
   return data || null;
@@ -155,6 +185,46 @@ app.get('/api/admin/tournament/:id/scores', asyncRoute(async (req, res) => {
   const { data, error } = await supabase.from('scores').select('*').eq('tournament_id', tournamentId).order('hole_number');
   if (error) return fail(res, 500, 'Kunne ikke hente score', error.message);
   return ok(res, { scores: data || [] });
+}));
+
+app.get('/api/admin/tournament/:id/holes', asyncRoute(async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const tournamentId = asInt(req.params.id);
+  if (!tournamentId) return fail(res, 400, 'Ugyldig turnerings-ID');
+
+  const { data, error } = await supabase
+    .from('holes')
+    .select('*')
+    .eq('tournament_id', tournamentId)
+    .order('hole_number', { ascending: true });
+
+  if (error) return fail(res, 500, 'Kunne ikke hente hull', error.message);
+  return ok(res, { holes: data || [] });
+}));
+
+app.post('/api/admin/tournament/:id/holes', asyncRoute(async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const tournamentId = asInt(req.params.id);
+  if (!tournamentId) return fail(res, 400, 'Ugyldig turnerings-ID');
+
+  const requestedHoles = Array.isArray(req.body?.holes) ? req.body.holes : [];
+  const holesToSave = requestedHoles.length
+    ? requestedHoles.map((hole, index) => normalizeHoleInput(hole, tournamentId, index + 1))
+    : buildDefaultHoles(tournamentId);
+
+  const { error } = await supabase
+    .from('holes')
+    .upsert(holesToSave, { onConflict: 'tournament_id,hole_number' });
+  if (error) return fail(res, 500, 'Kunne ikke lagre hull', error.message);
+
+  const { data, error: fetchError } = await supabase
+    .from('holes')
+    .select('*')
+    .eq('tournament_id', tournamentId)
+    .order('hole_number', { ascending: true });
+  if (fetchError) return fail(res, 500, 'Hull lagret, men kunne ikke hente oppdatert liste', fetchError.message);
+
+  return ok(res, { holes: data || [] });
 }));
 
 app.post(['/api/teams', '/api/admin/team'], asyncRoute(async (req, res) => {
