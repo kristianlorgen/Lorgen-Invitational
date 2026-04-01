@@ -9,14 +9,26 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 12 
 app.use(express.json({ limit: '4mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const SESSION_SECRET = process.env.SESSION_SECRET || process.env.AUTH_SECRET || 'dev-secret';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const GALLERY_BUCKET = process.env.SUPABASE_GALLERY_BUCKET || 'tournament-gallery';
 
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  throw new Error('Missing required Supabase env vars: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY');
+}
+
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false }
+});
+
+app.use((req, _res, next) => {
+  console.log(`[api:hit] ${req.method} ${req.path}`);
+  if (req.method !== 'GET') {
+    console.log(`[api:body] ${req.method} ${req.path}`, req.body || {});
+  }
+  next();
 });
 
 function ok(res, data = {}, status = 200) { return res.status(status).json({ success: true, ...data }); }
@@ -101,6 +113,31 @@ function normalizeHoleInput(hole = {}, tournamentId, fallbackHoleNumber) {
 async function getActiveTournament() {
   const { data } = await supabase.from('tournaments').select('*').in('status', ['active', 'upcoming']).order('status', { ascending: true }).order('id').limit(1).maybeSingle();
   return data || null;
+}
+
+async function ensureTournamentHoles(tournamentId) {
+  const { data, error } = await supabase
+    .from('holes')
+    .select('*')
+    .eq('tournament_id', tournamentId)
+    .order('hole_number', { ascending: true });
+  if (error) throw new Error(error.message);
+
+  if ((data || []).length > 0) return data;
+
+  const fallbackHoles = buildDefaultHoles(tournamentId);
+  const { error: insertError } = await supabase
+    .from('holes')
+    .upsert(fallbackHoles, { onConflict: 'tournament_id,hole_number' });
+  if (insertError) throw new Error(insertError.message);
+
+  const { data: created, error: createdError } = await supabase
+    .from('holes')
+    .select('*')
+    .eq('tournament_id', tournamentId)
+    .order('hole_number', { ascending: true });
+  if (createdError) throw new Error(createdError.message);
+  return created || [];
 }
 
 app.post('/api/auth/admin-login', asyncRoute(async (req, res) => {
@@ -191,15 +228,12 @@ app.get('/api/admin/tournament/:id/holes', asyncRoute(async (req, res) => {
   if (!requireAdmin(req, res)) return;
   const tournamentId = asInt(req.params.id);
   if (!tournamentId) return fail(res, 400, 'Ugyldig turnerings-ID');
-
-  const { data, error } = await supabase
-    .from('holes')
-    .select('*')
-    .eq('tournament_id', tournamentId)
-    .order('hole_number', { ascending: true });
-
-  if (error) return fail(res, 500, 'Kunne ikke hente hull', error.message);
-  return ok(res, { holes: data || [] });
+  try {
+    const holes = await ensureTournamentHoles(tournamentId);
+    return ok(res, { holes });
+  } catch (error) {
+    return fail(res, 500, 'Kunne ikke hente hull', error.message);
+  }
 }));
 
 app.post('/api/admin/tournament/:id/holes', asyncRoute(async (req, res) => {
@@ -279,17 +313,17 @@ app.get('/api/team/scorecard', asyncRoute(async (req, res) => {
   if (!session?.team_id) return fail(res, 401, 'Ikke logget inn');
   const teamId = asInt(session.team_id); const tournamentId = asInt(session.tournament_id);
 
-  const [teamResp, holeResp, scoreResp, claimResp] = await Promise.all([
+  const [teamResp, scoreResp, claimResp] = await Promise.all([
     supabase.from('teams').select('*').eq('id', teamId).maybeSingle(),
-    supabase.from('holes').select('*').eq('tournament_id', tournamentId).order('hole_number'),
     supabase.from('scores').select('*').eq('team_id', teamId),
     supabase.from('award_claims').select('*').eq('team_id', teamId)
   ]);
-  if (teamResp.error || holeResp.error || scoreResp.error || claimResp.error) return fail(res, 500, 'Kunne ikke hente scorekort');
+  if (teamResp.error || scoreResp.error || claimResp.error) return fail(res, 500, 'Kunne ikke hente scorekort');
+  const holes = await ensureTournamentHoles(tournamentId);
 
   const { data: tournament } = await supabase.from('tournaments').select('*').eq('id', tournamentId).maybeSingle();
   const scores = (scoreResp.data || []).map((s) => ({ ...s, hole_number: s.hole_number || s.hole, score: s.score || s.strokes }));
-  return ok(res, { team: teamResp.data, tournament, holes: holeResp.data || [], scores, claims: claimResp.data || [] });
+  return ok(res, { team: teamResp.data, tournament, holes, scores, claims: claimResp.data || [] });
 }));
 
 app.post('/api/team/submit-score', asyncRoute(async (req, res) => {
@@ -368,14 +402,15 @@ app.post('/api/chat/send', upload.single('image'), asyncRoute(async (req, res) =
 app.post('/api/team/birdie-shot', asyncRoute(async (req, res) => {
   const session = getTeamSession(req);
   if (!session?.team_id) return fail(res, 401, 'Ikke logget inn');
+  const note = String(req.body?.note || '').trim();
   const { data: team } = await supabase.from('teams').select('*').eq('id', asInt(session.team_id)).maybeSingle();
-  const message = `⛳ ${req.body?.note || 'Alle spillere må ta birdie shots! 🥃'}`;
-  const { data, error } = await supabase.from('chat_messages').insert({
+  const message = `⛳ ${note || 'Alle spillere må ta birdie shots! 🥃'}`;
+  const { error } = await supabase.from('chat_messages').insert({
     tournament_id: asInt(session.tournament_id), team_id: asInt(session.team_id),
     team_name: team?.team_name || team?.name || 'Lag', message, event_type: 'birdie_shot', created_at: new Date().toISOString()
-  }).select('*').single();
+  });
   if (error) return fail(res, 500, 'Kunne ikke sende birdie shoutout', error.message);
-  return ok(res, { shoutout: data }, 201);
+  return ok(res);
 }));
 
 app.get('/api/gallery', asyncRoute(async (req, res) => {
@@ -439,16 +474,15 @@ app.get('/api/scoreboard', asyncRoute(async (_req, res) => {
   const tournament = await getActiveTournament();
   if (!tournament) return ok(res, { tournament: null, holes: [], scoreboard: [], awards: [] });
 
-  const [teamsResp, holesResp, scoreResp, awardsResp] = await Promise.all([
+  const [teamsResp, scoreResp, awardsResp] = await Promise.all([
     supabase.from('teams').select('*').eq('tournament_id', asInt(tournament.id)).order('id'),
-    supabase.from('holes').select('*').eq('tournament_id', asInt(tournament.id)).order('hole_number'),
     supabase.from('scores').select('*').eq('tournament_id', asInt(tournament.id)),
     supabase.from('awards').select('*,teams(team_name,name)').eq('tournament_id', asInt(tournament.id)),
   ]);
-  if (teamsResp.error || holesResp.error || scoreResp.error || awardsResp.error) return fail(res, 500, 'Kunne ikke hente scoreboard');
+  if (teamsResp.error || scoreResp.error || awardsResp.error) return fail(res, 500, 'Kunne ikke hente scoreboard');
 
   const teams = teamsResp.data || [];
-  const holes = holesResp.data || [];
+  const holes = await ensureTournamentHoles(asInt(tournament.id));
   const scores = scoreResp.data || [];
   const parByHole = Object.fromEntries(holes.map((h) => [h.hole_number, Number(h.par || 4)]));
 
@@ -485,6 +519,13 @@ app.get('/api/scoreboard', asyncRoute(async (_req, res) => {
 }));
 
 app.all('/api/*rest', (_req, res) => fail(res, 404, 'API route not found'));
+app.use((err, req, res, _next) => {
+  console.error(`[api:error] ${req.method} ${req.path}`, err);
+  if (err instanceof multer.MulterError) {
+    return fail(res, 400, err.message || 'Ugyldig filopplasting');
+  }
+  return fail(res, 500, 'Uventet serverfeil');
+});
 
 module.exports = app;
 module.exports.default = (req, res) => app(req, res);
