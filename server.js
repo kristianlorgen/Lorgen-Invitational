@@ -918,6 +918,12 @@ app.delete('/api/admin/tournament/:id', requireAdmin, (req, res) => {
 
 app.get('/api/admin/tournament/:id/teams', requireAdmin, (req, res) => {
   try {
+    if (!tournamentExists(req.params.id)) {
+      const hint = usingEphemeralStorage
+        ? ' Appen kjører med midlertidig lagring på Vercel (/tmp), så data kan forsvinne mellom kall.'
+        : '';
+      return res.status(404).json({ error: 'Valgt turnering finnes ikke lenger. Oppdater siden og prøv igjen.' + hint });
+    }
     const teams = db.prepare('SELECT * FROM teams WHERE tournament_id=?').all(req.params.id);
     res.json({ teams });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -970,6 +976,12 @@ app.put('/api/admin/team/:id/lock', requireAdmin, (req, res) => {
 
 app.get('/api/admin/tournament/:id/holes', requireAdmin, (req, res) => {
   try {
+    if (!tournamentExists(req.params.id)) {
+      const hint = usingEphemeralStorage
+        ? ' Appen kjører med midlertidig lagring på Vercel (/tmp), så data kan forsvinne mellom kall.'
+        : '';
+      return res.status(404).json({ error: 'Valgt turnering finnes ikke lenger. Oppdater siden og prøv igjen.' + hint });
+    }
     const holes = db.prepare('SELECT * FROM holes WHERE tournament_id=? ORDER BY hole_number').all(req.params.id);
     res.json({ holes });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -978,6 +990,15 @@ app.get('/api/admin/tournament/:id/holes', requireAdmin, (req, res) => {
 app.post('/api/admin/tournament/:id/holes', requireAdmin, (req, res) => {
   const { holes } = req.body;
   const tid = req.params.id;
+  if (!tournamentExists(tid)) {
+    const hint = usingEphemeralStorage
+      ? ' Appen kjører med midlertidig lagring på Vercel (/tmp), så data kan forsvinne mellom kall.'
+      : '';
+    return res.status(404).json({ error: 'Valgt turnering finnes ikke lenger. Oppdater siden og prøv igjen.' + hint });
+  }
+  if (!Array.isArray(holes) || holes.length === 0) {
+    return res.status(400).json({ error: 'Ingen hull å lagre. Last inn hullene fra en gyldig turnering først.' });
+  }
   try {
     const update = db.prepare(
       'UPDATE holes SET par=?, requires_photo=?, is_longest_drive=?, is_closest_to_pin=?, stroke_index=? WHERE tournament_id=? AND hole_number=?'
