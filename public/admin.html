@@ -1043,27 +1043,37 @@ async function loadDashboard() {
 // ── Lag ───────────────────────────────────────────────────────────────────────
 async function loadTeams() {
   const tid = document.getElementById('teamsTournamentSelect').value;
-  if (!tid) return;
-  const d = await api('/api/admin/tournament/'+tid+'/teams');
-  document.getElementById('teamCount').textContent = `(${d.teams.length} lag)`;
-  document.getElementById('teamsTable').innerHTML = !d.teams.length
-    ? '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen lag ennå. Legg til ett ovenfor.</td></tr>'
-    : d.teams.map((t,i) => {
-        const hcp1 = t.player1_handicap || 0, hcp2 = t.player2_handicap || 0;
-        const hcpStr = (hcp1||hcp2) ? ` <span style="font-size:.75rem;color:var(--text-muted)">(Hcp: ${hcp1}/${hcp2})</span>` : '';
-        return `
-        <tr>
-          <td>${i+1}</td>
-          <td><strong>${t.team_name}</strong></td>
-          <td>${t.player1}${hcpStr ? '<br>' + hcpStr.replace('Hcp: ','Hcp '+hcp1+'/') : ''}</td>
-          <td>${t.player2}</td>
-          <td><code style="background:var(--gold-pale);padding:2px 8px;border-radius:4px;font-weight:700;color:var(--gold-dark)">${t.pin_code}</code></td>
-          <td style="display:flex;gap:6px">
-            <button onclick='editTeam(${t.id},${JSON.stringify(t.team_name)},${JSON.stringify(t.player1)},${JSON.stringify(t.player2)},${JSON.stringify(t.pin_code)},${hcp1},${hcp2})' class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)" title="Rediger"><i class="fas fa-pen"></i></button>
-            <button onclick='deleteTeam(${t.id},${JSON.stringify(t.team_name)})' class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
-          </td>
-        </tr>`;
-      }).join('');
+  if (!tid) {
+    document.getElementById('teamCount').textContent = '';
+    document.getElementById('teamsTable').innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Velg en turnering ovenfor</td></tr>';
+    return;
+  }
+  try {
+    const d = await api('/api/admin/tournament/'+tid+'/teams');
+    document.getElementById('teamCount').textContent = `(${d.teams.length} lag)`;
+    document.getElementById('teamsTable').innerHTML = !d.teams.length
+      ? '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen lag ennå. Legg til ett ovenfor.</td></tr>'
+      : d.teams.map((t,i) => {
+          const hcp1 = t.player1_handicap || 0, hcp2 = t.player2_handicap || 0;
+          const hcpStr = (hcp1||hcp2) ? ` <span style="font-size:.75rem;color:var(--text-muted)">(Hcp: ${hcp1}/${hcp2})</span>` : '';
+          return `
+          <tr>
+            <td>${i+1}</td>
+            <td><strong>${t.team_name}</strong></td>
+            <td>${t.player1}${hcpStr ? '<br>' + hcpStr.replace('Hcp: ','Hcp '+hcp1+'/') : ''}</td>
+            <td>${t.player2}</td>
+            <td><code style="background:var(--gold-pale);padding:2px 8px;border-radius:4px;font-weight:700;color:var(--gold-dark)">${t.pin_code}</code></td>
+            <td style="display:flex;gap:6px">
+              <button onclick='editTeam(${t.id},${JSON.stringify(t.team_name)},${JSON.stringify(t.player1)},${JSON.stringify(t.player2)},${JSON.stringify(t.pin_code)},${hcp1},${hcp2})' class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)" title="Rediger"><i class="fas fa-pen"></i></button>
+              <button onclick='deleteTeam(${t.id},${JSON.stringify(t.team_name)})' class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
+            </td>
+          </tr>`;
+        }).join('');
+  } catch (e) {
+    document.getElementById('teamCount').textContent = '';
+    document.getElementById('teamsTable').innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Kunne ikke laste lag.</td></tr>';
+    showToast(e.message, 'error');
+  }
 }
 
 async function addTeam() {
@@ -1137,13 +1147,27 @@ let holesData = [];
 
 async function loadHoles() {
   const tid = document.getElementById('holesTournamentSelect').value;
-  if (!tid) return;
-  const d = await api('/api/admin/tournament/'+tid+'/holes');
-  holesData = d.holes;
-  renderHolesGrid();
+  if (!tid) {
+    holesData = [];
+    renderHolesGrid();
+    return;
+  }
+  try {
+    const d = await api('/api/admin/tournament/'+tid+'/holes');
+    holesData = d.holes;
+    renderHolesGrid();
+  } catch (e) {
+    holesData = [];
+    renderHolesGrid();
+    showToast(e.message, 'error');
+  }
 }
 
 function renderHolesGrid() {
+  if (!holesData.length) {
+    document.getElementById('holesGrid').innerHTML = '<div style="grid-column:1 / -1;text-align:center;padding:20px;color:var(--text-muted)">Ingen hull lastet. Velg en gyldig turnering først.</div>';
+    return;
+  }
   document.getElementById('holesGrid').innerHTML = holesData.map(h => `
     <div style="background:var(--white);border:1px solid var(--gold-border);border-radius:var(--radius);padding:14px 10px;text-align:center">
       <div style="font-size:.72rem;font-weight:700;color:var(--text-muted);margin-bottom:8px;letter-spacing:.08em">HULL ${h.hole_number}</div>
