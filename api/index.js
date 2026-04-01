@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const express = require('express');
+const fs = require('fs');
 const multer = require('multer');
 const { createClient } = require('@supabase/supabase-js');
 
@@ -17,6 +18,45 @@ const supabase = createClient(
 
 const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-secret';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
+
+const DISK_STORAGE_ERROR = 'Disk storage not allowed on Vercel';
+
+function installDiskWriteGuards() {
+  const blockedFsMethods = [
+    'appendFile', 'appendFileSync',
+    'chmod', 'chmodSync',
+    'chown', 'chownSync',
+    'copyFile', 'copyFileSync',
+    'cp', 'cpSync',
+    'createWriteStream',
+    'link', 'linkSync',
+    'mkdir', 'mkdirSync',
+    'mkdtemp', 'mkdtempSync',
+    'open', 'openSync',
+    'rename', 'renameSync',
+    'rm', 'rmSync',
+    'rmdir', 'rmdirSync',
+    'symlink', 'symlinkSync',
+    'truncate', 'truncateSync',
+    'unlink', 'unlinkSync',
+    'utimes', 'utimesSync',
+    'writeFile', 'writeFileSync'
+  ];
+  for (const name of blockedFsMethods) {
+    if (typeof fs[name] === 'function') {
+      fs[name] = () => { throw new Error(DISK_STORAGE_ERROR); };
+    }
+  }
+  if (fs.promises) {
+    for (const name of blockedFsMethods) {
+      if (typeof fs.promises[name] === 'function') {
+        fs.promises[name] = async () => { throw new Error(DISK_STORAGE_ERROR); };
+      }
+    }
+  }
+}
+
+installDiskWriteGuards();
 
 function nowMs() { return Date.now(); }
 
@@ -93,6 +133,13 @@ function getTeamSession(req) {
 function getAdminSession(req) {
   const cookies = parseCookies(req);
   return decode(cookies.admin_session);
+}
+
+function requireAdmin(req, res) {
+  const session = getAdminSession(req);
+  if (session?.role === 'admin') return true;
+  fail(res, 401, 'Admin authentication required');
+  return false;
 }
 
 function activeTournamentQuery() {
@@ -179,12 +226,14 @@ app.get('/api/auth/status', asyncRoute(async (req, res) => {
 }));
 
 app.get('/api/admin/tournaments', asyncRoute(async (_req, res) => {
+  if (!requireAdmin(_req, res)) return;
   const { data, error } = await supabase.from('tournaments').select('*').order('created_at', { ascending: false });
   if (error) return fail(res, 500, 'Kunne ikke hente turneringer', error.message);
   ok(res, { tournaments: data || [] });
 }));
 
 app.post(['/api/admin/tournaments', '/api/admin/tournament'], asyncRoute(async (req, res) => {
+  if (!requireAdmin(req, res)) return;
   const body = req.body || {};
   if (!body.name || !body.course) return fail(res, 400, 'name og course er påkrevd');
   const payload = {
@@ -202,6 +251,7 @@ app.post(['/api/admin/tournaments', '/api/admin/tournament'], asyncRoute(async (
 }));
 
 app.put('/api/admin/tournament/:id', asyncRoute(async (req, res) => {
+  if (!requireAdmin(req, res)) return;
   const id = asInt(req.params.id);
   if (!id) return fail(res, 400, 'Ugyldig turnerings-ID');
   const { data, error } = await supabase.from('tournaments').update(req.body || {}).eq('id', id).select('*').single();
@@ -210,6 +260,7 @@ app.put('/api/admin/tournament/:id', asyncRoute(async (req, res) => {
 }));
 
 app.delete('/api/admin/tournament/:id', asyncRoute(async (req, res) => {
+  if (!requireAdmin(req, res)) return;
   const id = asInt(req.params.id);
   if (!id) return fail(res, 400, 'Ugyldig turnerings-ID');
   const { error } = await supabase.from('tournaments').delete().eq('id', id);
