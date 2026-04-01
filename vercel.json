@@ -2,7 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
     "server.js": {
-      "runtime": "nodejs22.x",
+      "runtime": "nodejs@22.x",
       "includeFiles": "public/**"
     }
   },
