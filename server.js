@@ -23,6 +23,9 @@ const chatUploadsDir = path.join(uploadsDir, 'chat');
 const sessionsDir = path.join(storageRoot, 'data', 'sessions');
 const runningOnVercel = Boolean(process.env.VERCEL);
 const usingEphemeralStorage = runningOnVercel && !process.env.LORGEN_DATA_DIR;
+const allowEphemeralStorage = process.env.LORGEN_ALLOW_EPHEMERAL_STORAGE === '1';
+const blockEphemeralStorage = usingEphemeralStorage && !allowEphemeralStorage;
+const ephemeralStorageMessage = 'Persistens er ikke konfigurert for produksjon: sett LORGEN_DATA_DIR til varig lagring (ikke /tmp), eller sett LORGEN_ALLOW_EPHEMERAL_STORAGE=1 for midlertidig testbruk.';
 
 const allowedImageExtensions = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.heic', '.heif', '.avif']);
 
@@ -41,6 +44,10 @@ if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 if (!fs.existsSync(galleryUploadsDir)) fs.mkdirSync(galleryUploadsDir, { recursive: true });
 if (!fs.existsSync(chatUploadsDir)) fs.mkdirSync(chatUploadsDir, { recursive: true });
 if (!fs.existsSync(sessionsDir)) fs.mkdirSync(sessionsDir, { recursive: true });
+
+if (blockEphemeralStorage) {
+  console.error(`[Lorgen] ${ephemeralStorageMessage}`);
+}
 
 // ── SSE live-update clients ──────────────────────────────────────────────────
 const sseClients = new Map();
@@ -99,7 +106,21 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use((req, res, next) => {
   res.setHeader('X-Lorgen-Storage-Mode', usingEphemeralStorage ? 'ephemeral' : 'durable');
+  if (blockEphemeralStorage) {
+    res.setHeader('X-Lorgen-Storage-Blocked', '1');
+  }
   next();
+});
+
+app.use('/api', (req, res, next) => {
+  if (!blockEphemeralStorage) return next();
+
+  const isSafeRead = req.method === 'GET' && (req.path === '/health' || req.path === '/ready');
+  if (isSafeRead) return next();
+
+  return res.status(503).json({
+    error: `${ephemeralStorageMessage} Nåværende Vercel-oppsett bruker /tmp, som mister turneringsdata mellom kall.`
+  });
 });
 app.use('/uploads', express.static(uploadsDir, { fallthrough: true }));
 app.use(express.static('public', {

@@ -1,17 +1,12 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "server.js",
-      "use": "@vercel/node",
-      "config": {
-        "includeFiles": [
-          "public/**"
-        ]
-      }
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "server.js": {
+      "runtime": "nodejs22.x",
+      "includeFiles": "public/**"
     }
-  ],
-  "routes": [
-    { "src": "/(.*)", "dest": "server.js" }
+  },
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/server.js" }
   ]
 }
