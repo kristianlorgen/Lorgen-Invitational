@@ -2,7 +2,7 @@
 
 > Power. Precision. Party.
 
-An annual 2-man scramble golf tournament website built with Node.js + Express + SQLite.
+An annual 2-man scramble golf tournament website backed by Supabase for persistent data and storage.
 
 ## Features
 
@@ -25,24 +25,16 @@ npm start              # Runs on http://localhost:3000
 
 | Variable | Default | Description |
 |---|---|---|
-| `PORT` | `3000` | Server port |
-| `SESSION_SECRET` | `lorgen-inv-secret` | Session encryption key |
+| `NEXT_PUBLIC_SUPABASE_URL` | — | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | — | Supabase anon key for client requests |
+| `SUPABASE_SERVICE_ROLE_KEY` | — | Service role key for trusted server-side writes |
 | `ADMIN_PASSWORD` | `LorgenAdmin2025` | Admin panel password |
-| `LORGEN_DATA_DIR` | `./data` (local) / `/tmp/lorgen-data` (Vercel) | Where SQLite DB is stored |
-| `LORGEN_STORAGE_DIR` | project root (local) / `/tmp/lorgen-storage` (Vercel) | Where uploads and session files are stored |
-| `LORGEN_ALLOW_EPHEMERAL_STORAGE` | `0` | Set to `1` to explicitly allow temporary Vercel `/tmp` storage for test use |
-| `LORGEN_STRICT_PERSISTENCE` | `1` on Vercel / `0` otherwise | Set to `1` to hard-block write APIs when durable storage is missing |
+| `SESSION_SECRET` | required | Session signing secret |
 
 ### Vercel note
 
-On Vercel the deployment bundle is read-only, so SQLite/session/upload paths must point to a writable folder (`/tmp`).  
-This repo now defaults to `/tmp` automatically when `VERCEL=1`, but **data in `/tmp` is ephemeral** between invocations/redeploys.  
-Typical symptoms are: newly created tournaments disappear, adding teams says the tournament does not exist, and uploaded images/coin backdrops vanish after refresh or tab close.  
-
-By default on Vercel, write APIs are now blocked with `503` when only ephemeral `/tmp` storage is available.  
-To temporarily bypass this in a test environment, set `LORGEN_ALLOW_EPHEMERAL_STORAGE=1`.  
-Outside Vercel you can force strict behavior with `LORGEN_STRICT_PERSISTENCE=1`.  
-For persistent production data, move storage to an external service (for example Supabase Postgres + object storage), or host on infrastructure with a persistent writable filesystem and set `LORGEN_DATA_DIR` accordingly.
+Vercel local filesystem is ephemeral and is **never** used for persistence in production.
+All tournament data (tournaments, teams, scores) is stored in Supabase tables, and uploaded images are stored in Supabase Storage.
 
 ## Tournament Day Flow
 
@@ -58,9 +50,8 @@ For persistent production data, move storage to an external service (for example
 
 ## Tech Stack
 
-- **Backend**: Node.js + Express
-- **Database**: SQLite (better-sqlite3)
-- **Live Updates**: Server-Sent Events (SSE)
-- **File Uploads**: Multer
-- **Auth**: Express-session (PIN for teams, password for admin)
-- **Frontend**: Vanilla HTML/CSS/JS
+- **Backend**: Next.js API routes
+- **Database**: Supabase Postgres
+- **Storage**: Supabase Storage
+- **Auth**: Session cookies + Supabase-backed APIs
+- **Frontend**: Next.js + static assets
