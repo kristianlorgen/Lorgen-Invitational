@@ -2,11 +2,14 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
     "server.js": {
-      "runtime": "nodejs@22.x",
+      "runtime": "nodejs22.x",
       "includeFiles": "public/**"
     }
   },
   "rewrites": [
-    { "source": "/(.*)", "destination": "/server.js" }
+    {
+      "source": "/(.*)",
+      "destination": "/server.js"
+    }
   ]
 }
