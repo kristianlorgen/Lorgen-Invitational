@@ -1164,17 +1164,25 @@ function generatePin() {
 
 // ── Bane og Hull ──────────────────────────────────────────────────────────────
 let holesData = [];
+let selectedHolesTournamentId = null;
 
 async function loadHoles() {
-  const tid = document.getElementById('holesTournamentSelect').value;
-  if (!tid) {
+  const rawTournamentId = document.getElementById('holesTournamentSelect').value;
+  const tournamentId = Number.parseInt(rawTournamentId, 10);
+  selectedHolesTournamentId = Number.isInteger(tournamentId) && tournamentId > 0 ? tournamentId : null;
+
+  if (!selectedHolesTournamentId) {
     holesData = [];
     renderHolesGrid();
     return;
   }
   try {
-    const d = await api('/api/admin/tournament/'+tid+'/holes');
-    holesData = d.holes;
+    console.log('Loading holes for tournament:', selectedHolesTournamentId);
+    const d = await api(`/api/admin/tournament/${selectedHolesTournamentId}/holes`);
+    if (!d.success) {
+      throw new Error(d.error || 'Kunne ikke hente hull');
+    }
+    holesData = Array.isArray(d.holes) ? d.holes : [];
     renderHolesGrid();
   } catch (e) {
     holesData = [];
@@ -1185,7 +1193,10 @@ async function loadHoles() {
 
 function renderHolesGrid() {
   if (!holesData.length) {
-    document.getElementById('holesGrid').innerHTML = '<div style="grid-column:1 / -1;text-align:center;padding:20px;color:var(--text-muted)">Ingen hull lastet. Velg en gyldig turnering først.</div>';
+    const msg = selectedHolesTournamentId
+      ? 'Ingen hull opprettet enda'
+      : 'Ingen hull lastet. Velg en gyldig turnering først.';
+    document.getElementById('holesGrid').innerHTML = `<div style="grid-column:1 / -1;text-align:center;padding:20px;color:var(--text-muted)">${msg}</div>`;
     return;
   }
   document.getElementById('holesGrid').innerHTML = holesData.map(h => `
@@ -1210,25 +1221,30 @@ function renderHolesGrid() {
         🏌️ LD
       </label>
       <label style="display:flex;align-items:center;justify-content:center;gap:4px;margin-top:4px;font-size:.72rem;color:var(--text-muted);cursor:pointer">
-        <input type="checkbox" id="h-ctp-${h.hole_number}" ${h.is_closest_to_pin?'checked':''} style="accent-color:var(--gold)">
+        <input type="checkbox" id="h-ctp-${h.hole_number}" ${(h.is_nearest_pin || h.is_closest_to_pin)?'checked':''} style="accent-color:var(--gold)">
         🎯 NF
       </label>
     </div>`).join('');
 }
 
 async function saveHoles() {
-  const tid = document.getElementById('holesTournamentSelect').value;
-  if (!tid) return;
-  const holes = holesData.map(h => ({
+  const rawTournamentId = document.getElementById('holesTournamentSelect').value;
+  const tournamentId = Number.parseInt(rawTournamentId, 10);
+  if (!Number.isInteger(tournamentId) || tournamentId <= 0) return;
+
+  const sourceHoles = holesData.length
+    ? holesData
+    : Array.from({ length: 18 }, (_, index) => ({ hole_number: index + 1, par: 4, stroke_index: index + 1 }));
+  const holes = sourceHoles.map(h => ({
     hole_number: h.hole_number,
-    par: parseInt(document.getElementById('h-par-'+h.hole_number).value),
-    stroke_index: parseInt(document.getElementById('h-si-'+h.hole_number).value) || 0,
-    requires_photo: document.getElementById('h-photo-'+h.hole_number).checked,
-    is_longest_drive: document.getElementById('h-ld-'+h.hole_number).checked,
-    is_closest_to_pin: document.getElementById('h-ctp-'+h.hole_number).checked
+    par: parseInt(document.getElementById('h-par-'+h.hole_number)?.value ?? h.par ?? 4),
+    stroke_index: parseInt(document.getElementById('h-si-'+h.hole_number)?.value ?? h.stroke_index ?? h.hole_number) || h.hole_number,
+    requires_photo: document.getElementById('h-photo-'+h.hole_number)?.checked || false,
+    is_longest_drive: document.getElementById('h-ld-'+h.hole_number)?.checked || false,
+    is_nearest_pin: document.getElementById('h-ctp-'+h.hole_number)?.checked || false
   }));
   try {
-    await api('/api/admin/tournament/'+tid+'/holes',{method:'POST',body:JSON.stringify({holes})});
+    await api(`/api/admin/tournament/${tournamentId}/holes`,{method:'POST',body:JSON.stringify({holes})});
     showToast('Hullkonfigurasjon lagret til turnering!');
     await loadHoles();
   } catch(e) { showToast(e.message,'error'); }
