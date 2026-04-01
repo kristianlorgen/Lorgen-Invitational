@@ -945,7 +945,7 @@ async function createTournament() {
   const year = date ? new Date(date).getFullYear() : null;
   if (!year||!date) { showToast('Dato og klokkeslett er påkrevd','error'); return; }
   try {
-    await api('/api/admin/tournament',{method:'POST',body:JSON.stringify({year,name,date,course,description,slope_rating,status:'upcoming'})});
+    await api('/api/admin/tournaments',{method:'POST',body:JSON.stringify({year,name,date,course,description,slope_rating,status:'upcoming'})});
     showToast('Turnering opprettet!');
     ['tDate','tCourse','tDesc'].forEach(id=>document.getElementById(id).value='');
     document.getElementById('tName').value='Lorgen Invitational';
