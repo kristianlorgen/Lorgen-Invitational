@@ -224,6 +224,25 @@ function parseHoleBoolean(value, fallback = false) {
   return fallback;
 }
 
+function getCanonicalHoleFlags(hole = {}) {
+  const isLongestDrive = Boolean(
+    hole.longest_drive
+    ?? hole.is_longest_drive
+    ?? hole.longestDrive
+    ?? hole.ld
+  );
+
+  const isNearestPin = Boolean(
+    hole.nearest_pin
+    ?? hole.is_nearest_pin
+    ?? hole.closest_to_pin
+    ?? hole.is_closest_to_pin
+    ?? hole.nf
+  );
+
+  return { isLongestDrive, isNearestPin };
+}
+
 function normalizeAdminHoleCards(rawHoles, ownerId, ownerKey) {
   const list = Array.isArray(rawHoles) ? rawHoles : [];
   const fallbackList = list.length ? list : Array.from({ length: 18 }, (_, index) => ({ hole_number: index + 1 }));
@@ -237,6 +256,7 @@ function normalizeAdminHoleCards(rawHoles, ownerId, ownerKey) {
       ?? hole?.SI
       ?? hole?.stroke
     );
+    const { isLongestDrive, isNearestPin } = getCanonicalHoleFlags(hole);
     return {
       owner_id: ownerId,
       owner_key: ownerKey,
@@ -244,19 +264,8 @@ function normalizeAdminHoleCards(rawHoles, ownerId, ownerKey) {
       par: Number.isInteger(par) ? par : 4,
       stroke_index: Number.isInteger(strokeIndex) ? strokeIndex : holeNumber,
       requires_photo: parseHoleBoolean(hole?.requires_photo ?? hole?.photo_required ?? hole?.requiresPhoto),
-      is_longest_drive: parseHoleBoolean(
-        hole?.is_longest_drive
-        ?? hole?.longest_drive
-        ?? hole?.longestDrive
-        ?? hole?.ld
-      ),
-      is_nearest_pin: parseHoleBoolean(
-        hole?.is_nearest_pin
-        ?? hole?.nearest_pin
-        ?? hole?.is_closest_to_pin
-        ?? hole?.closest_to_pin
-        ?? hole?.nf
-      )
+      is_longest_drive: isLongestDrive,
+      is_nearest_pin: isNearestPin
     };
   });
 }
@@ -272,6 +281,7 @@ function pickFirstExisting(columns, candidates = []) {
 }
 
 function mapNormalizedHoleToDb(normalizedHole, mapping) {
+  const { isLongestDrive, isNearestPin } = getCanonicalHoleFlags(normalizedHole);
   const row = {};
   const skippedFields = [];
   const supportMatrix = [
@@ -295,6 +305,14 @@ function mapNormalizedHoleToDb(normalizedHole, mapping) {
   for (const [sourceKey, destinationColumn] of supportMatrix) {
     if (!destinationColumn) {
       skippedFields.push(sourceKey);
+      continue;
+    }
+    if (sourceKey === 'is_longest_drive') {
+      row[destinationColumn] = isLongestDrive;
+      continue;
+    }
+    if (sourceKey === 'is_nearest_pin') {
+      row[destinationColumn] = isNearestPin;
       continue;
     }
     row[destinationColumn] = normalizedHole[sourceKey];
@@ -384,8 +402,16 @@ function getHoleOnConflictColumns(mapping) {
   const columns = [];
   if (mapping.ownerIdColumn) columns.push(mapping.ownerIdColumn);
   if (mapping.ownerKeyColumn) columns.push(mapping.ownerKeyColumn);
-  if (!mapping.ownerIdColumn && mapping.ownerColumn) columns.push(mapping.ownerColumn);
   if (mapping.holeNumberColumn) columns.push(mapping.holeNumberColumn);
+
+  if (!columns.length || (!mapping.ownerIdColumn && mapping.ownerColumn)) {
+    if (!mapping.ownerIdColumn && mapping.ownerColumn && !columns.includes(mapping.ownerColumn)) {
+      columns.unshift(mapping.ownerColumn);
+    }
+    if (mapping.holeNumberColumn && !columns.includes(mapping.holeNumberColumn)) {
+      columns.push(mapping.holeNumberColumn);
+    }
+  }
   return columns.filter(Boolean).join(',');
 }
 
@@ -868,6 +894,8 @@ app.post('/api/admin/tournament/:id/holes', asyncRoute(async (req, res) => {
     skippedFields.forEach((field) => skippedFieldSet.add(field));
     return row;
   });
+  console.log('[api:admin-holes:save] outgoing payload sample', normalizedHoles.slice(0, 2));
+  console.log('[api:admin-holes:save] db upsert payload sample', persistedPayload.slice(0, 2));
 
   const ownerFilter = getHoleOwnerFilter(mapping, tournamentId, 'tournament');
   const onConflict = getHoleOnConflictColumns(mapping);
@@ -909,6 +937,7 @@ app.post('/api/admin/tournament/:id/holes', asyncRoute(async (req, res) => {
   }
 
   const normalizedSavedHoles = (data || []).map((row) => normalizeHoleFromDbRow(row, mapping, tournamentId, 'tournament'));
+  console.log('[api:admin-holes:save] db response sample', (data || []).slice(0, 2));
 
   return res.status(200).json({
     success: true,

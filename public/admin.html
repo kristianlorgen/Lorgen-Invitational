@@ -1474,10 +1474,15 @@ async function saveToCourse() {
   }));
   try {
     const saveResult = await api('/api/admin/course/'+courseId+'/holes', {method:'POST', body:JSON.stringify({holes})});
+    const rawSavedHoles = Array.isArray(saveResult?.data)
+      ? saveResult.data
+      : Array.isArray(saveResult?.holes)
+        ? saveResult.holes
+        : [];
     if (Array.isArray(saveResult?.data)) {
-      holesData = saveResult.data;
+      holesData = mergeNormalizedHoleSet(rawSavedHoles, holesData);
     } else if (Array.isArray(saveResult?.holes)) {
-      holesData = saveResult.holes;
+      holesData = mergeNormalizedHoleSet(rawSavedHoles, holesData);
     }
     renderHolesGrid();
     showToast('Hulloppset lagret til bane-malen!');
@@ -2257,11 +2262,25 @@ async function saveCourseHoles() {
   }));
   try {
     const saveResult = await api(`/api/admin/course/${_courseHolesId}/holes`, { method: 'POST', body: JSON.stringify({ holes }) });
-    _courseHolesData = Array.isArray(saveResult?.data)
+    const rawSavedHoles = Array.isArray(saveResult?.data)
       ? saveResult.data
       : Array.isArray(saveResult?.holes)
         ? saveResult.holes
-        : _courseHolesData;
+        : [];
+    _courseHolesData = rawSavedHoles.length
+      ? rawSavedHoles.map((hole, index) => {
+        const holeNumber = Number.parseInt(hole?.hole_number ?? hole?.hole ?? hole?.number ?? hole?.nr, 10) || (index + 1);
+        const normalized = normalizeAdminHoleForState(hole, holeNumber);
+        return {
+          ...hole,
+          hole_number: normalized.hole_number,
+          par: normalized.par,
+          requires_photo: normalized.requires_photo,
+          is_longest_drive: normalized.longest_drive,
+          is_closest_to_pin: normalized.nearest_pin
+        };
+      })
+      : _courseHolesData;
     renderCourseHolesGrid();
     showToast('Hull-mal lagret!');
   } catch(e) { showToast(e.message, 'error'); }
