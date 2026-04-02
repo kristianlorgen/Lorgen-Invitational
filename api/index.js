@@ -224,6 +224,39 @@ function parseHoleBoolean(value, fallback = false) {
   return fallback;
 }
 
+const TOURNAMENT_HOLE_BOOLEAN_ALIASES = {
+  longestDrive: ['is_longest_drive', 'longest_drive', 'ld'],
+  nearestPin: ['is_nearest_pin', 'nearest_pin', 'is_closest_to_pin', 'closest_to_pin', 'nf'],
+  requiresPhoto: ['requires_photo', 'photo_required', 'requiresPhoto']
+};
+
+function pickFirstDefinedValue(obj = {}, keys = []) {
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(obj, key) && obj[key] !== undefined && obj[key] !== null) {
+      return obj[key];
+    }
+  }
+  return undefined;
+}
+
+function canonicalizeTournamentHoleInput(hole = {}, tournamentId, fallbackHoleNumber = null) {
+  const holeNumber = asInt(
+    pickFirstDefinedValue(hole, ['hole_number', 'hole', 'number', 'nr'])
+  ) || fallbackHoleNumber;
+  const par = asInt(pickFirstDefinedValue(hole, ['par'])) || 4;
+  const strokeIndex = asInt(pickFirstDefinedValue(hole, ['stroke_index', 'strokeIndex', 'si', 'SI', 'stroke']));
+
+  return {
+    tournament_id: tournamentId,
+    hole_number: holeNumber,
+    par,
+    stroke_index: strokeIndex || holeNumber,
+    requires_photo: parseHoleBoolean(pickFirstDefinedValue(hole, TOURNAMENT_HOLE_BOOLEAN_ALIASES.requiresPhoto)),
+    is_longest_drive: parseHoleBoolean(pickFirstDefinedValue(hole, TOURNAMENT_HOLE_BOOLEAN_ALIASES.longestDrive)),
+    is_nearest_pin: parseHoleBoolean(pickFirstDefinedValue(hole, TOURNAMENT_HOLE_BOOLEAN_ALIASES.nearestPin))
+  };
+}
+
 function getCanonicalHoleFlags(hole = {}) {
   const isLongestDrive = parseHoleBoolean(
     hole.is_longest_drive
@@ -547,6 +580,70 @@ function getHoleOnConflictColumns(mapping) {
   return columns.filter(Boolean).join(',');
 }
 
+function getTournamentOwnedOnConflictColumns(mapping) {
+  if (mapping.ownerColumn && mapping.holeNumberColumn) {
+    return [mapping.ownerColumn, mapping.holeNumberColumn].filter(Boolean).join(',');
+  }
+  const columns = [];
+  if (mapping.ownerIdColumn) columns.push(mapping.ownerIdColumn);
+  if (mapping.ownerKeyColumn) columns.push(mapping.ownerKeyColumn);
+  if (mapping.holeNumberColumn) columns.push(mapping.holeNumberColumn);
+  return columns.filter(Boolean).join(',');
+}
+
+function mapCanonicalTournamentHoleToDbRow(canonicalHole, mapping, holesColumns) {
+  const row = {};
+  if (mapping.ownerColumn) row[mapping.ownerColumn] = canonicalHole.tournament_id;
+  if (mapping.ownerIdColumn) row[mapping.ownerIdColumn] = canonicalHole.tournament_id;
+  if (mapping.ownerKeyColumn) row[mapping.ownerKeyColumn] = 'tournament';
+  if (mapping.holeNumberColumn) row[mapping.holeNumberColumn] = canonicalHole.hole_number;
+  if (mapping.parColumn) row[mapping.parColumn] = canonicalHole.par;
+  if (mapping.strokeIndexColumn) row[mapping.strokeIndexColumn] = canonicalHole.stroke_index;
+  if (mapping.requiresPhotoColumn) row[mapping.requiresPhotoColumn] = canonicalHole.requires_photo;
+  if (mapping.longestDriveColumn) row[mapping.longestDriveColumn] = canonicalHole.is_longest_drive;
+  if (mapping.nearestPinColumn) row[mapping.nearestPinColumn] = canonicalHole.is_nearest_pin;
+
+  // Keep canonical write columns only; avoid writing alias columns in parallel.
+  if (!mapping.requiresPhotoColumn && holesColumns.includes('requires_photo')) row.requires_photo = canonicalHole.requires_photo;
+  if (!mapping.longestDriveColumn && holesColumns.includes('is_longest_drive')) row.is_longest_drive = canonicalHole.is_longest_drive;
+  if (!mapping.nearestPinColumn && holesColumns.includes('is_nearest_pin')) row.is_nearest_pin = canonicalHole.is_nearest_pin;
+  return row;
+}
+
+async function fetchTournamentOwnedHoleRows(tournamentId, holesColumns, mapping) {
+  const rowMap = new Map();
+  const fetches = [];
+
+  if (mapping.ownerColumn) {
+    fetches.push(
+      supabase
+        .from('holes')
+        .select(holesColumns.join(','))
+        .eq(mapping.ownerColumn, tournamentId)
+        .order(mapping.holeNumberColumn, { ascending: true })
+    );
+  }
+  if (mapping.ownerIdColumn) {
+    let query = supabase
+      .from('holes')
+      .select(holesColumns.join(','))
+      .eq(mapping.ownerIdColumn, tournamentId);
+    if (mapping.ownerKeyColumn) query = query.eq(mapping.ownerKeyColumn, 'tournament');
+    fetches.push(query.order(mapping.holeNumberColumn, { ascending: true }));
+  }
+
+  if (!fetches.length) return [];
+  const results = await Promise.all(fetches);
+  for (const result of results) {
+    if (result.error) throw new Error(result.error.message);
+    for (const row of (result.data || [])) {
+      const key = `${asInt(row.id) || 'noid'}:${asInt(row[mapping.holeNumberColumn] ?? row.hole_number) || 'x'}:${JSON.stringify(getHoleRowDebugIdentity(row, mapping))}`;
+      rowMap.set(key, row);
+    }
+  }
+  return [...rowMap.values()];
+}
+
 async function discoverCourseHolesStore() {
   const candidateTables = [
     'course_holes',
@@ -588,14 +685,7 @@ async function ensureTournamentHoles(tournamentId) {
   if (!hasOwnerColumns || !mapping.holeNumberColumn) {
     throw new Error('public.holes mangler nødvendige owner/hole-felter for lasting');
   }
-  const ownerFilter = getHoleOwnerFilter(mapping, tournamentId, 'tournament');
-
-  const { data, error } = await supabase
-    .from('holes')
-    .select(holesColumns.join(','))
-    .match(ownerFilter)
-    .order(mapping.holeNumberColumn, { ascending: true });
-  if (error) throw new Error(error.message);
+  const data = await fetchTournamentOwnedHoleRows(tournamentId, holesColumns, mapping);
 
   if ((data || []).length > 0) return data;
 
@@ -611,18 +701,13 @@ async function ensureTournamentHoles(tournamentId) {
     throw new Error('public.holes støtter ikke påkrevd hole_number-felt for standardhull');
   }
 
-  const onConflict = getHoleOnConflictColumns(mapping);
+  const onConflict = getTournamentOwnedOnConflictColumns(mapping);
   const { error: insertError } = await supabase
     .from('holes')
     .upsert(fallbackInsertPayload, { onConflict });
   if (insertError) throw new Error(insertError.message);
 
-  const { data: created, error: createdError } = await supabase
-    .from('holes')
-    .select(holesColumns.join(','))
-    .match(ownerFilter)
-    .order(mapping.holeNumberColumn, { ascending: true });
-  if (createdError) throw new Error(createdError.message);
+  const created = await fetchTournamentOwnedHoleRows(tournamentId, holesColumns, mapping);
   return created || [];
 }
 
@@ -991,27 +1076,18 @@ app.post('/api/admin/tournament/:id/holes', asyncRoute(async (req, res) => {
   ]);
   console.log('[api:admin-holes:save] schema columns', { holesColumns, tournamentsColumns });
 
-  const normalizedBaseHoles = normalizeAdminHoleCards(requestedHoles, tournamentId, 'tournament');
-  const normalizedHoles = normalizedBaseHoles.map((hole, index) => {
-    const incomingHole = requestedHoles[index] || {};
-    const requiresPhoto = parseHoleBoolean(incomingHole.requires_photo);
-    const isLongestDrive = parseHoleBoolean(incomingHole.is_longest_drive);
-    const isNearestPin = parseHoleBoolean(incomingHole.is_nearest_pin);
-    return {
-      ...hole,
-      requires_photo: requiresPhoto,
-      is_longest_drive: isLongestDrive,
-      is_nearest_pin: isNearestPin
-    };
-  });
-  const incomingCanonicalSample = normalizedHoles
+  const normalizedHoles = requestedHoles.map((hole, index) => canonicalizeTournamentHoleInput(hole, tournamentId, index + 1));
+  const beforeSave = requestedHoles
     .filter((hole) => hole.hole_number === 1 || hole.hole_number === 2)
     .map((hole) => ({
       hole_number: hole.hole_number,
       requires_photo: hole.requires_photo,
-      is_longest_drive: hole.is_longest_drive,
-      is_nearest_pin: hole.is_nearest_pin
+      is_longest_drive: pickFirstDefinedValue(hole, TOURNAMENT_HOLE_BOOLEAN_ALIASES.longestDrive),
+      is_nearest_pin: pickFirstDefinedValue(hole, TOURNAMENT_HOLE_BOOLEAN_ALIASES.nearestPin)
     }));
+  const incomingCanonicalSample = normalizedHoles.filter((hole) => hole.hole_number === 1 || hole.hole_number === 2);
+  console.log('[api:admin-holes:save] beforeSave', JSON.stringify(beforeSave));
+  console.log('[api:admin-holes:save] incomingCanonicalSample', JSON.stringify(incomingCanonicalSample));
 
   for (const hole of normalizedHoles) {
     if (!Number.isInteger(hole.hole_number) || hole.hole_number < 1 || hole.hole_number > 18) {
@@ -1041,54 +1117,21 @@ app.post('/api/admin/tournament/:id/holes', asyncRoute(async (req, res) => {
   }
 
   const skippedFieldSet = new Set();
-  const persistedPayload = normalizedHoles.map((hole) => {
-    const requiresPhoto = hole.requires_photo;
-    const isLongestDrive = hole.is_longest_drive;
-    const isNearestPin = hole.is_nearest_pin;
-    const row = {};
-
-    if (mapping.ownerIdColumn) row[mapping.ownerIdColumn] = tournamentId;
-    if (mapping.ownerKeyColumn) row[mapping.ownerKeyColumn] = 'tournament';
-    if (!mapping.ownerIdColumn && mapping.ownerColumn) row[mapping.ownerColumn] = tournamentId;
-    if (mapping.holeNumberColumn) row[mapping.holeNumberColumn] = hole.hole_number; else skippedFieldSet.add('hole_number');
-    if (mapping.parColumn) row[mapping.parColumn] = hole.par; else skippedFieldSet.add('par');
-    if (mapping.strokeIndexColumn) row[mapping.strokeIndexColumn] = hole.stroke_index; else skippedFieldSet.add('stroke_index');
-
-    if (holesColumns.includes('requires_photo')) {
-      row.requires_photo = requiresPhoto;
-    } else if (mapping.requiresPhotoColumn) {
-      row[mapping.requiresPhotoColumn] = requiresPhoto;
-    } else {
-      skippedFieldSet.add('requires_photo');
-    }
-
-    if (holesColumns.includes('longest_drive')) row.longest_drive = isLongestDrive;
-    if (holesColumns.includes('is_longest_drive')) row.is_longest_drive = isLongestDrive;
-    if (!holesColumns.includes('longest_drive') && !holesColumns.includes('is_longest_drive')) {
-      if (mapping.longestDriveColumn) row[mapping.longestDriveColumn] = isLongestDrive;
-      else skippedFieldSet.add('is_longest_drive');
-    }
-
-    if (holesColumns.includes('nearest_pin')) row.nearest_pin = isNearestPin;
-    if (holesColumns.includes('is_nearest_pin')) row.is_nearest_pin = isNearestPin;
-    if (!holesColumns.includes('nearest_pin') && !holesColumns.includes('is_nearest_pin')) {
-      if (mapping.nearestPinColumn) row[mapping.nearestPinColumn] = isNearestPin;
-      else skippedFieldSet.add('is_nearest_pin');
-    }
-
-    return row;
-  });
+  const persistedPayload = normalizedHoles.map((hole) => mapCanonicalTournamentHoleToDbRow(hole, mapping, holesColumns));
+  if (!mapping.holeNumberColumn) skippedFieldSet.add('hole_number');
+  if (!mapping.parColumn) skippedFieldSet.add('par');
+  if (!mapping.strokeIndexColumn) skippedFieldSet.add('stroke_index');
+  if (!mapping.requiresPhotoColumn && !holesColumns.includes('requires_photo')) skippedFieldSet.add('requires_photo');
+  if (!mapping.longestDriveColumn && !holesColumns.includes('is_longest_drive')) skippedFieldSet.add('is_longest_drive');
+  if (!mapping.nearestPinColumn && !holesColumns.includes('is_nearest_pin')) skippedFieldSet.add('is_nearest_pin');
   const finalDbPayloadSample = persistedPayload
     .filter((row) => {
       const holeNumber = asInt(row[mapping.holeNumberColumn] ?? row.hole_number);
       return holeNumber === 1 || holeNumber === 2;
     });
-  console.log('[api:admin-holes:save] incoming canonical sample (holes 1&2)', incomingCanonicalSample);
-  console.log('[api:admin-holes:save] final db upsert payload sample (holes 1&2)', finalDbPayloadSample);
-  console.log('[api:admin-holes:save] compact ld/nf debug', { discoveredLiveColumns: holesColumns });
+  console.log('[api:admin-holes:save] finalDbUpsertPayload', JSON.stringify(finalDbPayloadSample));
 
-  const ownerFilter = getHoleOwnerFilter(mapping, tournamentId, 'tournament');
-  const onConflict = getHoleOnConflictColumns(mapping);
+  const onConflict = getTournamentOwnedOnConflictColumns(mapping);
   const { error } = await supabase
     .from('holes')
     .upsert(persistedPayload, { onConflict });
@@ -1108,15 +1151,13 @@ app.post('/api/admin/tournament/:id/holes', asyncRoute(async (req, res) => {
     });
   }
 
-  const { data, error: fetchError } = await supabase
-    .from('holes')
-    .select(holesColumns.join(','))
-    .match(ownerFilter)
-    .order(mapping.holeNumberColumn, { ascending: true });
-  if (fetchError) {
+  let data;
+  try {
+    data = await fetchTournamentOwnedHoleRows(tournamentId, holesColumns, mapping);
+  } catch (fetchError) {
     return res.status(500).json({
       success: false,
-      error: fetchError.message,
+      error: fetchError?.message || String(fetchError),
       stackHint: 'admin_tournament_holes_save',
       debug: {
         routeUsed: '/api/admin/tournament/:id/holes',
@@ -1130,17 +1171,13 @@ app.post('/api/admin/tournament/:id/holes', asyncRoute(async (req, res) => {
     const holeNumber = asInt(row[mapping.holeNumberColumn] ?? row.hole_number);
     return holeNumber === 1 || holeNumber === 2;
   });
-  console.log('[api:admin-holes:save] raw Supabase returned rows sample (holes 1&2)', rawSavedRowsSample);
+  console.log('[api:admin-holes:save] rawPostSavedRows', JSON.stringify(rawSavedRowsSample));
+  console.log('[api:admin-holes:save] rawRefetchRows', JSON.stringify(rawSavedRowsSample));
   const normalizedSavedHoles = mergeTournamentHoleRows(data || [], mapping, tournamentId, 'post');
-  const finalPostResponseSample = normalizedSavedHoles
+  const normalizedAfterRefetch = normalizedSavedHoles
     .filter((hole) => hole.hole_number === 1 || hole.hole_number === 2)
-    .map((hole) => ({
-      hole_number: hole.hole_number,
-      requires_photo: hole.requires_photo,
-      longest_drive: hole.longest_drive,
-      nearest_pin: hole.nearest_pin
-    }));
-  console.log('[api:admin-holes:save] final POST response sample (holes 1&2)', finalPostResponseSample);
+    .map((hole) => ({ hole_number: hole.hole_number, is_longest_drive: hole.is_longest_drive, is_nearest_pin: hole.is_nearest_pin }));
+  console.log('[api:admin-holes:save] normalizedAfterRefetch', JSON.stringify(normalizedAfterRefetch));
 
   return res.status(200).json({
     success: true,
@@ -1175,7 +1212,7 @@ app.post('/api/admin/tournament/:id/holes', asyncRoute(async (req, res) => {
       incomingCanonicalSample,
       finalDbPayloadSample,
       rawSavedRowsSample,
-      finalPostResponseSample,
+      finalPostResponseSample: normalizedAfterRefetch,
       skippedUnsupportedFields: [...skippedFieldSet],
       mappedFieldNames: {
         ownerId: mapping.ownerIdColumn || mapping.ownerColumn,
