@@ -929,25 +929,32 @@ async function createTournament() {
         slope_rating=document.getElementById('tSlope').value||113;
   const year = date ? new Date(date).getFullYear() : null;
   if (!year||!date) { showToast('Dato og klokkeslett er påkrevd','error'); return; }
+  const url = '/api/admin/tournaments';
+  const requestBody = {
+    name,
+    date,
+    course,
+    description,
+    slope_rating,
+    year,
+    status: 'upcoming'
+  };
+  console.log('[admin:createTournament] fetch url', url);
+  console.log('[admin:createTournament] request body', requestBody);
   try {
-    await api('/api/admin/tournaments', {
+    await safeJsonFetch(url, {
       method: 'POST',
-      body: JSON.stringify({
-        name,
-        date,
-        course,
-        description,
-        slope_rating,
-        year,
-        status: 'upcoming'
-      })
+      body: JSON.stringify(requestBody)
     });
     showToast('Turnering opprettet!');
     ['tDate','tCourse','tDesc'].forEach(id=>document.getElementById(id).value='');
     document.getElementById('tName').value='Lorgen Invitational';
     document.getElementById('tSlope').value='113';
     await loadTournaments(); await loadDashboard();
-  } catch(e) { showToast(e.message,'error'); }
+  } catch(error) {
+    console.error('[admin:createTournament] create failed', error);
+    showToast(error.message || 'Kunne ikke opprette turnering', 'error');
+  }
 }
 
 async function changeTournamentStatus(id, status) {
