@@ -737,10 +737,21 @@ function getValidSubmittedScore(entry) {
   const rawScore = entry.score ?? entry.strokes;
   if (rawScore === null || rawScore === undefined || rawScore === '') return null;
   const parsedScore = Number.parseInt(rawScore, 10);
-  const hasScoreField = Object.prototype.hasOwnProperty.call(entry, 'score') || Object.prototype.hasOwnProperty.call(entry, 'strokes');
-  const hasSubmissionSignal = Boolean(entry.submitted_at) || hasScoreField;
+  const hasSubmissionSignal = Boolean(entry.submitted_at);
   if (!Number.isInteger(parsedScore) || parsedScore <= 0 || !hasSubmissionSignal) return null;
   return parsedScore;
+}
+
+function moveToFirstPlayableHole() {
+  if (!holesData.length) {
+    currentHoleIndex = 0;
+    return;
+  }
+  const firstIncompleteIndex = holesData.findIndex((hole) => {
+    const saved = scoresData[hole.hole_number];
+    return getValidSubmittedScore(saved) === null;
+  });
+  currentHoleIndex = firstIncompleteIndex >= 0 ? firstIncompleteIndex : 0;
 }
 
 function getRoundCompletionDebug() {
@@ -866,11 +877,13 @@ window.addEventListener('beforeunload', (e) => {
 async function loadScorecard() {
   const d = await safeJsonFetch('/api/team/scorecard');
   teamData = d.team; holesData = d.holes; tournamentData = d.tournament || null;
+  scoresData = {};
   d.scores.forEach(s => { scoresData[s.hole_number] = s; });
   completionDebug = d.completion_debug || getRoundCompletionDebug();
   if (d.claims) d.claims.forEach(c => { claimsData[c.hole_number + '_' + c.award_type] = c; });
   holeSponsorsMap = {};
   if (d.hole_sponsors) d.hole_sponsors.forEach(s => { holeSponsorsMap[s.hole_number] = s; });
+  moveToFirstPlayableHole();
   renderAll();
   loadPosition();
   await loadChatMessages();

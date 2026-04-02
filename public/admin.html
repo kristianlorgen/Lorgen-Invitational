@@ -1273,14 +1273,16 @@ function normalizeAdminHoleForState(hole, fallbackHoleNumber, fallbackHole = nul
     hole?.nearest_pin ?? hole?.is_nearest_pin ?? hole?.is_closest_to_pin ?? hole?.closest_to_pin ?? hole?.nf,
     readBool(fallbackNearestPin, false)
   );
-  const fallbackLongestDrive = fallbackHole?.longest_drive ?? fallbackHole?.is_longest_drive;
+  const fallbackLongestDrive = fallbackHole?.longest_drive ?? fallbackHole?.is_longest_drive ?? fallbackHole?.longestDrive ?? fallbackHole?.ld;
   const fallbackRequiresPhoto = fallbackHole?.requires_photo ?? fallbackHole?.photo_required ?? fallbackHole?.photo_upload_required;
   return {
+    owner_id: Number.parseInt(hole?.owner_id ?? fallbackHole?.owner_id, 10) || null,
+    owner_key: hole?.owner_key ?? fallbackHole?.owner_key ?? 'tournament',
     hole_number: Number.isInteger(parsedHoleNumber) ? parsedHoleNumber : fallbackHoleNumber,
     par: Number.isInteger(parsedPar) ? parsedPar : 4,
     stroke_index: Number.isInteger(parsedStrokeIndex) ? parsedStrokeIndex : (Number.isInteger(parsedHoleNumber) ? parsedHoleNumber : fallbackHoleNumber),
     requires_photo: readBool(hole?.requires_photo ?? hole?.photo_required ?? hole?.photo_upload_required, readBool(fallbackRequiresPhoto, false)),
-    longest_drive: readBool(hole?.longest_drive ?? hole?.is_longest_drive ?? hole?.isLongestDrive ?? hole?.ld, readBool(fallbackLongestDrive, false)),
+    longest_drive: readBool(hole?.longest_drive ?? hole?.is_longest_drive ?? hole?.longestDrive ?? hole?.ld, readBool(fallbackLongestDrive, false)),
     nearest_pin: nearestPin
   };
 }
@@ -1328,11 +1330,12 @@ async function loadHoles() {
       : Array.isArray(d?.holes)
         ? d.holes
         : [];
-    const normalizedHoles = mergeNormalizedHoleSet(rawHoles, holesData);
+    const normalizedHoles = mergeNormalizedHoleSet(rawHoles, []);
     setHolesDebug({
       loadUrl,
       saveUrl: `/api/admin/tournament/${selectedHolesTournamentId}/holes`,
       tournamentId: selectedHolesTournamentId,
+      detectedLiveHolesColumns: d?.debug?.discoveredLiveColumns || [],
       rawDbHoleSample: rawHoles.slice(0, 2),
       normalizedHoleSample: normalizedHoles.slice(0, 2)
     });
@@ -1396,6 +1399,8 @@ async function saveHoles() {
     ? holesData
     : Array.from({ length: 18 }, (_, index) => ({ hole_number: index + 1, par: 4, stroke_index: index + 1 }));
   const holes = sourceHoles.map(h => ({
+    owner_id: h.owner_id || tournamentId,
+    owner_key: h.owner_key || 'tournament',
     hole_number: h.hole_number,
     par: parseInt(document.getElementById('h-par-'+h.hole_number)?.value ?? h.par ?? 4),
     stroke_index: parseInt(document.getElementById('h-si-'+h.hole_number)?.value ?? h.stroke_index ?? h.hole_number) || h.hole_number,
@@ -1431,11 +1436,12 @@ async function saveHoles() {
       : Array.isArray(saveResult?.holes)
         ? saveResult.holes
         : [];
-    holesData = mergeNormalizedHoleSet(rawSavedHoles, holes);
+    holesData = mergeNormalizedHoleSet(rawSavedHoles, []);
     setHolesDebug({
       loadUrl: `/api/admin/tournament/${tournamentId}/holes`,
       saveUrl,
       tournamentId,
+      detectedLiveHolesColumns: saveResult?.debug?.discoveredLiveColumns || [],
       outgoingSavePayloadSample: holes.slice(0, 2),
       rawDbHoleSample: rawSavedHoles.slice(0, 2),
       postSaveNormalizedHoleSample: holesData.slice(0, 2)
