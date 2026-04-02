@@ -1406,8 +1406,15 @@ async function saveToCourse() {
     is_closest_to_pin: document.getElementById('h-ctp-'+h.hole_number).checked
   }));
   try {
-    await api('/api/admin/course/'+courseId+'/holes', {method:'POST', body:JSON.stringify({holes})});
+    const saveResult = await api('/api/admin/course/'+courseId+'/holes', {method:'POST', body:JSON.stringify({holes})});
+    if (Array.isArray(saveResult?.data)) {
+      holesData = saveResult.data;
+    } else if (Array.isArray(saveResult?.holes)) {
+      holesData = saveResult.holes;
+    }
+    renderHolesGrid();
     showToast('Hulloppset lagret til bane-malen!');
+    await loadHoles();
   } catch(e) { showToast(e.message,'error'); }
 }
 
@@ -2182,7 +2189,13 @@ async function saveCourseHoles() {
     is_closest_to_pin: document.getElementById('ch-ctp-' + h.hole_number).checked
   }));
   try {
-    await api(`/api/admin/course/${_courseHolesId}/holes`, { method: 'POST', body: JSON.stringify({ holes }) });
+    const saveResult = await api(`/api/admin/course/${_courseHolesId}/holes`, { method: 'POST', body: JSON.stringify({ holes }) });
+    _courseHolesData = Array.isArray(saveResult?.data)
+      ? saveResult.data
+      : Array.isArray(saveResult?.holes)
+        ? saveResult.holes
+        : _courseHolesData;
+    renderCourseHolesGrid();
     showToast('Hull-mal lagret!');
   } catch(e) { showToast(e.message, 'error'); }
 }
