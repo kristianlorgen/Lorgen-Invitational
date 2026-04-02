@@ -708,7 +708,14 @@ app.post(['/api/teams', '/api/admin/team'], asyncRoute(async (req, res) => {
 
     return res.status(201).json({
       success: true,
-      team: result.data
+      team: {
+        id: result.data?.id,
+        tournament_id: result.data?.tournament_id,
+        team_name: result.data?.name,
+        player1_name: result.data?.player1,
+        player2_name: result.data?.player2,
+        pin: result.data?.pin_code
+      }
     });
   } catch (err) {
     console.error('[api:admin-team:create] unexpected error', err);

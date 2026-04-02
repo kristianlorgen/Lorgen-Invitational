@@ -1280,7 +1280,17 @@ async function loadHoles() {
     if (!d.success) {
       throw new Error(d.error || 'Kunne ikke hente hull');
     }
-    holesData = Array.isArray(d.holes) ? d.holes : [];
+    const normalizedHoles = Array.isArray(d?.data)
+      ? d.data
+      : Array.isArray(d?.holes)
+        ? d.holes
+        : [];
+    console.log('[admin:holes:load]', {
+      tournamentId: selectedHolesTournamentId,
+      rawParsedResponse: d,
+      normalizedHolesLength: normalizedHoles.length
+    });
+    holesData = normalizedHoles;
     renderHolesGrid();
   } catch (e) {
     holesData = [];
@@ -1350,7 +1360,7 @@ async function saveHoles() {
     payload
   });
   try {
-    await api(saveUrl,{
+    const saveResult = await api(saveUrl,{
       method:'POST',
       body:JSON.stringify(payload),
       debugHook: ({ status, parsedResponse }) => {
@@ -1364,6 +1374,12 @@ async function saveHoles() {
         });
       }
     });
+    holesData = Array.isArray(saveResult?.data)
+      ? saveResult.data
+      : Array.isArray(saveResult?.holes)
+        ? saveResult.holes
+        : holesData;
+    renderHolesGrid();
     showToast('Hullkonfigurasjon lagret til turnering!');
     await loadHoles();
   } catch(e) { showToast(e.message,'error'); }
