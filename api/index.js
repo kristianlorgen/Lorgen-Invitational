@@ -252,20 +252,44 @@ function buildTournamentInsertPayload(parsed) {
   };
 }
 
+function serializeSupabaseError(error) {
+  if (!error) return null;
+  return {
+    message: error.message || null,
+    details: error.details || null,
+    hint: error.hint || null,
+    code: error.code || null
+  };
+}
+
 async function handleAdminCreateTournament(req, res, options = {}) {
   const { dryRun = false, stackHint = 'admin_create_tournament' } = options;
+  let debugStep = 'route_entered';
+  let supabaseErrorForResponse = null;
   try {
-    console.log('[api:admin-create-tournament] route hit', {
+    console.log('[api:admin-create-tournament] route entered', {
       method: req.method,
       path: req.path,
       body: req.body || {}
     });
+    console.log('[api:admin-create-tournament] env presence', {
+      hasSupabaseUrl: !!process.env.SUPABASE_URL,
+      hasServiceRoleKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+      supabaseUrlPrefix: process.env.SUPABASE_URL ? process.env.SUPABASE_URL.slice(0, 35) : null,
+      serviceRoleKeyLength: process.env.SUPABASE_SERVICE_ROLE_KEY ? process.env.SUPABASE_SERVICE_ROLE_KEY.length : 0
+    });
+    console.log('[api:admin-create-tournament] supabase client config', {
+      usesServiceRoleClient: Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY),
+      keyType: SUPABASE_SERVICE_ROLE_KEY ? 'service_role' : 'missing'
+    });
 
+    debugStep = 'require_supabase';
     if (!requireSupabase(res)) return;
 
+    debugStep = 'admin_session_verification';
     const adminSession = getAdminSession(req);
     const isAdmin = Boolean(adminSession?.role === 'admin');
-    console.log('[api:admin-create-tournament] admin auth result', {
+    console.log('[api:admin-create-tournament] admin session verified', {
       isAdmin,
       hasSession: Boolean(adminSession),
       role: adminSession?.role || null
@@ -274,8 +298,12 @@ async function handleAdminCreateTournament(req, res, options = {}) {
       return res.status(401).json({ success: false, error: 'Admin authentication required' });
     }
 
+    debugStep = 'request_body_received';
+    console.log('[api:admin-create-tournament] request body received', req.body || {});
+
+    debugStep = 'payload_parsing';
     const parsed = parseTournamentCreateBody(req);
-    console.log('[api:admin-create-tournament] parsed values', {
+    console.log('[api:admin-create-tournament] parsed payload', {
       name: parsed.name,
       date: parsed.date,
       course: parsed.course,
@@ -294,21 +322,61 @@ async function handleAdminCreateTournament(req, res, options = {}) {
       return res.status(200).json({ success: true, validated: true, payload });
     }
 
-    console.log('[api:admin-create-tournament] insert payload', payload);
+    debugStep = 'before_supabase_select_test';
+    console.log('[api:admin-create-tournament] before Supabase select test');
+    const { data: testData, error: testError } = await supabase
+      .from('tournaments')
+      .select('id,name,course,status,created_at')
+      .limit(1);
+    supabaseErrorForResponse = serializeSupabaseError(testError);
+    console.log('TOURNAMENT TEST QUERY RESULT', {
+      data: testData || null,
+      error: supabaseErrorForResponse
+    });
+    console.log('[api:admin-create-tournament] after Supabase select test');
+    if (testError) {
+      return res.status(500).json({
+        success: false,
+        error: testError?.message || 'Supabase test query failed',
+        stackHint,
+        debugStep: 'supabase_select_test',
+        supabaseError: supabaseErrorForResponse
+      });
+    }
+
+    debugStep = 'before_insert';
+    console.log('[api:admin-create-tournament] before insert', payload);
     const { data, error } = await supabase.from('tournaments').insert(payload).select('*').single();
-    console.log('[api:admin-create-tournament] supabase returned data', data || null);
-    console.log('[api:admin-create-tournament] supabase returned error', error || null);
+    debugStep = 'after_insert';
+    supabaseErrorForResponse = serializeSupabaseError(error);
+    console.log('[api:admin-create-tournament] after insert result', {
+      data: data || null,
+      error: supabaseErrorForResponse
+    });
 
     if (error) {
-      return res.status(500).json({ success: false, error: error.message, stackHint });
+      console.log('[api:admin-create-tournament] full Supabase error object', supabaseErrorForResponse);
+      return res.status(500).json({
+        success: false,
+        error: error?.message || 'Unknown create tournament error',
+        stackHint,
+        debugStep: 'insert',
+        supabaseError: supabaseErrorForResponse
+      });
     }
     return res.status(201).json({ success: true, tournament: data });
   } catch (error) {
-    console.error('[api:admin-create-tournament] unexpected error', error);
+    console.error('[api:admin-create-tournament] caught exception message + stack', {
+      message: error?.message || null,
+      stack: error?.stack || null,
+      debugStep
+    });
     return res.status(500).json({
       success: false,
-      error: error?.message || 'Uventet serverfeil',
-      stackHint
+      error: error?.message || 'Unknown create tournament error',
+      stackHint,
+      debugStep,
+      supabaseError: supabaseErrorForResponse
     });
   }
 }
