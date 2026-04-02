@@ -1253,7 +1253,7 @@ function generatePin() {
 let holesData = [];
 let selectedHolesTournamentId = null;
 
-function normalizeAdminHoleForState(hole, fallbackHoleNumber) {
+function normalizeAdminHoleForState(hole, fallbackHoleNumber, fallbackHole = null) {
   const parsedHoleNumber = Number.parseInt(
     hole?.hole_number ?? hole?.hole ?? hole?.number ?? hole?.nr ?? fallbackHoleNumber,
     10
@@ -1264,16 +1264,36 @@ function normalizeAdminHoleForState(hole, fallbackHoleNumber) {
     10
   );
   const toBool = (value) => value === true || value === 'true' || value === 1 || value === '1';
-  const nearestPin = toBool(hole?.is_nearest_pin ?? hole?.is_closest_to_pin ?? hole?.nearest_pin ?? hole?.closest_to_pin ?? hole?.nf);
+  const readBool = (value, fallbackValue = false) => {
+    if (value === null || value === undefined) return fallbackValue;
+    return toBool(value);
+  };
+  const fallbackNearestPin = fallbackHole?.nearest_pin ?? fallbackHole?.is_nearest_pin ?? fallbackHole?.is_closest_to_pin;
+  const nearestPin = readBool(
+    hole?.nearest_pin ?? hole?.is_nearest_pin ?? hole?.is_closest_to_pin ?? hole?.closest_to_pin ?? hole?.nf,
+    readBool(fallbackNearestPin, false)
+  );
+  const fallbackLongestDrive = fallbackHole?.longest_drive ?? fallbackHole?.is_longest_drive;
+  const fallbackRequiresPhoto = fallbackHole?.requires_photo ?? fallbackHole?.photo_required ?? fallbackHole?.photo_upload_required;
   return {
     hole_number: Number.isInteger(parsedHoleNumber) ? parsedHoleNumber : fallbackHoleNumber,
     par: Number.isInteger(parsedPar) ? parsedPar : 4,
     stroke_index: Number.isInteger(parsedStrokeIndex) ? parsedStrokeIndex : (Number.isInteger(parsedHoleNumber) ? parsedHoleNumber : fallbackHoleNumber),
-    requires_photo: toBool(hole?.requires_photo ?? hole?.photo_required ?? hole?.photo_upload_required),
-    is_longest_drive: toBool(hole?.is_longest_drive ?? hole?.longest_drive ?? hole?.isLongestDrive ?? hole?.ld),
-    is_nearest_pin: nearestPin,
-    is_closest_to_pin: nearestPin
+    requires_photo: readBool(hole?.requires_photo ?? hole?.photo_required ?? hole?.photo_upload_required, readBool(fallbackRequiresPhoto, false)),
+    longest_drive: readBool(hole?.longest_drive ?? hole?.is_longest_drive ?? hole?.isLongestDrive ?? hole?.ld, readBool(fallbackLongestDrive, false)),
+    nearest_pin: nearestPin
   };
+}
+
+function mergeNormalizedHoleSet(serverHoles = [], localHoles = []) {
+  const localByNumber = new Map((Array.isArray(localHoles) ? localHoles : []).map((hole) => [hole.hole_number, hole]));
+  const source = Array.isArray(serverHoles) && serverHoles.length
+    ? serverHoles
+    : (Array.isArray(localHoles) ? localHoles : []);
+  return source.map((hole, index) => {
+    const holeNumber = Number.parseInt(hole?.hole_number, 10) || (index + 1);
+    return normalizeAdminHoleForState(hole, holeNumber, localByNumber.get(holeNumber) || null);
+  });
 }
 
 async function loadHoles() {
@@ -1308,10 +1328,18 @@ async function loadHoles() {
       : Array.isArray(d?.holes)
         ? d.holes
         : [];
-    const normalizedHoles = rawHoles.map((hole, index) => normalizeAdminHoleForState(hole, index + 1));
+    const normalizedHoles = mergeNormalizedHoleSet(rawHoles, holesData);
+    setHolesDebug({
+      loadUrl,
+      saveUrl: `/api/admin/tournament/${selectedHolesTournamentId}/holes`,
+      tournamentId: selectedHolesTournamentId,
+      rawDbHoleSample: rawHoles.slice(0, 2),
+      normalizedHoleSample: normalizedHoles.slice(0, 2)
+    });
     console.log('[admin:holes:load]', {
       tournamentId: selectedHolesTournamentId,
       rawParsedResponse: d,
+      normalizedHoleSample: normalizedHoles.slice(0, 2),
       normalizedHolesLength: normalizedHoles.length
     });
     holesData = normalizedHoles;
@@ -1349,11 +1377,11 @@ function renderHolesGrid() {
         📸 Foto
       </label>
       <label style="display:flex;align-items:center;justify-content:center;gap:4px;margin-top:6px;font-size:.72rem;color:var(--text-muted);cursor:pointer">
-        <input type="checkbox" id="h-ld-${h.hole_number}" ${h.is_longest_drive?'checked':''} style="accent-color:var(--gold)">
+        <input type="checkbox" id="h-ld-${h.hole_number}" ${h.longest_drive?'checked':''} style="accent-color:var(--gold)">
         🏌️ LD
       </label>
       <label style="display:flex;align-items:center;justify-content:center;gap:4px;margin-top:4px;font-size:.72rem;color:var(--text-muted);cursor:pointer">
-        <input type="checkbox" id="h-ctp-${h.hole_number}" ${(h.is_nearest_pin || h.is_closest_to_pin)?'checked':''} style="accent-color:var(--gold)">
+        <input type="checkbox" id="h-ctp-${h.hole_number}" ${h.nearest_pin?'checked':''} style="accent-color:var(--gold)">
         🎯 NF
       </label>
     </div>`).join('');
@@ -1372,8 +1400,8 @@ async function saveHoles() {
     par: parseInt(document.getElementById('h-par-'+h.hole_number)?.value ?? h.par ?? 4),
     stroke_index: parseInt(document.getElementById('h-si-'+h.hole_number)?.value ?? h.stroke_index ?? h.hole_number) || h.hole_number,
     requires_photo: document.getElementById('h-photo-'+h.hole_number)?.checked || false,
-    is_longest_drive: document.getElementById('h-ld-'+h.hole_number)?.checked || false,
-    is_nearest_pin: document.getElementById('h-ctp-'+h.hole_number)?.checked || false
+    longest_drive: document.getElementById('h-ld-'+h.hole_number)?.checked || false,
+    nearest_pin: document.getElementById('h-ctp-'+h.hole_number)?.checked || false
   }));
   const saveUrl = `/api/admin/tournament/${tournamentId}/holes`;
   const payload = { holes };
@@ -1381,7 +1409,7 @@ async function saveHoles() {
     loadUrl: `/api/admin/tournament/${tournamentId}/holes`,
     saveUrl,
     tournamentId,
-    payload
+    outgoingSavePayloadSample: holes.slice(0, 2)
   });
   try {
     const saveResult = await api(saveUrl,{
@@ -1402,8 +1430,16 @@ async function saveHoles() {
       ? saveResult.data
       : Array.isArray(saveResult?.holes)
         ? saveResult.holes
-        : holesData;
-    holesData = rawSavedHoles.map((hole, index) => normalizeAdminHoleForState(hole, index + 1));
+        : [];
+    holesData = mergeNormalizedHoleSet(rawSavedHoles, holes);
+    setHolesDebug({
+      loadUrl: `/api/admin/tournament/${tournamentId}/holes`,
+      saveUrl,
+      tournamentId,
+      outgoingSavePayloadSample: holes.slice(0, 2),
+      rawDbHoleSample: rawSavedHoles.slice(0, 2),
+      postSaveNormalizedHoleSample: holesData.slice(0, 2)
+    });
     renderHolesGrid();
     showToast('Hullkonfigurasjon lagret til turnering!');
     await loadHoles();

@@ -314,6 +314,8 @@ function normalizeHoleFromDbRow(row = {}, mapping = {}, ownerId = null, ownerKey
     par: Number.isInteger(par) ? par : 4,
     stroke_index: Number.isInteger(strokeIndex) ? strokeIndex : (Number.isInteger(holeNumber) ? holeNumber : 1),
     requires_photo: requiresPhoto,
+    longest_drive: isLongestDrive,
+    nearest_pin: isNearestPin,
     is_longest_drive: isLongestDrive,
     is_nearest_pin: isNearestPin,
     is_closest_to_pin: isNearestPin
@@ -732,6 +734,15 @@ app.get('/api/admin/tournament/:id/holes', asyncRoute(async (req, res) => {
         tournamentId,
         normalizedHolesLength: normalizedHoles.length,
         rawApiResponseShape: Array.isArray(holes) ? Object.keys(holes[0] || {}) : [],
+        rawDbSample: Array.isArray(holes) ? holes.slice(0, 2) : [],
+        normalizedFrontendSample: normalizedHoles.slice(0, 2).map((hole) => ({
+          hole_number: hole.hole_number,
+          par: hole.par,
+          stroke_index: hole.stroke_index,
+          requires_photo: hole.requires_photo,
+          longest_drive: hole.longest_drive,
+          nearest_pin: hole.nearest_pin
+        })),
         holesColumns,
         mappedFieldNames: {
           requiresPhoto: mapping.requiresPhotoColumn,
@@ -850,7 +861,23 @@ app.post('/api/admin/tournament/:id/holes', asyncRoute(async (req, res) => {
       tournamentId,
       normalizedHolesLength: normalizedSavedHoles.length,
       rawApiResponseShape: Array.isArray(data) ? Object.keys(data[0] || {}) : [],
-      outgoingSavePayload: requestedHoles,
+      rawDbSample: Array.isArray(data) ? data.slice(0, 2) : [],
+      outgoingSavePayloadSample: normalizedHoles.slice(0, 2).map((hole) => ({
+        hole_number: hole.hole_number,
+        par: hole.par,
+        stroke_index: hole.stroke_index,
+        requires_photo: hole.requires_photo,
+        longest_drive: hole.is_longest_drive,
+        nearest_pin: hole.is_nearest_pin
+      })),
+      postSaveNormalizedSample: normalizedSavedHoles.slice(0, 2).map((hole) => ({
+        hole_number: hole.hole_number,
+        par: hole.par,
+        stroke_index: hole.stroke_index,
+        requires_photo: hole.requires_photo,
+        longest_drive: hole.longest_drive,
+        nearest_pin: hole.nearest_pin
+      })),
       routeUsed: '/api/admin/tournament/:id/holes',
       discoveredTableName: 'holes',
       discoveredLiveColumns: holesColumns,
