@@ -119,28 +119,6 @@ function logApiDebug(tag, data = {}) {
   }
 }
 
-const tableColumnsCache = new Map();
-
-async function getTableColumns(tableName) {
-  if (tableColumnsCache.has(tableName)) return tableColumnsCache.get(tableName);
-  const { data, error } = await supabase
-    .schema('information_schema')
-    .from('columns')
-    .select('column_name')
-    .eq('table_schema', 'public')
-    .eq('table_name', tableName);
-  if (error) throw new Error(`Kunne ikke lese skjema for ${tableName}: ${error.message}`);
-  const columns = new Set((data || []).map((row) => row.column_name));
-  tableColumnsCache.set(tableName, columns);
-  return columns;
-}
-
-function pickColumns(payload, availableColumns) {
-  return Object.fromEntries(
-    Object.entries(payload).filter(([key, value]) => availableColumns.has(key) && value !== undefined)
-  );
-}
-
 function buildDefaultHoles(tournamentId) {
   return Array.from({ length: 18 }, (_, index) => {
     const holeNumber = index + 1;
@@ -180,7 +158,6 @@ async function getActiveTournament() {
 }
 
 async function ensureTournamentHoles(tournamentId) {
-  const holeColumns = await getTableColumns('holes');
   const { data, error } = await supabase
     .from('holes')
     .select('*')
@@ -190,7 +167,7 @@ async function ensureTournamentHoles(tournamentId) {
 
   if ((data || []).length > 0) return data;
 
-  const fallbackHoles = buildDefaultHoles(tournamentId).map((hole) => pickColumns(hole, holeColumns));
+  const fallbackHoles = buildDefaultHoles(tournamentId);
   const { error: insertError } = await supabase
     .from('holes')
     .upsert(fallbackHoles, { onConflict: 'tournament_id,hole_number' });
@@ -504,14 +481,19 @@ app.get('/api/admin/tournament/:id/holes', asyncRoute(async (req, res) => {
   if (!requireSupabase(res)) return;
   if (!requireAdmin(req, res)) return;
   const tournamentId = asInt(req.params.id);
-  console.log('LOAD HOLES tournament_id:', tournamentId);
+  console.log('LOAD HOLES:', tournamentId);
   if (!tournamentId) return fail(res, 400, 'Ugyldig turnerings-ID');
   try {
     const holes = await ensureTournamentHoles(tournamentId);
-    console.log('LOAD HOLES result count:', holes.length);
-    return ok(res, { holes });
+    return res.status(200).json({
+      success: true,
+      data: holes
+    });
   } catch (error) {
-    return fail(res, 500, 'Kunne ikke hente hull', error.message);
+    return res.status(500).json({
+      success: false,
+      error: error.message
+    });
   }
 }));
 
@@ -525,7 +507,6 @@ app.post('/api/admin/tournament/:id/holes', asyncRoute(async (req, res) => {
   const requestedHoles = Array.isArray(req.body?.holes) ? req.body.holes : null;
   if (!requestedHoles) return fail(res, 400, 'holes må være en liste');
 
-  const holeColumns = await getTableColumns('holes');
   const normalizedHoles = requestedHoles.length
     ? requestedHoles.map((hole, index) => normalizeHoleInput(hole, tournamentId, index + 1))
     : buildDefaultHoles(tournamentId);
@@ -543,82 +524,65 @@ app.post('/api/admin/tournament/:id/holes', asyncRoute(async (req, res) => {
     if (typeof hole.is_nearest_pin !== 'boolean') return fail(res, 400, `Ugyldig is_nearest_pin for hull ${hole.hole_number}`);
   }
 
-  console.log('SAVE HOLES payload:', normalizedHoles);
-  const holesToSave = normalizedHoles.map((hole) => pickColumns(hole, holeColumns));
+  console.log('SAVE HOLES:', normalizedHoles);
 
   const { error } = await supabase
     .from('holes')
-    .upsert(holesToSave, { onConflict: 'tournament_id,hole_number' });
-  if (error) return fail(res, 500, 'Kunne ikke lagre hull', error.message);
+    .upsert(normalizedHoles, { onConflict: 'tournament_id,hole_number' });
+  if (error) return res.status(500).json({ success: false, error: error.message });
 
   const { data, error: fetchError } = await supabase
     .from('holes')
     .select('*')
     .eq('tournament_id', tournamentId)
     .order('hole_number', { ascending: true });
-  if (fetchError) return fail(res, 500, 'Hull lagret, men kunne ikke hente oppdatert liste', fetchError.message);
+  if (fetchError) return res.status(500).json({ success: false, error: fetchError.message });
 
-  return ok(res, { holes: data || [] });
+  return res.status(200).json({
+    success: true,
+    data: data || []
+  });
 }));
 
 app.post(['/api/teams', '/api/admin/team'], asyncRoute(async (req, res) => {
   if (!requireSupabase(res)) return;
   if (req.path.includes('/api/admin/') && !requireAdmin(req, res)) return;
-  const b = (req.body && typeof req.body === 'object') ? req.body : {};
-  const tournamentId = asInt(b.tournament_id ?? b.selected_tournament);
-  const teamName = String(b.team_name ?? b.lagnavn ?? b.name ?? '').trim();
-  const player1Name = String(b.player1_name ?? b.player1 ?? '').trim();
-  const player2Name = String(b.player2_name ?? b.player2 ?? '').trim();
-  const pin = String(b.pin_code ?? b.pin ?? '').trim();
-  const hcpPlayer1 = Number(b.hcp_player1 ?? b.player1_handicap ?? b.player1_hcp ?? 0);
-  const hcpPlayer2 = Number(b.hcp_player2 ?? b.player2_handicap ?? b.player2_hcp ?? 0);
+  try {
+    const b = (req.body && typeof req.body === 'object') ? req.body : {};
+    console.log('TEAM PAYLOAD:', b);
+    console.log(await supabase.from('teams').select('*').limit(1));
 
-  if (!tournamentId) return fail(res, 400, 'tournament_id er påkrevd');
-  if (!teamName) return fail(res, 400, 'team_name er påkrevd');
-  if (!player1Name || !player2Name) return fail(res, 400, 'player1_name og player2_name er påkrevd');
-  if (!/^\d{4}$/.test(pin)) return fail(res, 400, 'PIN må være nøyaktig 4 siffer');
-  if (!Number.isFinite(hcpPlayer1) || !Number.isFinite(hcpPlayer2)) return fail(res, 400, 'hcp_player1 og hcp_player2 må være tall');
+    const finalPayload = {
+      tournament_id: Number(b.tournament_id),
+      name: b.team_name,
+      player1: b.player1_name || '',
+      player2: b.player2_name || '',
+      pin: String(b.pin),
+      hcp1: Number(b.hcp_player1),
+      hcp2: Number(b.hcp_player2)
+    };
 
-  const teamsColumns = await getTableColumns('teams');
-  const candidatePayload = {
-    tournament_id: tournamentId,
-    team_name: teamName,
-    name: teamName,
-    player1: player1Name,
-    player2: player2Name,
-    pin_code: pin,
-    pin,
-    hcp_player1: hcpPlayer1,
-    hcp_player2: hcpPlayer2,
-    player1_hcp: hcpPlayer1,
-    player2_hcp: hcpPlayer2,
-    player1_handicap: hcpPlayer1,
-    player2_handicap: hcpPlayer2
-  };
-  const finalPayload = pickColumns(candidatePayload, teamsColumns);
-  console.log('FINAL TEAM PAYLOAD:', finalPayload);
-
-  const pinColumn = teamsColumns.has('pin_code') ? 'pin_code' : (teamsColumns.has('pin') ? 'pin' : null);
-  if (pinColumn) {
-    const { data: existingPin, error: pinError } = await supabase
-      .from('teams')
-      .select('id')
-      .eq('tournament_id', tournamentId)
-      .eq(pinColumn, pin)
-      .limit(1)
-      .maybeSingle();
-    if (pinError) return fail(res, 500, 'Kunne ikke validere PIN', pinError.message);
-    if (existingPin) return fail(res, 400, 'PIN er allerede i bruk i denne turneringen');
-  }
-
-  const result = await supabase.from('teams').insert(finalPayload).select('*').single();
-  if (result.error) {
-    if (result.error.code === '23505') {
-      return fail(res, 400, 'PIN er allerede i bruk i denne turneringen');
+    if (!Number.isInteger(finalPayload.tournament_id)) return fail(res, 400, 'tournament_id er påkrevd');
+    if (!String(finalPayload.name || '').trim()) return fail(res, 400, 'team_name er påkrevd');
+    if (!/^\d{4}$/.test(finalPayload.pin)) return fail(res, 400, 'PIN må være nøyaktig 4 siffer');
+    if (!Number.isFinite(finalPayload.hcp1) || !Number.isFinite(finalPayload.hcp2)) {
+      return fail(res, 400, 'hcp_player1 og hcp_player2 må være tall');
     }
-    return fail(res, 500, 'Kunne ikke opprette lag', result.error.message);
+
+    const result = await supabase.from('teams').insert(finalPayload).select('*').single();
+    if (result.error) throw result.error;
+
+    return res.status(201).json({
+      success: true,
+      data: result.data
+    });
+  } catch (err) {
+    console.error('TEAM CREATE ERROR:', err);
+    return res.status(500).json({
+      success: false,
+      error: err.message
+    });
   }
-  return ok(res, { team: result.data }, 201);
 }));
 
 app.post('/api/admin/tournament/:id/gallery', upload.single('photo'), asyncRoute(async (req, res) => {
