@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="no">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Administrasjonspanel V2 | Lorgen Invitational</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <main class="container" style="padding: 2rem 0 4rem;">
+    <h1 class="section-title">Administrasjonspanel <span>V2</span></h1>
+
+    <section class="card" style="padding:1rem;margin:1rem 0;">
+      <h2>1. Aktiv turnering</h2>
+      <select id="tournamentSelect"></select>
+      <button class="btn btn--gold" id="reloadBtn" type="button">Last inn V2-data</button>
+      <p id="statusText"></p>
+    </section>
+
+    <section class="card" style="padding:1rem;margin:1rem 0;">
+      <h2>2. Lag (V2)</h2>
+      <form id="teamForm">
+        <input id="teamName" placeholder="Lagnavn" required />
+        <input id="player1Name" placeholder="Spiller 1" required />
+        <input id="player2Name" placeholder="Spiller 2" required />
+        <input id="pin" placeholder="PIN (4 siffer)" pattern="\\d{4}" required />
+        <input id="hcp1" type="number" placeholder="HCP spiller 1" value="0" />
+        <input id="hcp2" type="number" placeholder="HCP spiller 2" value="0" />
+        <button class="btn btn--gold" type="submit">Opprett lag</button>
+      </form>
+      <table style="width:100%;margin-top:1rem;">
+        <thead><tr><th>ID</th><th>Lag</th><th>Spiller 1</th><th>Spiller 2</th><th>PIN</th></tr></thead>
+        <tbody id="teamsBody"></tbody>
+      </table>
+    </section>
+
+    <section class="card" style="padding:1rem;margin:1rem 0;">
+      <h2>3. Hulloppsett (V2)</h2>
+      <button class="btn btn--gold" id="saveHolesBtn" type="button">Lagre hull</button>
+      <table style="width:100%;margin-top:1rem;">
+        <thead><tr><th>Hull</th><th>Par</th><th>SI</th><th>Foto</th><th>LD</th><th>NF</th></tr></thead>
+        <tbody id="holesBody"></tbody>
+      </table>
+    </section>
+
+    <section class="card" style="padding:1rem;margin:1rem 0;">
+      <h2>4. Coin-back opplasting (V2)</h2>
+      <form id="uploadForm">
+        <input type="file" id="coinBackFile" accept="image/*" required />
+        <button class="btn btn--gold" type="submit">Last opp</button>
+      </form>
+      <p id="uploadResult"></p>
+    </section>
+
+    <section class="card" style="padding:1rem;margin:1rem 0;">
+      <h2>5. Lenker</h2>
+      <a class="btn btn--outline" href="/scoreboard.html">Live resultattavle</a>
+      <a class="btn btn--outline" id="scorecardLink" href="#">Eksempel scorecard V2</a>
+    </section>
+  </main>
+
+  <script>
+    let selectedTournamentId = null;
+    let holesState = [];
+    let teamsState = [];
+
+    async function apiFetch(url, options = {}) {
+      const response = await fetch(url, {
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+        ...options
+      });
+      const json = await response.json();
+      if (!response.ok || json.success === false) {
+        throw new Error(json.error || 'Ukjent feil');
+      }
+      return json;
+    }
+
+    async function loadTournaments() {
+      const json = await apiFetch('/api/admin/tournaments');
+      const select = document.getElementById('tournamentSelect');
+      select.innerHTML = '';
+      (json.tournaments || []).forEach((tournament) => {
+        const option = document.createElement('option');
+        option.value = tournament.id;
+        option.textContent = `${tournament.name || 'Turnering'} (${tournament.year || ''})`;
+        select.appendChild(option);
+      });
+      selectedTournamentId = Number(select.value || 0);
+    }
+
+    async function loadTournamentHolesV2() {
+      if (!selectedTournamentId) return;
+      const json = await apiFetch(`/api/v2/tournaments/${selectedTournamentId}/holes`);
+      holesState = json.data;
+      const body = document.getElementById('holesBody');
+      body.innerHTML = '';
+
+      holesState.forEach((hole) => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${hole.hole_number}</td>
+          <td><input type="number" min="3" max="6" value="${hole.par}" data-hole="${hole.hole_number}" data-field="par"></td>
+          <td><input type="number" min="1" max="18" value="${hole.stroke_index}" data-hole="${hole.hole_number}" data-field="stroke_index"></td>
+          <td><input type="checkbox" ${hole.requires_photo ? 'checked' : ''} data-hole="${hole.hole_number}" data-field="requires_photo"></td>
+          <td><input type="checkbox" ${hole.is_longest_drive ? 'checked' : ''} data-hole="${hole.hole_number}" data-field="is_longest_drive"></td>
+          <td><input type="checkbox" ${hole.is_nearest_pin ? 'checked' : ''} data-hole="${hole.hole_number}" data-field="is_nearest_pin"></td>
+        `;
+        body.appendChild(row);
+      });
+
+      body.querySelectorAll('input').forEach((input) => {
+        input.addEventListener('change', (event) => {
+          const holeNumber = Number(event.target.dataset.hole);
+          const field = event.target.dataset.field;
+          const hole = holesState.find((h) => h.hole_number === holeNumber);
+          if (!hole) return;
+          hole[field] = event.target.type === 'checkbox' ? event.target.checked : Number(event.target.value);
+        });
+      });
+    }
+
+    async function saveTournamentHolesV2() {
+      await apiFetch(`/api/v2/tournaments/${selectedTournamentId}/holes`, {
+        method: 'POST',
+        body: JSON.stringify({ holes: holesState })
+      });
+      await loadTournamentHolesV2();
+    }
+
+    async function loadTeamsV2() {
+      if (!selectedTournamentId) return;
+      const json = await apiFetch(`/api/v2/teams?tournament_id=${selectedTournamentId}`);
+      teamsState = json.data;
+      const body = document.getElementById('teamsBody');
+      body.innerHTML = '';
+      teamsState.forEach((team) => {
+        const row = document.createElement('tr');
+        row.innerHTML = `<td>${team.id}</td><td>${team.team_name}</td><td>${team.player1_name}</td><td>${team.player2_name}</td><td>${team.pin}</td>`;
+        body.appendChild(row);
+      });
+
+      const scorecardLink = document.getElementById('scorecardLink');
+      if (teamsState[0]) {
+        scorecardLink.href = `/api/v2/scorecard/${selectedTournamentId}/${teamsState[0].id}`;
+      }
+    }
+
+    async function createTeamV2(event) {
+      event.preventDefault();
+      await apiFetch('/api/v2/teams', {
+        method: 'POST',
+        body: JSON.stringify({
+          tournament_id: selectedTournamentId,
+          team_name: document.getElementById('teamName').value,
+          player1_name: document.getElementById('player1Name').value,
+          player2_name: document.getElementById('player2Name').value,
+          pin: document.getElementById('pin').value,
+          hcp_player1: Number(document.getElementById('hcp1').value || 0),
+          hcp_player2: Number(document.getElementById('hcp2').value || 0)
+        })
+      });
+      event.target.reset();
+      await loadTeamsV2();
+    }
+
+    async function uploadCoinBackV2(event) {
+      event.preventDefault();
+      const file = document.getElementById('coinBackFile').files[0];
+      if (!file) return;
+      const formData = new FormData();
+      formData.append('photo', file);
+      const response = await fetch('/api/v2/uploads/coin-back', {
+        method: 'POST',
+        credentials: 'include',
+        body: formData
+      });
+      const json = await response.json();
+      if (!response.ok || json.success === false) {
+        throw new Error(json.error || 'Opplasting feilet');
+      }
+      document.getElementById('uploadResult').textContent = `Lagret: ${json.data.public_url}`;
+    }
+
+    async function loadAllV2() {
+      selectedTournamentId = Number(document.getElementById('tournamentSelect').value || 0);
+      document.getElementById('statusText').textContent = `Aktiv turnering: ${selectedTournamentId}`;
+      await Promise.all([loadTournamentHolesV2(), loadTeamsV2()]);
+    }
+
+    document.getElementById('reloadBtn').addEventListener('click', () => loadAllV2().catch((error) => alert(error.message)));
+    document.getElementById('saveHolesBtn').addEventListener('click', () => saveTournamentHolesV2().catch((error) => alert(error.message)));
+    document.getElementById('teamForm').addEventListener('submit', (event) => createTeamV2(event).catch((error) => alert(error.message)));
+    document.getElementById('uploadForm').addEventListener('submit', (event) => uploadCoinBackV2(event).catch((error) => alert(error.message)));
+    document.getElementById('tournamentSelect').addEventListener('change', () => loadAllV2().catch((error) => alert(error.message)));
+
+    loadTournaments().then(loadAllV2).catch((error) => alert(error.message));
+  </script>
+</body>
+</html>

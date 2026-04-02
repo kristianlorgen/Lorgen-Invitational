@@ -3,7 +3,7 @@
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/[...route]" },
     { "source": "/", "destination": "/index.html" },
-    { "source": "/admin", "destination": "/admin.html" },
+    { "source": "/admin", "destination": "/admin-v2.html" },
     { "source": "/enter-score", "destination": "/enter-score.html" },
     { "source": "/gameday", "destination": "/gameday.html" },
     { "source": "/gallery", "destination": "/gallery.html" },
