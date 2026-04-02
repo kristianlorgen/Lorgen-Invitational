@@ -213,6 +213,123 @@ function normalizeHoleInput(hole = {}, tournamentId, fallbackHoleNumber) {
   };
 }
 
+function parseHoleBoolean(value, fallback = false) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['true', '1', 'yes', 'ja', 'on'].includes(normalized)) return true;
+    if (['false', '0', 'no', 'nei', 'off', ''].includes(normalized)) return false;
+  }
+  if (typeof value === 'number') return value !== 0;
+  return fallback;
+}
+
+function normalizeAdminHoleCards(rawHoles, ownerId, ownerKey) {
+  const list = Array.isArray(rawHoles) ? rawHoles : [];
+  const fallbackList = list.length ? list : Array.from({ length: 18 }, (_, index) => ({ hole_number: index + 1 }));
+  return fallbackList.map((hole, index) => {
+    const holeNumber = asInt(hole?.hole_number ?? hole?.hole ?? hole?.number ?? hole?.nr) || (index + 1);
+    const par = asInt(hole?.par);
+    const strokeIndex = asInt(
+      hole?.stroke_index
+      ?? hole?.strokeIndex
+      ?? hole?.si
+      ?? hole?.SI
+      ?? hole?.stroke
+    );
+    return {
+      owner_id: ownerId,
+      owner_key: ownerKey,
+      hole_number: holeNumber,
+      par: Number.isInteger(par) ? par : 4,
+      stroke_index: Number.isInteger(strokeIndex) ? strokeIndex : holeNumber,
+      requires_photo: parseHoleBoolean(hole?.requires_photo ?? hole?.photo_required ?? hole?.requiresPhoto),
+      is_longest_drive: parseHoleBoolean(hole?.is_longest_drive ?? hole?.longest_drive ?? hole?.ld),
+      is_nearest_pin: parseHoleBoolean(hole?.is_nearest_pin ?? hole?.is_closest_to_pin ?? hole?.nearest_pin ?? hole?.nf)
+    };
+  });
+}
+
+function pickFirstExisting(columns, candidates = []) {
+  const normalized = new Set((columns || []).map((column) => String(column).toLowerCase()));
+  const lookup = new Map((columns || []).map((column) => [String(column).toLowerCase(), column]));
+  for (const candidate of candidates) {
+    const key = String(candidate).toLowerCase();
+    if (normalized.has(key)) return lookup.get(key);
+  }
+  return null;
+}
+
+function mapNormalizedHoleToDb(normalizedHole, mapping) {
+  const row = {};
+  const skippedFields = [];
+  const supportMatrix = [
+    ['hole_number', mapping.holeNumberColumn],
+    ['par', mapping.parColumn],
+    ['stroke_index', mapping.strokeIndexColumn],
+    ['requires_photo', mapping.requiresPhotoColumn],
+    ['is_longest_drive', mapping.longestDriveColumn],
+    ['is_nearest_pin', mapping.nearestPinColumn]
+  ];
+
+  if (mapping.ownerColumn) {
+    row[mapping.ownerColumn] = normalizedHole.owner_id;
+  }
+  for (const [sourceKey, destinationColumn] of supportMatrix) {
+    if (!destinationColumn) {
+      skippedFields.push(sourceKey);
+      continue;
+    }
+    row[destinationColumn] = normalizedHole[sourceKey];
+  }
+  return { row, skippedFields };
+}
+
+function buildHoleDbMapping(columns, options = {}) {
+  const ownerType = options.ownerType || 'tournament';
+  const ownerColumnCandidates = ownerType === 'course'
+    ? ['course_id', 'course_template_id', 'courseid']
+    : ['tournament_id', 'tournamentid'];
+  return {
+    ownerColumn: pickFirstExisting(columns, ownerColumnCandidates),
+    holeNumberColumn: pickFirstExisting(columns, ['hole_number', 'hole', 'holenumber']),
+    parColumn: pickFirstExisting(columns, ['par']),
+    strokeIndexColumn: pickFirstExisting(columns, ['stroke_index', 'si', 'strokeindex']),
+    requiresPhotoColumn: pickFirstExisting(columns, ['requires_photo', 'photo_required', 'photo_required_for_hole']),
+    longestDriveColumn: pickFirstExisting(columns, ['is_longest_drive', 'longest_drive', 'longest_drive_hole']),
+    nearestPinColumn: pickFirstExisting(columns, ['is_nearest_pin', 'is_closest_to_pin', 'nearest_pin', 'closest_to_pin'])
+  };
+}
+
+async function discoverCourseHolesStore() {
+  const candidateTables = [
+    'course_holes',
+    'courses_holes',
+    'course_template_holes',
+    'course_templates_holes',
+    'holes_templates',
+    'holes_template',
+    'holes'
+  ];
+  for (const tableName of candidateTables) {
+    const columns = await fetchTableColumns(tableName);
+    if (!columns.length) continue;
+    const mapping = buildHoleDbMapping(columns, { ownerType: 'course' });
+    if (mapping.ownerColumn && mapping.holeNumberColumn) {
+      return { tableName, columns, mapping, mode: 'rows' };
+    }
+  }
+
+  const coursesColumns = await fetchTableColumns('courses');
+  if (coursesColumns.length) {
+    const jsonColumn = pickFirstExisting(coursesColumns, ['holes', 'holes_json', 'hole_config', 'hole_configuration', 'hole_template']);
+    if (jsonColumn) {
+      return { tableName: 'courses', columns: coursesColumns, jsonColumn, mode: 'json' };
+    }
+  }
+  return null;
+}
+
 async function getActiveTournament() {
   const { data } = await supabase.from('tournaments').select('*').in('status', ['active', 'upcoming']).order('status', { ascending: true }).order('id').limit(1).maybeSingle();
   return data || null;
@@ -604,9 +721,7 @@ app.post('/api/admin/tournament/:id/holes', asyncRoute(async (req, res) => {
   ]);
   console.log('[api:admin-holes:save] schema columns', { holesColumns, tournamentsColumns });
 
-  const normalizedHoles = requestedHoles.length
-    ? requestedHoles.map((hole, index) => normalizeHoleInput(hole, tournamentId, index + 1))
-    : buildDefaultHoles(tournamentId);
+  const normalizedHoles = normalizeAdminHoleCards(requestedHoles, tournamentId, 'tournament');
 
   for (const hole of normalizedHoles) {
     if (!Number.isInteger(hole.hole_number) || hole.hole_number < 1 || hole.hole_number > 18) {
@@ -616,53 +731,283 @@ app.post('/api/admin/tournament/:id/holes', asyncRoute(async (req, res) => {
     if (!Number.isInteger(hole.stroke_index) || hole.stroke_index < 1 || hole.stroke_index > 18) {
       return fail(res, 400, `Ugyldig stroke_index for hull ${hole.hole_number}`);
     }
-    if (typeof hole.requires_photo !== 'boolean') return fail(res, 400, `Ugyldig requires_photo for hull ${hole.hole_number}`);
-    if (typeof hole.is_longest_drive !== 'boolean') return fail(res, 400, `Ugyldig is_longest_drive for hull ${hole.hole_number}`);
-    if (typeof hole.is_nearest_pin !== 'boolean') return fail(res, 400, `Ugyldig is_nearest_pin for hull ${hole.hole_number}`);
   }
 
-  console.log('SAVE HOLES:', normalizedHoles);
-
-  const requiredHoleColumns = ['tournament_id', 'hole_number', 'par', 'stroke_index', 'requires_photo', 'is_longest_drive', 'is_nearest_pin'];
-  const unmappedHoleFields = requiredHoleColumns.filter((field) => !holesColumns.includes(field));
-  if (unmappedHoleFields.length) {
+  const mapping = buildHoleDbMapping(holesColumns, { ownerType: 'tournament' });
+  if (!mapping.ownerColumn || !mapping.holeNumberColumn) {
     return res.status(500).json({
       success: false,
-      error: 'public.holes støtter ikke nødvendig felter for admin-hulloppsett',
-      actualColumns: holesColumns,
-      unmappedFrontendFields: unmappedHoleFields,
-      stackHint: 'admin_holes_save'
+      error: 'public.holes støtter ikke nødvendige felter for admin-hulloppsett',
+      stackHint: 'admin_tournament_holes_save',
+      debug: {
+        routeUsed: '/api/admin/tournament/:id/holes',
+        discoveredTableName: 'holes',
+        discoveredLiveColumns: holesColumns,
+        requiredOwnerColumn: mapping.ownerColumn,
+        requiredHoleNumberColumn: mapping.holeNumberColumn
+      }
     });
   }
 
-  const insertPayload = normalizedHoles.map((hole) => {
-    const row = {};
-    for (const [key, value] of Object.entries(hole)) {
-      if (holesColumns.includes(key)) row[key] = value;
-    }
+  const skippedFieldSet = new Set();
+  const persistedPayload = normalizedHoles.map((hole) => {
+    const { row, skippedFields } = mapNormalizedHoleToDb(hole, mapping);
+    skippedFields.forEach((field) => skippedFieldSet.add(field));
     return row;
   });
 
   const { error } = await supabase
     .from('holes')
-    .upsert(insertPayload, { onConflict: 'tournament_id,hole_number' });
-  if (error) return res.status(500).json({ success: false, error: error.message });
+    .upsert(persistedPayload, { onConflict: `${mapping.ownerColumn},${mapping.holeNumberColumn}` });
+  if (error) {
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+      stackHint: 'admin_tournament_holes_save',
+      debug: {
+        routeUsed: '/api/admin/tournament/:id/holes',
+        discoveredTableName: 'holes',
+        discoveredLiveColumns: holesColumns,
+        normalizedIncomingPayload: normalizedHoles,
+        finalPersistedPayload: persistedPayload,
+        skippedUnsupportedFields: [...skippedFieldSet]
+      }
+    });
+  }
 
   const { data, error: fetchError } = await supabase
     .from('holes')
     .select(holesColumns.join(','))
-    .eq('tournament_id', tournamentId)
-    .order('hole_number', { ascending: true });
-  if (fetchError) return res.status(500).json({ success: false, error: fetchError.message });
+    .eq(mapping.ownerColumn, tournamentId)
+    .order(mapping.holeNumberColumn, { ascending: true });
+  if (fetchError) {
+    return res.status(500).json({
+      success: false,
+      error: fetchError.message,
+      stackHint: 'admin_tournament_holes_save',
+      debug: {
+        routeUsed: '/api/admin/tournament/:id/holes',
+        discoveredTableName: 'holes',
+        discoveredLiveColumns: holesColumns
+      }
+    });
+  }
 
   return res.status(200).json({
     success: true,
     data: data || [],
+    holes: data || [],
     debug: {
-      holesColumns,
+      routeUsed: '/api/admin/tournament/:id/holes',
+      discoveredTableName: 'holes',
+      discoveredLiveColumns: holesColumns,
+      normalizedIncomingPayload: normalizedHoles,
+      finalPersistedPayload: persistedPayload,
+      skippedUnsupportedFields: [...skippedFieldSet],
+      insertUpdateResultCount: persistedPayload.length,
       tournamentsColumns,
-      finalInsertPayload: insertPayload,
-      stackHint: 'admin_holes_save'
+      stackHint: 'admin_tournament_holes_save'
+    }
+  });
+}));
+
+app.get('/api/admin/course/:id/holes', asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
+  if (!requireAdmin(req, res)) return;
+  const courseId = asInt(req.params.id);
+  if (!courseId) return fail(res, 400, 'Ugyldig bane-ID');
+
+  const store = await discoverCourseHolesStore();
+  if (!store) {
+    return res.status(500).json({
+      success: false,
+      error: 'Fant ingen lagringsmodell for bane-hull',
+      stackHint: 'admin_course_holes_load',
+      debug: {
+        routeUsed: '/api/admin/course/:id/holes'
+      }
+    });
+  }
+
+  if (store.mode === 'json') {
+    const { data, error } = await supabase
+      .from('courses')
+      .select(`id,${store.jsonColumn}`)
+      .eq('id', courseId)
+      .maybeSingle();
+    if (error) {
+      return res.status(500).json({
+        success: false,
+        error: error.message,
+        stackHint: 'admin_course_holes_load',
+        debug: {
+          routeUsed: '/api/admin/course/:id/holes',
+          discoveredTableName: store.tableName,
+          discoveredLiveColumns: store.columns
+        }
+      });
+    }
+    const holes = Array.isArray(data?.[store.jsonColumn]) ? data[store.jsonColumn] : [];
+    return res.status(200).json({
+      success: true,
+      data: holes,
+      holes,
+      debug: {
+        routeUsed: '/api/admin/course/:id/holes',
+        discoveredTableName: store.tableName,
+        discoveredLiveColumns: store.columns
+      }
+    });
+  }
+
+  const { data, error } = await supabase
+    .from(store.tableName)
+    .select(store.columns.join(','))
+    .eq(store.mapping.ownerColumn, courseId)
+    .order(store.mapping.holeNumberColumn, { ascending: true });
+  if (error) {
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+      stackHint: 'admin_course_holes_load',
+      debug: {
+        routeUsed: '/api/admin/course/:id/holes',
+        discoveredTableName: store.tableName,
+        discoveredLiveColumns: store.columns
+      }
+    });
+  }
+  return res.status(200).json({
+    success: true,
+    data: data || [],
+    holes: data || [],
+    debug: {
+      routeUsed: '/api/admin/course/:id/holes',
+      discoveredTableName: store.tableName,
+      discoveredLiveColumns: store.columns
+    }
+  });
+}));
+
+app.post('/api/admin/course/:id/holes', asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
+  if (!requireAdmin(req, res)) return;
+  const courseId = asInt(req.params.id);
+  if (!courseId) return fail(res, 400, 'Ugyldig bane-ID');
+  const requestedHoles = Array.isArray(req.body?.holes) ? req.body.holes : null;
+  if (!requestedHoles) return fail(res, 400, 'holes må være en liste');
+
+  const store = await discoverCourseHolesStore();
+  if (!store) {
+    return res.status(500).json({
+      success: false,
+      error: 'Fant ingen lagringsmodell for bane-hull',
+      stackHint: 'admin_course_holes_save',
+      debug: {
+        routeUsed: '/api/admin/course/:id/holes'
+      }
+    });
+  }
+
+  const normalizedHoles = normalizeAdminHoleCards(requestedHoles, courseId, 'course');
+  const skippedFieldSet = new Set();
+
+  if (store.mode === 'json') {
+    const { error } = await supabase
+      .from('courses')
+      .update({ [store.jsonColumn]: normalizedHoles })
+      .eq('id', courseId);
+    if (error) {
+      return res.status(500).json({
+        success: false,
+        error: error.message,
+        stackHint: 'admin_course_holes_save',
+        debug: {
+          routeUsed: '/api/admin/course/:id/holes',
+          discoveredTableName: store.tableName,
+          discoveredLiveColumns: store.columns,
+          normalizedIncomingPayload: normalizedHoles,
+          finalPersistedPayload: [{ id: courseId, [store.jsonColumn]: normalizedHoles }],
+          skippedUnsupportedFields: []
+        }
+      });
+    }
+    const { data } = await supabase.from('courses').select(`id,${store.jsonColumn}`).eq('id', courseId).maybeSingle();
+    const holes = Array.isArray(data?.[store.jsonColumn]) ? data[store.jsonColumn] : [];
+    return res.status(200).json({
+      success: true,
+      data: holes,
+      holes,
+      debug: {
+        routeUsed: '/api/admin/course/:id/holes',
+        discoveredTableName: store.tableName,
+        discoveredLiveColumns: store.columns,
+        normalizedIncomingPayload: normalizedHoles,
+        finalPersistedPayload: [{ id: courseId, [store.jsonColumn]: normalizedHoles }],
+        skippedUnsupportedFields: [],
+        insertUpdateResultCount: 1
+      }
+    });
+  }
+
+  const persistedPayload = normalizedHoles.map((hole) => {
+    const { row, skippedFields } = mapNormalizedHoleToDb(hole, store.mapping);
+    skippedFields.forEach((field) => skippedFieldSet.add(field));
+    return row;
+  });
+
+  const { error } = await supabase
+    .from(store.tableName)
+    .upsert(persistedPayload, { onConflict: `${store.mapping.ownerColumn},${store.mapping.holeNumberColumn}` });
+  if (error) {
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+      stackHint: 'admin_course_holes_save',
+      debug: {
+        routeUsed: '/api/admin/course/:id/holes',
+        discoveredTableName: store.tableName,
+        discoveredLiveColumns: store.columns,
+        normalizedIncomingPayload: normalizedHoles,
+        finalPersistedPayload: persistedPayload,
+        skippedUnsupportedFields: [...skippedFieldSet]
+      }
+    });
+  }
+
+  const { data, error: fetchError } = await supabase
+    .from(store.tableName)
+    .select(store.columns.join(','))
+    .eq(store.mapping.ownerColumn, courseId)
+    .order(store.mapping.holeNumberColumn, { ascending: true });
+  if (fetchError) {
+    return res.status(500).json({
+      success: false,
+      error: fetchError.message,
+      stackHint: 'admin_course_holes_save',
+      debug: {
+        routeUsed: '/api/admin/course/:id/holes',
+        discoveredTableName: store.tableName,
+        discoveredLiveColumns: store.columns,
+        normalizedIncomingPayload: normalizedHoles,
+        finalPersistedPayload: persistedPayload,
+        skippedUnsupportedFields: [...skippedFieldSet]
+      }
+    });
+  }
+
+  return res.status(200).json({
+    success: true,
+    data: data || [],
+    holes: data || [],
+    debug: {
+      routeUsed: '/api/admin/course/:id/holes',
+      discoveredTableName: store.tableName,
+      discoveredLiveColumns: store.columns,
+      normalizedIncomingPayload: normalizedHoles,
+      finalPersistedPayload: persistedPayload,
+      skippedUnsupportedFields: [...skippedFieldSet],
+      insertUpdateResultCount: persistedPayload.length
     }
   });
 }));
