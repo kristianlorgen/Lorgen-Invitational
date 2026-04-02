@@ -939,13 +939,29 @@ function renderTournamentsTable() {
 }
 
 async function createTournament() {
-  const name='Lorgen Invitational', date=document.getElementById('tDate').value, course=document.getElementById('tCourse').value,
+  const name=(document.getElementById('tName').value || 'Lorgen Invitational').trim(), date=document.getElementById('tDate').value, course=document.getElementById('tCourse').value,
         description=document.getElementById('tDesc').value,
         slope_rating=document.getElementById('tSlope').value||113;
   const year = date ? new Date(date).getFullYear() : null;
   if (!year||!date) { showToast('Dato og klokkeslett er påkrevd','error'); return; }
   try {
-    await api('/api/admin/tournaments',{method:'POST',body:JSON.stringify({year,name,date,course,description,slope_rating,status:'upcoming'})});
+    const response = await fetch('/api/admin/tournaments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name,
+        date,
+        course,
+        description,
+        slope_rating,
+        year,
+        status: 'upcoming'
+      })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.success === false) {
+      throw new Error(payload.error || `Serverfeil (${response.status})`);
+    }
     showToast('Turnering opprettet!');
     ['tDate','tCourse','tDesc'].forEach(id=>document.getElementById(id).value='');
     document.getElementById('tName').value='Lorgen Invitational';

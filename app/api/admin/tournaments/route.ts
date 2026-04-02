@@ -26,26 +26,35 @@ export async function POST(request: Request) {
     if (unauthorized) return unauthorized;
 
     const body = await request.json();
-    const status = (body.status ?? 'upcoming') as TournamentStatus;
-    const year = Number(body.year);
-    const slopeRating = Number(body.slope_rating);
-    const date = typeof body.date === 'string' ? body.date : '';
-    const description = typeof body.description === 'string' ? body.description : '';
+    console.log('CREATE TOURNAMENT BODY:', body);
+    const {
+      name,
+      date,
+      course,
+      description = '',
+      slope_rating = 113,
+      year = date ? new Date(date).getFullYear() : undefined,
+      status = 'upcoming'
+    } = body ?? {};
+    const parsedYear = Number(year);
+    const slopeRating = Number(slope_rating);
+    const parsedDate = typeof date === 'string' ? date : '';
+    const parsedDescription = typeof description === 'string' ? description : '';
     const gamedayInfo = typeof body.gameday_info === 'string' ? body.gameday_info : '';
 
-    if (!body.name || !body.course) {
+    if (!name || !course) {
       return fail('name and course are required', 400);
     }
 
     const { data, error } = await supabaseAdmin
       .from('tournaments')
       .insert({
-        name: body.name,
-        course: body.course,
-        status,
-        ...(Number.isFinite(year) ? { year } : {}),
-        ...(date ? { date } : {}),
-        ...(description ? { description } : {}),
+        name,
+        course,
+        status: status as TournamentStatus,
+        ...(Number.isFinite(parsedYear) ? { year: parsedYear } : {}),
+        ...(parsedDate ? { date: parsedDate } : {}),
+        ...(parsedDescription ? { description: parsedDescription } : {}),
         ...(gamedayInfo ? { gameday_info: gamedayInfo } : {}),
         ...(Number.isFinite(slopeRating) ? { slope_rating: slopeRating } : {})
       })
@@ -55,6 +64,7 @@ export async function POST(request: Request) {
     if (error) return fail('Failed to create tournament', 500, error.message);
     return ok({ tournament: data }, 201);
   } catch (error) {
-    return fail('Unexpected server error', 500, error);
+    const message = error instanceof Error ? error.message : 'Unexpected server error';
+    return Response.json({ success: false, error: message }, { status: 500 });
   }
 }

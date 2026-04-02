@@ -179,17 +179,38 @@ app.get('/api/admin/tournaments', asyncRoute(async (req, res) => {
   return ok(res, { tournaments: data || [] });
 }));
 
-app.post(['/api/admin/tournaments', '/api/admin/tournament'], asyncRoute(async (req, res) => {
+app.post('/api/admin/tournaments', asyncRoute(async (req, res) => {
   if (!requireAdmin(req, res)) return;
-  const body = req.body || {};
-  if (!body.name || !body.course) return fail(res, 400, 'name og course er påkrevd');
-  const payload = {
-    name: String(body.name), course: String(body.course), status: body.status || 'upcoming',
-    year: asInt(body.year), date: body.date || null, description: body.description || '', slope_rating: Number(body.slope_rating || 113)
-  };
-  const { data, error } = await supabase.from('tournaments').insert(payload).select('*').single();
-  if (error) return fail(res, 500, 'Kunne ikke opprette turnering', error.message);
-  return ok(res, { tournament: data }, 201);
+  try {
+    console.log('CREATE TOURNAMENT BODY:', req.body);
+    const body = req.body || {};
+    const {
+      name,
+      date,
+      course,
+      description = '',
+      slope_rating = 113,
+      year = date ? new Date(date).getFullYear() : null,
+      status = 'upcoming'
+    } = body;
+
+    if (!name || !course) return fail(res, 400, 'name og course er påkrevd');
+
+    const payload = {
+      name: String(name),
+      course: String(course),
+      status,
+      year: asInt(year),
+      date: date || null,
+      description: String(description),
+      slope_rating: Number(slope_rating)
+    };
+    const { data, error } = await supabase.from('tournaments').insert(payload).select('*').single();
+    if (error) throw error;
+    return ok(res, { tournament: data }, 201);
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
 }));
 
 app.put('/api/admin/tournament/:id', asyncRoute(async (req, res) => {
