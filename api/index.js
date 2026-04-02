@@ -226,40 +226,95 @@ app.get('/api/admin/tournaments', asyncRoute(async (req, res) => {
   return ok(res, { tournaments: data || [] });
 }));
 
-app.post('/api/admin/tournaments', asyncRoute(async (req, res) => {
-  if (!requireSupabase(res)) return;
-  if (!requireAdmin(req, res)) return;
+function parseTournamentCreateBody(req) {
+  const body = req.body || {};
+  const name = String(body.name || '').trim();
+  const date = String(body.date || '').trim();
+  const course = String(body.course || '').trim();
+  const description = String(body.description || '');
+  const slope_rating = Number(body.slope_rating || 113);
+  const year = body.year ? Number(body.year) : (date ? new Date(date).getFullYear() : new Date().getFullYear());
+  const status = String(body.status || 'upcoming');
+  const missing = [];
+  if (!name) missing.push('name');
+  if (!date) missing.push('date');
+  if (!course) missing.push('course');
+  return { body, name, date, course, description, slope_rating, year, status, missing };
+}
+
+function buildTournamentInsertPayload(parsed) {
+  // Current schema in this repo (see supabase/migrations/20260331_rebuild_backend_bigint.sql)
+  // only guarantees these columns on public.tournaments.
+  return {
+    name: parsed.name,
+    course: parsed.course,
+    status: parsed.status
+  };
+}
+
+async function handleAdminCreateTournament(req, res, options = {}) {
+  const { dryRun = false, stackHint = 'admin_create_tournament' } = options;
   try {
-    console.log('CREATE TOURNAMENT BODY:', req.body);
-    const body = req.body || {};
-    const {
-      name,
-      date,
-      course,
-      description = '',
-      slope_rating = 113,
-      year = date ? new Date(date).getFullYear() : null,
-      status = 'upcoming'
-    } = body;
+    console.log('[api:admin-create-tournament] route hit', {
+      method: req.method,
+      path: req.path,
+      body: req.body || {}
+    });
 
-    if (!name || !course) return fail(res, 400, 'name og course er påkrevd');
+    if (!requireSupabase(res)) return;
 
-    const payload = {
-      name: String(name),
-      course: String(course),
-      status,
-      year: asInt(year),
-      date: date || null,
-      description: String(description),
-      slope_rating: Number(slope_rating)
-    };
+    const adminSession = getAdminSession(req);
+    const isAdmin = Boolean(adminSession?.role === 'admin');
+    console.log('[api:admin-create-tournament] admin auth result', {
+      isAdmin,
+      hasSession: Boolean(adminSession),
+      role: adminSession?.role || null
+    });
+    if (!isAdmin) {
+      return res.status(401).json({ success: false, error: 'Admin authentication required' });
+    }
+
+    const parsed = parseTournamentCreateBody(req);
+    console.log('[api:admin-create-tournament] parsed values', {
+      name: parsed.name,
+      date: parsed.date,
+      course: parsed.course,
+      description: parsed.description,
+      slope_rating: parsed.slope_rating,
+      year: parsed.year,
+      status: parsed.status
+    });
+
+    if (parsed.missing.length) {
+      return res.status(400).json({ success: false, error: 'Mangler required fields', missing: parsed.missing });
+    }
+
+    const payload = buildTournamentInsertPayload(parsed);
+    if (dryRun) {
+      return res.status(200).json({ success: true, validated: true, payload });
+    }
+
+    console.log('[api:admin-create-tournament] insert payload', payload);
     const { data, error } = await supabase.from('tournaments').insert(payload).select('*').single();
-    if (error) throw error;
-    return ok(res, { tournament: data }, 201);
+    console.log('[api:admin-create-tournament] supabase returned data', data || null);
+    console.log('[api:admin-create-tournament] supabase returned error', error || null);
+
+    if (error) {
+      return res.status(500).json({ success: false, error: error.message, stackHint });
+    }
+    return res.status(201).json({ success: true, tournament: data });
   } catch (error) {
-    return res.status(500).json({ success: false, error: error.message });
+    console.error('[api:admin-create-tournament] unexpected error', error);
+    return res.status(500).json({
+      success: false,
+      error: error?.message || 'Uventet serverfeil',
+      stackHint
+    });
   }
-}));
+}
+
+app.post('/api/admin/tournaments', async (req, res) => handleAdminCreateTournament(req, res));
+app.post('/api/debug/admin-create-tournament', async (req, res) => handleAdminCreateTournament(req, res, { dryRun: true, stackHint: 'admin_create_tournament_debug' }));
 
 app.put('/api/admin/tournament/:id', asyncRoute(async (req, res) => {
   if (!requireSupabase(res)) return;
