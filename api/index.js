@@ -686,16 +686,16 @@ app.post(['/api/teams', '/api/admin/team'], asyncRoute(async (req, res) => {
     if (!team_name) return fail(res, 400, 'team_name er påkrevd');
     if (!/^\d{4}$/.test(pin)) return fail(res, 400, 'PIN må være nøyaktig 4 siffer');
 
-    const finalPayload = {
+    const finalInsertPayload = {
       tournament_id: Number(tournament_id),
-      team_name: team_name,
-      player1: player1_name,
-      player2: player2_name,
-      pin_code: pin
+      name: String(team_name).trim(),
+      player1: String(player1_name || '').trim(),
+      player2: String(player2_name || '').trim(),
+      pin_code: String(pin).trim()
     };
 
-    console.log('[api:admin-team:create] final insert payload', finalPayload);
-    const result = await supabase.from('teams').insert(finalPayload).select('*').single();
+    console.log('[api:admin-team:create] finalInsertPayload', finalInsertPayload);
+    const result = await supabase.from('teams').insert(finalInsertPayload).select('*').single();
 
     if (result.error) {
       console.error('[api:admin-team:create] supabase error object', result.error);
