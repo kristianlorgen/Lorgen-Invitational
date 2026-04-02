@@ -5,6 +5,7 @@ const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 12 * 1024 * 1024 } });
+const bootTimestamp = Date.now();
 
 app.use(express.json({ limit: '4mb' }));
 app.use(express.urlencoded({ extended: true }));
@@ -14,14 +15,38 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const SESSION_SECRET = process.env.SESSION_SECRET || process.env.AUTH_SECRET || 'dev-secret';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const GALLERY_BUCKET = process.env.SUPABASE_GALLERY_BUCKET || 'tournament-gallery';
+const startupIssues = [];
 
-if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-  throw new Error('Missing required Supabase env vars: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY');
+if (!SUPABASE_URL) startupIssues.push('SUPABASE_URL mangler');
+if (!SUPABASE_SERVICE_ROLE_KEY) startupIssues.push('SUPABASE_SERVICE_ROLE_KEY mangler');
+if (!process.env.SESSION_SECRET && !process.env.AUTH_SECRET) {
+  startupIssues.push('SESSION_SECRET/AUTH_SECRET mangler (fallback dev-secret brukes)');
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-  auth: { persistSession: false, autoRefreshToken: false }
+let supabase = null;
+let supabaseInitError = null;
+try {
+  if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+    supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false }
+    });
+  } else {
+    supabaseInitError = 'Manglende Supabase-miljøvariabler';
+  }
+} catch (error) {
+  supabaseInitError = error?.message || 'Ukjent Supabase init-feil';
+}
+
+console.log('[api:boot] Express API starter', {
+  bootTimestamp,
+  hasSupabaseUrl: Boolean(SUPABASE_URL),
+  hasSupabaseServiceRoleKey: Boolean(SUPABASE_SERVICE_ROLE_KEY),
+  hasSessionSecret: Boolean(process.env.SESSION_SECRET || process.env.AUTH_SECRET),
+  startupIssues
 });
+if (supabaseInitError) {
+  console.error('[api:boot] Supabase init-feil:', supabaseInitError);
+}
 
 app.use((req, _res, next) => {
   console.log(`[api:hit] ${req.method} ${req.path}`);
@@ -34,6 +59,13 @@ app.use((req, _res, next) => {
 function ok(res, data = {}, status = 200) { return res.status(status).json({ success: true, ...data }); }
 function fail(res, status, error, details) {
   return res.status(status).json({ success: false, error, ...(details ? { details } : {}) });
+}
+function requireSupabase(res) {
+  if (supabase) return true;
+  return fail(res, 503, 'API ikke klar', {
+    startupIssues,
+    supabaseInitError: supabaseInitError || null
+  });
 }
 function asInt(v) { const n = Number(v); return Number.isInteger(n) ? n : null; }
 function parseCookies(req) {
@@ -148,6 +180,7 @@ app.post('/api/auth/admin-login', asyncRoute(async (req, res) => {
 }));
 
 app.post('/api/auth/team-login', asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
   const pin = String(req.body?.pin || '').trim();
   if (!/^\d{4}$/.test(pin)) return fail(res, 400, 'PIN må være nøyaktig 4 siffer');
   const { data: team, error } = await supabase.from('teams').select('*').or(`pin_code.eq.${pin},pin.eq.${pin}`).limit(1).maybeSingle();
@@ -166,13 +199,27 @@ app.post('/api/auth/logout', asyncRoute(async (_req, res) => {
   return ok(res, { loggedOut: true });
 }));
 
+app.get('/api/health', (_req, res) => {
+  const healthy = Boolean(supabase);
+  return res.status(healthy ? 200 : 503).json({
+    success: true,
+    ok: healthy,
+    runtime: 'express',
+    timestamp: Date.now(),
+    ...(healthy ? {} : { startupIssues, supabaseInitError })
+  });
+});
+
 app.get('/api/auth/status', asyncRoute(async (req, res) => {
   const admin = getAdminSession(req);
   if (admin?.role === 'admin') return ok(res, { authenticated: true, type: 'admin', role: 'admin' });
-  return fail(res, 401, 'Ikke logget inn');
+  const team = getTeamSession(req);
+  if (team?.type === 'team' && team?.team_id) return ok(res, { authenticated: true, type: 'team' });
+  return ok(res, { authenticated: false, type: null });
 }));
 
 app.get('/api/admin/tournaments', asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
   if (!requireAdmin(req, res)) return;
   const { data, error } = await supabase.from('tournaments').select('*').order('id', { ascending: false });
   if (error) return fail(res, 500, 'Kunne ikke hente turneringer', error.message);
@@ -180,6 +227,7 @@ app.get('/api/admin/tournaments', asyncRoute(async (req, res) => {
 }));
 
 app.post('/api/admin/tournaments', asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
   if (!requireAdmin(req, res)) return;
   try {
     console.log('CREATE TOURNAMENT BODY:', req.body);
@@ -214,6 +262,7 @@ app.post('/api/admin/tournaments', asyncRoute(async (req, res) => {
 }));
 
 app.put('/api/admin/tournament/:id', asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
   if (!requireAdmin(req, res)) return;
   const id = asInt(req.params.id); if (!id) return fail(res, 400, 'Ugyldig turnerings-ID');
   const { data, error } = await supabase.from('tournaments').update(req.body || {}).eq('id', id).select('*').single();
@@ -222,6 +271,7 @@ app.put('/api/admin/tournament/:id', asyncRoute(async (req, res) => {
 }));
 
 app.delete('/api/admin/tournament/:id', asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
   if (!requireAdmin(req, res)) return;
   const id = asInt(req.params.id); if (!id) return fail(res, 400, 'Ugyldig turnerings-ID');
   const { error } = await supabase.from('tournaments').delete().eq('id', id);
@@ -230,6 +280,7 @@ app.delete('/api/admin/tournament/:id', asyncRoute(async (req, res) => {
 }));
 
 app.get('/api/admin/tournament/:id/teams', asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
   if (!requireAdmin(req, res)) return;
   const tournamentId = asInt(req.params.id); if (!tournamentId) return fail(res, 400, 'Ugyldig turnerings-ID');
   const { data, error } = await supabase.from('teams').select('*').eq('tournament_id', tournamentId).order('id');
@@ -238,6 +289,7 @@ app.get('/api/admin/tournament/:id/teams', asyncRoute(async (req, res) => {
 }));
 
 app.get('/api/admin/tournament/:id/scores', asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
   if (!requireAdmin(req, res)) return;
   const tournamentId = asInt(req.params.id); if (!tournamentId) return fail(res, 400, 'Ugyldig turnerings-ID');
   const { data, error } = await supabase.from('scores').select('*').eq('tournament_id', tournamentId).order('hole_number');
@@ -246,6 +298,7 @@ app.get('/api/admin/tournament/:id/scores', asyncRoute(async (req, res) => {
 }));
 
 app.get('/api/admin/tournament/:id/holes', asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
   if (!requireAdmin(req, res)) return;
   const tournamentId = asInt(req.params.id);
   if (!tournamentId) return fail(res, 400, 'Ugyldig turnerings-ID');
@@ -258,6 +311,7 @@ app.get('/api/admin/tournament/:id/holes', asyncRoute(async (req, res) => {
 }));
 
 app.post('/api/admin/tournament/:id/holes', asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
   if (!requireAdmin(req, res)) return;
   const tournamentId = asInt(req.params.id);
   if (!tournamentId) return fail(res, 400, 'Ugyldig turnerings-ID');
@@ -283,6 +337,7 @@ app.post('/api/admin/tournament/:id/holes', asyncRoute(async (req, res) => {
 }));
 
 app.post(['/api/teams', '/api/admin/team'], asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
   if (req.path.includes('/api/admin/') && !requireAdmin(req, res)) return;
   const b = req.body || {};
   const tournamentId = asInt(b.tournament_id);
@@ -306,6 +361,7 @@ app.post(['/api/teams', '/api/admin/team'], asyncRoute(async (req, res) => {
 }));
 
 app.put('/api/admin/team/:id', asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
   if (!requireAdmin(req, res)) return;
   const id = asInt(req.params.id); if (!id) return fail(res, 400, 'Ugyldig lag-ID');
   const { data, error } = await supabase.from('teams').update(req.body || {}).eq('id', id).select('*').single();
@@ -314,6 +370,7 @@ app.put('/api/admin/team/:id', asyncRoute(async (req, res) => {
 }));
 
 app.delete(['/api/teams/:id', '/api/admin/team/:id'], asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
   if (req.path.includes('/api/admin/') && !requireAdmin(req, res)) return;
   const id = asInt(req.params.id); if (!id) return fail(res, 400, 'Ugyldig lag-ID');
   const { error } = await supabase.from('teams').delete().eq('id', id);
@@ -322,6 +379,7 @@ app.delete(['/api/teams/:id', '/api/admin/team/:id'], asyncRoute(async (req, res
 }));
 
 app.get('/api/teams', asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
   const tournamentId = asInt(req.query.tournament_id || req.query.tournamentId);
   if (!tournamentId) return fail(res, 400, 'tournament_id er påkrevd');
   const { data, error } = await supabase.from('teams').select('*').eq('tournament_id', tournamentId).order('id');
@@ -330,6 +388,7 @@ app.get('/api/teams', asyncRoute(async (req, res) => {
 }));
 
 app.get('/api/team/scorecard', asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
   const session = getTeamSession(req);
   if (!session?.team_id) return fail(res, 401, 'Ikke logget inn');
   const teamId = asInt(session.team_id); const tournamentId = asInt(session.tournament_id);
@@ -348,6 +407,7 @@ app.get('/api/team/scorecard', asyncRoute(async (req, res) => {
 }));
 
 app.post('/api/team/submit-score', asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
   const session = getTeamSession(req);
   if (!session?.team_id) return fail(res, 401, 'Ikke logget inn');
   const teamId = asInt(session.team_id); const tournamentId = asInt(session.tournament_id);
@@ -360,6 +420,7 @@ app.post('/api/team/submit-score', asyncRoute(async (req, res) => {
 }));
 
 app.get('/api/team/full-scorecard', asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
   const session = getTeamSession(req);
   if (!session?.team_id) return fail(res, 401, 'Ikke logget inn');
   const { data, error } = await supabase.from('scores').select('*').eq('team_id', asInt(session.team_id)).order('hole_number');
@@ -368,6 +429,7 @@ app.get('/api/team/full-scorecard', asyncRoute(async (req, res) => {
 }));
 
 app.post('/api/team/lock-scorecard', asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
   const session = getTeamSession(req);
   if (!session?.team_id) return fail(res, 401, 'Ikke logget inn');
   const { data, error } = await supabase.from('teams').update({ locked: true }).eq('id', asInt(session.team_id)).select('*').single();
@@ -376,6 +438,7 @@ app.post('/api/team/lock-scorecard', asyncRoute(async (req, res) => {
 }));
 
 app.post('/api/team/claim-award', asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
   const session = getTeamSession(req);
   if (!session?.team_id) return fail(res, 401, 'Ikke logget inn');
   const payload = {
@@ -390,6 +453,7 @@ app.post('/api/team/claim-award', asyncRoute(async (req, res) => {
 }));
 
 app.get('/api/chat/messages', asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
   const session = getTeamSession(req);
   if (!session?.tournament_id) return fail(res, 401, 'Ikke logget inn');
   const { data, error } = await supabase.from('chat_messages').select('*').eq('tournament_id', asInt(session.tournament_id)).order('id').limit(100);
@@ -398,6 +462,7 @@ app.get('/api/chat/messages', asyncRoute(async (req, res) => {
 }));
 
 app.post('/api/chat/send', upload.single('image'), asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
   const session = getTeamSession(req);
   if (!session?.team_id) return fail(res, 401, 'Ikke logget inn');
   const message = String(req.body?.message || '').trim();
@@ -421,6 +486,7 @@ app.post('/api/chat/send', upload.single('image'), asyncRoute(async (req, res) =
 }));
 
 app.post('/api/team/birdie-shot', asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
   const session = getTeamSession(req);
   if (!session?.team_id) return fail(res, 401, 'Ikke logget inn');
   const note = String(req.body?.note || '').trim();
@@ -435,6 +501,7 @@ app.post('/api/team/birdie-shot', asyncRoute(async (req, res) => {
 }));
 
 app.get('/api/gallery', asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
   const tournamentId = asInt(req.query.tournament_id);
   let query = supabase.from('tournament_gallery_images').select('*').order('uploaded_at', { ascending: false }).limit(200);
   if (tournamentId) query = query.eq('tournament_id', tournamentId);
@@ -444,6 +511,7 @@ app.get('/api/gallery', asyncRoute(async (req, res) => {
 }));
 
 async function handleHoleUpload(req, res) {
+  if (!requireSupabase(res)) return;
   const session = getTeamSession(req);
   if (!session?.team_id) return fail(res, 401, 'Ikke logget inn');
   const holeNumber = asInt(req.params.holeNum || req.body?.hole_number);
@@ -463,10 +531,12 @@ app.post('/api/upload/hole-photo', upload.single('photo'), asyncRoute(handleHole
 app.post('/api/team/upload-photo/:holeNum', upload.single('photo'), asyncRoute(handleHoleUpload));
 
 app.get('/api/tournament', asyncRoute(async (_req, res) => {
+  if (!requireSupabase(res)) return;
   const tournament = await getActiveTournament();
   return ok(res, { tournament });
 }));
 app.get('/api/sponsors', asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
   const tournament = await getActiveTournament();
   if (!tournament) return ok(res, { sponsors: [] });
   let query = supabase.from('sponsors').select('*').eq('tournament_id', asInt(tournament.id)).order('position');
@@ -476,22 +546,26 @@ app.get('/api/sponsors', asyncRoute(async (req, res) => {
   return ok(res, { sponsors: data || [] });
 }));
 app.get('/api/legacy', asyncRoute(async (_req, res) => {
+  if (!requireSupabase(res)) return;
   const { data, error } = await supabase.from('legacy').select('*').order('year', { ascending: false });
   if (error) return fail(res, 500, 'Kunne ikke hente historikk', error.message);
   return ok(res, { legacy: data || [] });
 }));
 app.get('/api/admin/legacy', asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
   if (!requireAdmin(req, res)) return;
   const { data, error } = await supabase.from('legacy').select('*').order('year', { ascending: false });
   if (error) return fail(res, 500, 'Kunne ikke hente historikk', error.message);
   return ok(res, { legacy: data || [] });
 }));
 app.get('/api/coin-back', asyncRoute(async (_req, res) => {
+  if (!requireSupabase(res)) return;
   const { data, error } = await supabase.from('site_assets').select('*').eq('key', 'coin_back').maybeSingle();
   if (error) return ok(res, { coin_back: null });
   return ok(res, { coin_back: data?.value || null });
 }));
 app.get('/api/scoreboard', asyncRoute(async (_req, res) => {
+  if (!requireSupabase(res)) return;
   const tournament = await getActiveTournament();
   if (!tournament) return ok(res, { tournament: null, holes: [], scoreboard: [], awards: [] });
 

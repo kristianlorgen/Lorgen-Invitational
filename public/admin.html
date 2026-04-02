@@ -724,6 +724,7 @@
   </div>
 </div>
 
+<script src="/js/safe-fetch.js"></script>
 <script>
 // ── Hjelpefunksjoner ──────────────────────────────────────────────────────────
 function showToast(msg, type='success') {
@@ -735,23 +736,7 @@ function showToast(msg, type='success') {
 }
 
 async function api(url, options={}) {
-  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
-  const r = await fetch(url, {
-    credentials: 'same-origin',
-    ...options,
-    headers
-  });
-  const contentType = r.headers.get('content-type') || '';
-  const isJson = contentType.includes('application/json');
-  const payload = isJson ? await r.json() : await r.text();
-  if (!r.ok) {
-    const fallback = `Serverfeil (${r.status})`;
-    if (isJson && payload && typeof payload === 'object') {
-      throw new Error(payload.error || fallback);
-    }
-    throw new Error(fallback);
-  }
-  return isJson ? payload : {};
+  return safeJsonFetch(url, options);
 }
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
@@ -786,7 +771,7 @@ async function doAdminLogin() {
 document.getElementById('adminPass').addEventListener('keydown', e => { if(e.key==='Enter') doAdminLogin(); });
 
 async function doAdminLogout() {
-  await fetch('/api/auth/logout', { method:'POST', credentials:'same-origin' });
+  await safeJsonFetch('/api/auth/logout', { method:'POST' });
   location.reload();
 }
 
@@ -794,14 +779,14 @@ async function renderBackendStatus() {
   const statusEl = document.getElementById('backendStatus');
   if (!statusEl) return;
   try {
-    const d = await api('/api/system/status');
-    if (!d?.warning) {
+    const d = await api('/api/health');
+    if (d?.ok) {
       statusEl.style.display = 'none';
       statusEl.textContent = '';
       return;
     }
     statusEl.style.display = 'block';
-    statusEl.innerHTML = `<strong style="color:var(--gold-light)">Backend-status:</strong> ${d.warning}`;
+    statusEl.innerHTML = `<strong style="color:var(--gold-light)">Backend-status:</strong> API er oppe, men ikke klar (${(d?.startupIssues || []).join(', ') || 'ukjent årsak'}).`;
   } catch (_) {
     statusEl.style.display = 'block';
     statusEl.textContent = 'Backend-status kunne ikke hentes. Sjekk at API-serveren svarer.';
@@ -945,9 +930,8 @@ async function createTournament() {
   const year = date ? new Date(date).getFullYear() : null;
   if (!year||!date) { showToast('Dato og klokkeslett er påkrevd','error'); return; }
   try {
-    const response = await fetch('/api/admin/tournaments', {
+    await api('/api/admin/tournaments', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name,
         date,
@@ -958,10 +942,6 @@ async function createTournament() {
         status: 'upcoming'
       })
     });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || payload.success === false) {
-      throw new Error(payload.error || `Serverfeil (${response.status})`);
-    }
     showToast('Turnering opprettet!');
     ['tDate','tCourse','tDesc'].forEach(id=>document.getElementById(id).value='');
     document.getElementById('tName').value='Lorgen Invitational';
@@ -1471,15 +1451,7 @@ async function uploadAdminTurneringsbilder() {
   fd.append('caption', document.getElementById('adminTurneringsbilderCaption').value || '');
 
   try {
-    await fetch('/api/admin/tournament/' + tid + '/gallery', {
-      method: 'POST',
-      credentials: 'same-origin',
-      body: fd
-    }).then(async r => {
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data.error || 'Kunne ikke laste opp bilde');
-      return data;
-    });
+    await api('/api/admin/tournament/' + tid + '/gallery', { method: 'POST', body: fd });
 
     fileInput.value = '';
     document.getElementById('adminTurneringsbilderCaption').value = '';
@@ -1634,7 +1606,7 @@ let _coinBackData = {};
 
 async function loadCoinBack() {
   try {
-    const d = await fetch('/api/coin-back').then(r => r.json());
+    const d = await api('/api/coin-back');
     _coinBackData = d;
     if (d.photo_path) {
       const img = document.getElementById('coinBackPreview');
@@ -1652,18 +1624,13 @@ async function uploadCoinBack() {
   const fd = new FormData();
   fd.append('photo', file);
   try {
-    const r = await fetch('/api/admin/coin-back', { method: 'POST', body: fd });
-    const d = await r.json();
-    if (d.success) {
-      showToast('Bakside-bilde oppdatert!');
-      _coinBackData.photo_path = d.photo_path;
-      const img = document.getElementById('coinBackPreview');
-      img.src = d.photo_path + '?t=' + Date.now();
-      document.getElementById('coinBackPreviewWrap').style.display = 'block';
-      document.getElementById('coinFocusBtn').style.display = 'inline-flex';
-    } else {
-      showToast(d.error || 'Opplasting mislyktes', 'error');
-    }
+    const d = await api('/api/admin/coin-back', { method: 'POST', body: fd });
+    showToast('Bakside-bilde oppdatert!');
+    _coinBackData.photo_path = d.photo_path;
+    const img = document.getElementById('coinBackPreview');
+    img.src = d.photo_path + '?t=' + Date.now();
+    document.getElementById('coinBackPreviewWrap').style.display = 'block';
+    document.getElementById('coinFocusBtn').style.display = 'inline-flex';
   } catch(e) { showToast('Opplasting mislyktes', 'error'); }
   document.getElementById('coinBackInput').value = '';
 }
@@ -1806,14 +1773,9 @@ document.getElementById('legacyPhotoInput').addEventListener('change', async e =
   const fd = new FormData();
   fd.append('photo', file);
   try {
-    const r = await fetch('/api/admin/legacy/' + pendingLegacyPhotoId + '/photo', { method: 'POST', body: fd });
-    const d = await r.json();
-    if (d.success) {
-      showToast('Vinnerbilde lastet opp!');
-      await loadLegacy();
-    } else {
-      showToast(d.error || 'Opplasting mislyktes', 'error');
-    }
+    await api('/api/admin/legacy/' + pendingLegacyPhotoId + '/photo', { method: 'POST', body: fd });
+    showToast('Vinnerbilde lastet opp!');
+    await loadLegacy();
   } catch(e) {
     showToast('Opplasting mislyktes', 'error');
   }
@@ -1945,9 +1907,7 @@ async function uploadSponsorLogo(input, rowId) {
   if (!tid) { showToast('Velg turnering først', 'error'); return; }
   const fd = new FormData();
   fd.append('logo', file);
-  const res = await fetch('/api/admin/tournament/' + tid + '/sponsor-logo', { method: 'POST', body: fd });
-  const data = await res.json();
-  if (!res.ok) { showToast(data.error || 'Kunne ikke laste opp logo', 'error'); return; }
+  const data = await api('/api/admin/tournament/' + tid + '/sponsor-logo', { method: 'POST', body: fd });
   const row = document.querySelector(`[data-row="${rowId}"]`);
   if (row) row.querySelector('[data-field="logo_path"]').value = data.logo_path || '';
   showToast('Logo lastet opp');
