@@ -614,6 +614,7 @@ let holesData      = [];
 let scoresData     = {};
 let claimsData     = {};
 let holeSponsorsMap = {};
+let completionDebug = null;
 let pendingPhotoHole = null;
 let currentHoleIndex = 0;
 let teamPin = '';
@@ -731,8 +732,32 @@ async function notifyBirdieShot(payload) {
   } catch (_) {}
 }
 
+function getValidSubmittedScore(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  const rawScore = entry.score ?? entry.strokes;
+  if (rawScore === null || rawScore === undefined || rawScore === '') return null;
+  const parsedScore = Number.parseInt(rawScore, 10);
+  const hasScoreField = Object.prototype.hasOwnProperty.call(entry, 'score') || Object.prototype.hasOwnProperty.call(entry, 'strokes');
+  const hasSubmissionSignal = Boolean(entry.submitted_at) || hasScoreField;
+  if (!Number.isInteger(parsedScore) || parsedScore <= 0 || !hasSubmissionSignal) return null;
+  return parsedScore;
+}
+
+function getRoundCompletionDebug() {
+  const totalHoles = holesData.length;
+  const holesWithValidScore = holesData.reduce((count, hole) => {
+    const scoreEntry = scoresData[hole.hole_number];
+    return count + (getValidSubmittedScore(scoreEntry) !== null ? 1 : 0);
+  }, 0);
+  const completionThreshold = totalHoles;
+  const isRoundComplete = totalHoles > 0 && holesWithValidScore >= completionThreshold;
+  return { totalHoles, holesWithValidScore, completionThreshold, isRoundComplete };
+}
+
 function allHolesCompleted() {
-  return holesData.length > 0 && holesData.every(h => (scoresData[h.hole_number]?.score || 0) > 0);
+  completionDebug = getRoundCompletionDebug();
+  console.log('[scorecard:completion]', completionDebug);
+  return completionDebug.isRoundComplete;
 }
 
 function renderScoreStatus(kind) {
@@ -842,6 +867,7 @@ async function loadScorecard() {
   const d = await safeJsonFetch('/api/team/scorecard');
   teamData = d.team; holesData = d.holes; tournamentData = d.tournament || null;
   d.scores.forEach(s => { scoresData[s.hole_number] = s; });
+  completionDebug = d.completion_debug || getRoundCompletionDebug();
   if (d.claims) d.claims.forEach(c => { claimsData[c.hole_number + '_' + c.award_type] = c; });
   holeSponsorsMap = {};
   if (d.hole_sponsors) d.hole_sponsors.forEach(s => { holeSponsorsMap[s.hole_number] = s; });
@@ -1017,13 +1043,14 @@ function renderAll() {
 function updateSummary() {
   let totalScore = 0, totalPar = 0, holesCompleted = 0;
   Object.values(scoresData).forEach(s => {
-    if (s.score > 0) {
+    const scoreValue = getValidSubmittedScore(s);
+    if (scoreValue !== null) {
       const h = holesData.find(h => h.hole_number === s.hole_number);
-      if (h) { totalScore += s.score; totalPar += h.par; holesCompleted++; }
+      if (h) { totalScore += scoreValue; totalPar += h.par; holesCompleted++; }
     }
   });
-  document.getElementById('scProgress').textContent = holesCompleted + ' / 18';
-  document.getElementById('summaryHoles').textContent = holesCompleted + '/18';
+  document.getElementById('scProgress').textContent = holesCompleted + ' / ' + holesData.length;
+  document.getElementById('summaryHoles').textContent = holesCompleted + '/' + holesData.length;
   document.getElementById('summaryTotal').textContent = holesCompleted > 0 ? totalScore : '—';
   const toPar = totalScore - totalPar;
   document.getElementById('summaryToPar').textContent =
@@ -1057,7 +1084,7 @@ function renderDots() {
   const wrap = document.getElementById('holeDotsRow');
   wrap.innerHTML = holesData.map((h, i) => {
     const saved = scoresData[h.hole_number];
-    const hasScore = saved && saved.score > 0;
+    const hasScore = getValidSubmittedScore(saved) !== null;
     const needsPhoto = h.requires_photo;
     const hasPhoto = saved && saved.photo_path;
     let cls = 'hole-dot';
@@ -1074,11 +1101,11 @@ function renderCurrentHole() {
   const card = document.getElementById('singleHoleCard');
   const saved    = scoresData[h.hole_number];
   const hasPhoto = saved && saved.photo_path;
-  const hasScore = saved && saved.score > 0;
+  const hasScore = getValidSubmittedScore(saved) !== null;
   const needsPhoto = h.requires_photo;
   const blocked    = needsPhoto && !hasPhoto;
   const hasLd  = h.is_longest_drive;
-  const hasCtp = h.is_closest_to_pin;
+  const hasCtp = h.is_closest_to_pin || h.is_nearest_pin;
   const ldClaim  = claimsData[h.hole_number + '_longest_drive'];
   const ctpClaim = claimsData[h.hole_number + '_closest_to_pin'];
   const holeSponsor = holeSponsorsMap[h.hole_number];
@@ -1154,7 +1181,7 @@ function renderCurrentHole() {
       <button class="stepper-btn" onclick="changeScore(${h.hole_number},-1)" ${blocked ? 'disabled' : ''}>−</button>
       <input class="stepper-val ${hasScore ? 'saved' : ''}" type="number" min="1" max="20"
         id="score-${h.hole_number}"
-        value="${hasScore ? saved.score : (blocked ? '' : h.par)}"
+        value="${hasScore ? getValidSubmittedScore(saved) : (blocked ? '' : h.par)}"
         placeholder="${blocked ? '—' : h.par}"
         ${blocked ? 'disabled' : ''}
         onchange="submitScore(${h.hole_number})">
@@ -1220,12 +1247,13 @@ function finishRound() {
   const holeDetails = [];
   holesData.forEach(h => {
     const s = scoresData[h.hole_number];
-    if (s && s.score > 0) {
-      totalScore += s.score; totalPar += h.par; holesCompleted++;
-      const diff = s.score - h.par;
+    const validScore = getValidSubmittedScore(s);
+    if (validScore !== null) {
+      totalScore += validScore; totalPar += h.par; holesCompleted++;
+      const diff = validScore - h.par;
       if (diff <= -2) eagles++; else if (diff === -1) birdies++;
       else if (diff === 0) pars++; else if (diff === 1) bogeys++; else doubles++;
-      holeDetails.push({ hole_number: h.hole_number, par: h.par, score: s.score, diff });
+      holeDetails.push({ hole_number: h.hole_number, par: h.par, score: validScore, diff });
     }
   });
   const toPar = holesCompleted > 0 ? totalScore - totalPar : null;
@@ -1239,7 +1267,7 @@ function finishRound() {
       { label: 'Hcp', value: courseHcp },
       { label: 'Netto', value: netScore !== null ? netScore : '—', gold: true }
     ] : []),
-    { label: 'Hull', value: holesCompleted + '/18' }
+    { label: 'Hull', value: holesCompleted + '/' + holesData.length }
   ];
   document.getElementById('summaryStats').style.gridTemplateColumns = `repeat(${statItems.length},1fr)`;
   document.getElementById('summaryStats').innerHTML = statItems.map(s => `
@@ -1285,7 +1313,7 @@ function finishRound() {
       </table>
     </div>`;
   if (holesCompleted < holesData.length) {
-    document.getElementById('summaryLockBtn').innerHTML = `<i class="fas fa-lock"></i> Lås inn (${holesCompleted}/18 hull)`;
+    document.getElementById('summaryLockBtn').innerHTML = `<i class="fas fa-lock"></i> Lås inn (${holesCompleted}/${holesData.length} hull)`;
   } else {
     document.getElementById('summaryLockBtn').innerHTML = '<i class="fas fa-lock"></i> Lås inn resultater';
   }
