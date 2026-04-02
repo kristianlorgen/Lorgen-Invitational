@@ -268,6 +268,7 @@
               <button onclick="addTeam()" class="btn btn--gold btn--sm"><i class="fas fa-plus"></i> Legg til lag</button>
               <button onclick="generatePin()" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-dice"></i> Tilfeldig PIN</button>
             </div>
+            <div id="teamCreateDebug" style="margin-top:8px;padding:8px 10px;background:var(--gold-pale);border:1px dashed var(--gold-border);border-radius:8px;font-size:.72rem;color:var(--text-muted);font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;white-space:pre-wrap">Debug (midlertidig): ingen forespørsel sendt ennå.</div>
           </div>
         </div>
 
@@ -352,6 +353,7 @@
               SI brukes til å beregne handikap-slag per hull i scoreboard (lag med høy nok handicap får −1 slag på hull der SI ≤ lagets handicap).
             </p>
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:12px" id="holesGrid"></div>
+            <div id="holesDebug" style="margin-top:12px;padding:8px 10px;background:var(--gold-pale);border:1px dashed var(--gold-border);border-radius:8px;font-size:.72rem;color:var(--text-muted);font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;white-space:pre-wrap">Debug (midlertidig): ingen forespørsel sendt ennå.</div>
             <div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--gold-border);display:flex;gap:12px;flex-wrap:wrap">
               <button onclick="setAllPar(3)" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)">Alle Par 3</button>
               <button onclick="setAllPar(4)" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)">Alle Par 4</button>
@@ -953,6 +955,32 @@ function setCreateTournamentDebug(info = {}) {
   debugEl.textContent = lines.join('\n');
 }
 
+function setTeamCreateDebug(info = {}) {
+  const debugEl = document.getElementById('teamCreateDebug');
+  if (!debugEl) return;
+  const lines = [
+    `URL used: ${info.url || '—'}`,
+    `Payload sent: ${info.payload ? JSON.stringify(info.payload) : '—'}`,
+    `Response status: ${info.status ?? '—'}`,
+    `Parsed response JSON: ${info.responseJson !== undefined ? JSON.stringify(info.responseJson) : '—'}`
+  ];
+  debugEl.textContent = lines.join('\n');
+}
+
+function setHolesDebug(info = {}) {
+  const debugEl = document.getElementById('holesDebug');
+  if (!debugEl) return;
+  const lines = [
+    `Load URL: ${info.loadUrl || '—'}`,
+    `Save URL: ${info.saveUrl || '—'}`,
+    `Selected tournament_id: ${info.tournamentId ?? '—'}`,
+    `Request payload: ${info.payload ? JSON.stringify(info.payload) : '—'}`,
+    `Response status: ${info.status ?? '—'}`,
+    `Parsed response JSON: ${info.responseJson !== undefined ? JSON.stringify(info.responseJson) : '—'}`
+  ];
+  debugEl.textContent = lines.join('\n');
+}
+
 async function createTournament() {
   const name = (document.getElementById('tName').value || 'Lorgen Invitational').trim();
   const date = document.getElementById('tDate').value;
@@ -1142,24 +1170,31 @@ async function addTeam() {
   const tid = document.getElementById('teamsTournamentSelect').value;
   if (!tid) { showToast('Velg en turnering først','error'); return; }
   const team_name=document.getElementById('newTeamName').value,
-        player1=document.getElementById('newPlayer1').value,
-        player2=document.getElementById('newPlayer2').value,
-        pin_code=document.getElementById('newPin').value,
-        player1_handicap=document.getElementById('newHcp1').value||0,
-        player2_handicap=document.getElementById('newHcp2').value||0;
-  if (!team_name||!player1||!player2||!pin_code) { showToast('Alle felt er påkrevd','error'); return; }
-  if (!/^\d{4}$/.test(pin_code)) { showToast('PIN må være nøyaktig 4 siffer','error'); return; }
+        player1_name=document.getElementById('newPlayer1').value,
+        player2_name=document.getElementById('newPlayer2').value,
+        pin=document.getElementById('newPin').value,
+        hcp_player1=document.getElementById('newHcp1').value||0,
+        hcp_player2=document.getElementById('newHcp2').value||0;
+  if (!team_name||!player1_name||!player2_name||!pin) { showToast('Alle felt er påkrevd','error'); return; }
+  if (!/^\d{4}$/.test(pin)) { showToast('PIN må være nøyaktig 4 siffer','error'); return; }
+  const url = '/api/admin/team';
+  const payload = {
+    tournament_id: tid,
+    team_name,
+    player1_name,
+    player2_name,
+    pin,
+    hcp_player1,
+    hcp_player2
+  };
+  setTeamCreateDebug({ url, payload });
   try {
-    console.log('[admin:api-debug]', JSON.stringify({
-      label: 'addTeam:request',
-      url: '/api/admin/team',
-      method: 'POST',
-      payload: { tournament_id:tid,team_name,player1,player2,pin_code,player1_handicap,player2_handicap }
-    }));
-    await api('/api/admin/team',{
+    await api(url,{
       method:'POST',
-      body:JSON.stringify({tournament_id:tid,team_name,player1,player2,pin_code,player1_handicap,player2_handicap}),
-      debugHook: apiDebugHook('addTeam')
+      body:JSON.stringify(payload),
+      debugHook: ({ status, parsedResponse }) => {
+        setTeamCreateDebug({ url, payload, status, responseJson: parsedResponse });
+      }
     });
     showToast('Lag lagt til!');
     ['newTeamName','newPlayer1','newPlayer2','newPin','newHcp1','newHcp2'].forEach(id=>document.getElementById(id).value='');
@@ -1229,8 +1264,19 @@ async function loadHoles() {
     return;
   }
   try {
-    console.log('Loading holes for tournament:', selectedHolesTournamentId);
-    const d = await api(`/api/admin/tournament/${selectedHolesTournamentId}/holes`);
+    const loadUrl = `/api/admin/tournament/${selectedHolesTournamentId}/holes`;
+    setHolesDebug({ loadUrl, saveUrl: `/api/admin/tournament/${selectedHolesTournamentId}/holes`, tournamentId: selectedHolesTournamentId });
+    const d = await api(loadUrl, {
+      debugHook: ({ status, parsedResponse }) => {
+        setHolesDebug({
+          loadUrl,
+          saveUrl: `/api/admin/tournament/${selectedHolesTournamentId}/holes`,
+          tournamentId: selectedHolesTournamentId,
+          status,
+          responseJson: parsedResponse
+        });
+      }
+    });
     if (!d.success) {
       throw new Error(d.error || 'Kunne ikke hente hull');
     }
@@ -1295,8 +1341,29 @@ async function saveHoles() {
     is_longest_drive: document.getElementById('h-ld-'+h.hole_number)?.checked || false,
     is_nearest_pin: document.getElementById('h-ctp-'+h.hole_number)?.checked || false
   }));
+  const saveUrl = `/api/admin/tournament/${tournamentId}/holes`;
+  const payload = { holes };
+  setHolesDebug({
+    loadUrl: `/api/admin/tournament/${tournamentId}/holes`,
+    saveUrl,
+    tournamentId,
+    payload
+  });
   try {
-    await api(`/api/admin/tournament/${tournamentId}/holes`,{method:'POST',body:JSON.stringify({holes})});
+    await api(saveUrl,{
+      method:'POST',
+      body:JSON.stringify(payload),
+      debugHook: ({ status, parsedResponse }) => {
+        setHolesDebug({
+          loadUrl: `/api/admin/tournament/${tournamentId}/holes`,
+          saveUrl,
+          tournamentId,
+          payload,
+          status,
+          responseJson: parsedResponse
+        });
+      }
+    });
     showToast('Hullkonfigurasjon lagret til turnering!');
     await loadHoles();
   } catch(e) { showToast(e.message,'error'); }
