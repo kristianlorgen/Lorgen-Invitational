@@ -737,8 +737,7 @@ function getValidSubmittedScore(entry) {
   const rawScore = entry.score ?? entry.strokes;
   if (rawScore === null || rawScore === undefined || rawScore === '') return null;
   const parsedScore = Number.parseInt(rawScore, 10);
-  const hasSubmissionSignal = Boolean(entry.submitted_at);
-  if (!Number.isInteger(parsedScore) || parsedScore <= 0 || !hasSubmissionSignal) return null;
+  if (!Number.isInteger(parsedScore) || parsedScore <= 0) return null;
   return parsedScore;
 }
 
@@ -766,8 +765,10 @@ function getRoundCompletionDebug() {
 }
 
 function allHolesCompleted() {
+  if (completionDebug && typeof completionDebug.isRoundComplete === 'boolean') {
+    return completionDebug.isRoundComplete;
+  }
   completionDebug = getRoundCompletionDebug();
-  console.log('[scorecard:completion]', completionDebug);
   return completionDebug.isRoundComplete;
 }
 
@@ -888,7 +889,7 @@ async function loadScorecard() {
   loadPosition();
   await loadChatMessages();
   startChatEvents();
-  if (teamData.locked) {
+  if (d.is_round_complete || teamData.locked) {
     showLockedState();
     return;
   }

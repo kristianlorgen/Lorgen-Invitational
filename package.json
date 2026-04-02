@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "build": "echo \"No build step required for Express app\""
+    "build": "echo \"No build step required for Express app\"",
+    "test": "node --test tests/*.test.js"
   },
   "dependencies": {
     "dotenv": "^16.4.1",
