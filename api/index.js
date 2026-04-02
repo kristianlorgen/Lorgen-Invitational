@@ -593,6 +593,8 @@ function getTournamentOwnedOnConflictColumns(mapping) {
 
 function mapCanonicalTournamentHoleToDbRow(canonicalHole, mapping, holesColumns) {
   const row = {};
+  const hasColumn = (columnName) => Boolean(columnName && holesColumns.includes(columnName));
+
   if (mapping.ownerColumn) row[mapping.ownerColumn] = canonicalHole.tournament_id;
   if (mapping.ownerIdColumn) row[mapping.ownerIdColumn] = canonicalHole.tournament_id;
   if (mapping.ownerKeyColumn) row[mapping.ownerKeyColumn] = 'tournament';
@@ -603,10 +605,20 @@ function mapCanonicalTournamentHoleToDbRow(canonicalHole, mapping, holesColumns)
   if (mapping.longestDriveColumn) row[mapping.longestDriveColumn] = canonicalHole.is_longest_drive;
   if (mapping.nearestPinColumn) row[mapping.nearestPinColumn] = canonicalHole.is_nearest_pin;
 
-  // Keep canonical write columns only; avoid writing alias columns in parallel.
-  if (!mapping.requiresPhotoColumn && holesColumns.includes('requires_photo')) row.requires_photo = canonicalHole.requires_photo;
-  if (!mapping.longestDriveColumn && holesColumns.includes('is_longest_drive')) row.is_longest_drive = canonicalHole.is_longest_drive;
-  if (!mapping.nearestPinColumn && holesColumns.includes('is_nearest_pin')) row.is_nearest_pin = canonicalHole.is_nearest_pin;
+  // Write canonical booleans to every supported alias column so no fallback/default
+  // path can flip true -> false during read/response normalization.
+  if (hasColumn('requires_photo')) row.requires_photo = canonicalHole.requires_photo;
+  if (hasColumn('photo_required')) row.photo_required = canonicalHole.requires_photo;
+
+  if (hasColumn('is_longest_drive')) row.is_longest_drive = canonicalHole.is_longest_drive;
+  if (hasColumn('longest_drive')) row.longest_drive = canonicalHole.is_longest_drive;
+  if (hasColumn('ld')) row.ld = canonicalHole.is_longest_drive;
+
+  if (hasColumn('is_nearest_pin')) row.is_nearest_pin = canonicalHole.is_nearest_pin;
+  if (hasColumn('nearest_pin')) row.nearest_pin = canonicalHole.is_nearest_pin;
+  if (hasColumn('is_closest_to_pin')) row.is_closest_to_pin = canonicalHole.is_nearest_pin;
+  if (hasColumn('closest_to_pin')) row.closest_to_pin = canonicalHole.is_nearest_pin;
+  if (hasColumn('nf')) row.nf = canonicalHole.is_nearest_pin;
   return row;
 }
 
@@ -615,13 +627,12 @@ async function fetchTournamentOwnedHoleRows(tournamentId, holesColumns, mapping)
   const fetches = [];
 
   if (mapping.ownerColumn) {
-    fetches.push(
-      supabase
-        .from('holes')
-        .select(holesColumns.join(','))
-        .eq(mapping.ownerColumn, tournamentId)
-        .order(mapping.holeNumberColumn, { ascending: true })
-    );
+    let ownerColumnQuery = supabase
+      .from('holes')
+      .select(holesColumns.join(','))
+      .eq(mapping.ownerColumn, tournamentId);
+    if (mapping.ownerKeyColumn) ownerColumnQuery = ownerColumnQuery.eq(mapping.ownerKeyColumn, 'tournament');
+    fetches.push(ownerColumnQuery.order(mapping.holeNumberColumn, { ascending: true }));
   }
   if (mapping.ownerIdColumn) {
     let query = supabase
@@ -637,7 +648,11 @@ async function fetchTournamentOwnedHoleRows(tournamentId, holesColumns, mapping)
   for (const result of results) {
     if (result.error) throw new Error(result.error.message);
     for (const row of (result.data || [])) {
-      const key = `${asInt(row.id) || 'noid'}:${asInt(row[mapping.holeNumberColumn] ?? row.hole_number) || 'x'}:${JSON.stringify(getHoleRowDebugIdentity(row, mapping))}`;
+      const ownership = isTournamentOwnedHoleRow(row, mapping, tournamentId);
+      if (!ownership.isTournamentOwned) continue;
+      const holeNumber = asInt(row[mapping.holeNumberColumn] ?? row.hole_number);
+      if (!Number.isInteger(holeNumber) || holeNumber < 1 || holeNumber > 18) continue;
+      const key = `hole:${holeNumber}:id:${asInt(row.id) || 'noid'}:${JSON.stringify(ownership.debugIdentity)}`;
       rowMap.set(key, row);
     }
   }
@@ -1171,9 +1186,14 @@ app.post('/api/admin/tournament/:id/holes', asyncRoute(async (req, res) => {
     const holeNumber = asInt(row[mapping.holeNumberColumn] ?? row.hole_number);
     return holeNumber === 1 || holeNumber === 2;
   });
+  const refetchedRows = await fetchTournamentOwnedHoleRows(tournamentId, holesColumns, mapping);
+  const rawRefetchRows = (refetchedRows || []).filter((row) => {
+    const holeNumber = asInt(row[mapping.holeNumberColumn] ?? row.hole_number);
+    return holeNumber === 1 || holeNumber === 2;
+  });
   console.log('[api:admin-holes:save] rawPostSavedRows', JSON.stringify(rawSavedRowsSample));
-  console.log('[api:admin-holes:save] rawRefetchRows', JSON.stringify(rawSavedRowsSample));
-  const normalizedSavedHoles = mergeTournamentHoleRows(data || [], mapping, tournamentId, 'post');
+  console.log('[api:admin-holes:save] rawRefetchRows', JSON.stringify(rawRefetchRows));
+  const normalizedSavedHoles = mergeTournamentHoleRows(refetchedRows || [], mapping, tournamentId, 'post');
   const normalizedAfterRefetch = normalizedSavedHoles
     .filter((hole) => hole.hole_number === 1 || hole.hole_number === 2)
     .map((hole) => ({ hole_number: hole.hole_number, is_longest_drive: hole.is_longest_drive, is_nearest_pin: hole.is_nearest_pin }));
