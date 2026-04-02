@@ -2,6 +2,14 @@ const crypto = require('crypto');
 const express = require('express');
 const multer = require('multer');
 const { createClient } = require('@supabase/supabase-js');
+const {
+  asInt: asIntV2,
+  buildDefaultHoles,
+  toCanonicalHole,
+  normalizeHolePayload,
+  mapTeamToCanonical,
+  buildScorecardData
+} = require('./v2');
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 12 * 1024 * 1024 } });
@@ -812,6 +820,145 @@ app.get('/api/auth/status', asyncRoute(async (req, res) => {
   const team = getTeamSession(req);
   if (team?.type === 'team' && team?.team_id) return ok(res, { authenticated: true, type: 'team' });
   return ok(res, { authenticated: false, type: null });
+}));
+
+app.get('/api/v2/tournaments/:id/holes', asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
+  const tournamentId = asIntV2(req.params.id);
+  if (!tournamentId) return fail(res, 400, 'Ugyldig turnering');
+
+  const defaults = buildDefaultHoles(tournamentId);
+  const { error: seedError } = await supabase.from('tournament_holes').upsert(defaults, { onConflict: 'tournament_id,hole_number' });
+  if (seedError) return fail(res, 500, 'Kunne ikke initialisere hull', seedError.message);
+
+  const { data, error } = await supabase
+    .from('tournament_holes')
+    .select('hole_number,par,stroke_index,requires_photo,is_longest_drive,is_nearest_pin')
+    .eq('tournament_id', tournamentId)
+    .order('hole_number', { ascending: true });
+  if (error) return fail(res, 500, 'Kunne ikke hente hull', error.message);
+  return ok(res, { data: (data || []).map(toCanonicalHole) });
+}));
+
+app.post('/api/v2/tournaments/:id/holes', asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
+  if (!requireAdmin(req, res)) return;
+
+  const tournamentId = asIntV2(req.params.id);
+  if (!tournamentId) return fail(res, 400, 'Ugyldig turnering');
+
+  let normalizedHoles = [];
+  try {
+    normalizedHoles = normalizeHolePayload(tournamentId, req.body?.holes);
+  } catch (error) {
+    return fail(res, 400, error.message);
+  }
+
+  const { error: upsertError } = await supabase
+    .from('tournament_holes')
+    .upsert(normalizedHoles, { onConflict: 'tournament_id,hole_number' });
+  if (upsertError) return fail(res, 500, 'Kunne ikke lagre hull', upsertError.message);
+
+  const { data: freshRows, error: refetchError } = await supabase
+    .from('tournament_holes')
+    .select('hole_number,par,stroke_index,requires_photo,is_longest_drive,is_nearest_pin')
+    .eq('tournament_id', tournamentId)
+    .order('hole_number', { ascending: true });
+  if (refetchError) return fail(res, 500, 'Kunne ikke hente lagrede hull', refetchError.message);
+  return ok(res, { data: (freshRows || []).map(toCanonicalHole) });
+}));
+
+app.get('/api/v2/teams', asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
+  const tournamentId = asIntV2(req.query.tournament_id);
+  if (!tournamentId) return fail(res, 400, 'tournament_id er påkrevd');
+
+  const { data, error } = await supabase
+    .from('teams')
+    .select('id,tournament_id,team_name,player1_name,player2_name,pin,hcp_player1,hcp_player2,created_at,locked')
+    .eq('tournament_id', tournamentId)
+    .order('id', { ascending: true });
+  if (error) return fail(res, 500, 'Kunne ikke hente lag', error.message);
+  return ok(res, { data: (data || []).map(mapTeamToCanonical) });
+}));
+
+app.post('/api/v2/teams', asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
+  if (!requireAdmin(req, res)) return;
+
+  const body = req.body || {};
+  const tournamentId = asIntV2(body.tournament_id);
+  const teamName = String(body.team_name || '').trim();
+  const player1Name = String(body.player1_name || '').trim();
+  const player2Name = String(body.player2_name || '').trim();
+  const pin = String(body.pin || '').trim();
+  const hcpPlayer1 = asIntV2(body.hcp_player1) || 0;
+  const hcpPlayer2 = asIntV2(body.hcp_player2) || 0;
+
+  if (!tournamentId) return fail(res, 400, 'tournament_id er påkrevd');
+  if (!teamName || !player1Name || !player2Name) return fail(res, 400, 'team_name, player1_name og player2_name er påkrevd');
+  if (!/^\d{4}$/.test(pin)) return fail(res, 400, 'PIN må være nøyaktig 4 siffer');
+
+  const { data, error } = await supabase
+    .from('teams')
+    .insert({
+      tournament_id: tournamentId,
+      team_name: teamName,
+      player1_name: player1Name,
+      player2_name: player2Name,
+      pin,
+      hcp_player1: hcpPlayer1,
+      hcp_player2: hcpPlayer2
+    })
+    .select('id,tournament_id,team_name,player1_name,player2_name,pin,hcp_player1,hcp_player2,created_at,locked')
+    .single();
+  if (error) return fail(res, 500, 'Kunne ikke opprette lag', error.message);
+  return ok(res, { data: mapTeamToCanonical(data) }, 201);
+}));
+
+app.get('/api/v2/scorecard/:tournamentId/:teamId', asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
+  const tournamentId = asIntV2(req.params.tournamentId);
+  const teamId = asIntV2(req.params.teamId);
+  if (!tournamentId || !teamId) return fail(res, 400, 'Ugyldig tournamentId/teamId');
+
+  const defaults = buildDefaultHoles(tournamentId);
+  const { error: seedError } = await supabase.from('tournament_holes').upsert(defaults, { onConflict: 'tournament_id,hole_number' });
+  if (seedError) return fail(res, 500, 'Kunne ikke initialisere hull', seedError.message);
+
+  const [teamResp, holesResp, scoresResp] = await Promise.all([
+    supabase.from('teams').select('id,tournament_id,team_name,player1_name,player2_name,pin,locked').eq('id', teamId).eq('tournament_id', tournamentId).maybeSingle(),
+    supabase.from('tournament_holes').select('hole_number,par,stroke_index,requires_photo,is_longest_drive,is_nearest_pin').eq('tournament_id', tournamentId).order('hole_number', { ascending: true }),
+    supabase.from('scores').select('hole_number,strokes').eq('tournament_id', tournamentId).eq('team_id', teamId).order('hole_number', { ascending: true })
+  ]);
+  if (teamResp.error) return fail(res, 500, 'Kunne ikke hente lag', teamResp.error.message);
+  if (!teamResp.data) return fail(res, 404, 'Lag ikke funnet');
+  if (holesResp.error) return fail(res, 500, 'Kunne ikke hente hull', holesResp.error.message);
+  if (scoresResp.error) return fail(res, 500, 'Kunne ikke hente score', scoresResp.error.message);
+
+  const data = buildScorecardData(teamResp.data, holesResp.data || [], scoresResp.data || []);
+  return ok(res, { data });
+}));
+
+app.post('/api/v2/uploads/coin-back', upload.single('photo'), asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
+  if (!requireAdmin(req, res)) return;
+  if (!req.file) return fail(res, 400, 'Fil mangler');
+
+  const mime = req.file.mimetype || '';
+  if (!mime.startsWith('image/')) return fail(res, 400, 'Kun bildefiler er tillatt');
+
+  const extension = mime.split('/')[1] || 'jpg';
+  const filePath = `coin-back/v2-${Date.now()}-${Math.round(Math.random() * 1e6)}.${extension}`;
+
+  const uploadResp = await supabase.storage.from(GALLERY_BUCKET).upload(filePath, req.file.buffer, {
+    contentType: req.file.mimetype,
+    upsert: true
+  });
+  if (uploadResp.error) return fail(res, 500, 'Opplasting feilet', uploadResp.error.message);
+
+  const { data: publicData } = supabase.storage.from(GALLERY_BUCKET).getPublicUrl(filePath);
+  return ok(res, { data: { path: filePath, public_url: publicData?.publicUrl || '' } });
 }));
 
 app.get('/api/admin/tournaments', asyncRoute(async (req, res) => {
