@@ -198,7 +198,6 @@
             </div>
             <div style="margin-top:16px">
               <button onclick="createTournament()" class="btn btn--gold btn--sm"><i class="fas fa-plus"></i> Opprett turnering</button>
-              <div id="createTournamentDebug" style="margin-top:8px;padding:8px 10px;background:var(--gold-pale);border:1px dashed var(--gold-border);border-radius:8px;font-size:.72rem;color:var(--text-muted);font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;white-space:pre-wrap">Debug (midlertidig): ingen forespørsel sendt ennå.</div>
             </div>
           </div>
         </div>
@@ -268,7 +267,6 @@
               <button onclick="addTeam()" class="btn btn--gold btn--sm"><i class="fas fa-plus"></i> Legg til lag</button>
               <button onclick="generatePin()" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-dice"></i> Tilfeldig PIN</button>
             </div>
-            <div id="teamCreateDebug" style="margin-top:8px;padding:8px 10px;background:var(--gold-pale);border:1px dashed var(--gold-border);border-radius:8px;font-size:.72rem;color:var(--text-muted);font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;white-space:pre-wrap">Debug (midlertidig): ingen forespørsel sendt ennå.</div>
           </div>
         </div>
 
@@ -353,7 +351,6 @@
               SI brukes til å beregne handikap-slag per hull i scoreboard (lag med høy nok handicap får −1 slag på hull der SI ≤ lagets handicap).
             </p>
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:12px" id="holesGrid"></div>
-            <div id="holesDebug" style="margin-top:12px;padding:8px 10px;background:var(--gold-pale);border:1px dashed var(--gold-border);border-radius:8px;font-size:.72rem;color:var(--text-muted);font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;white-space:pre-wrap">Debug (midlertidig): ingen forespørsel sendt ennå.</div>
             <div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--gold-border);display:flex;gap:12px;flex-wrap:wrap">
               <button onclick="setAllPar(3)" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)">Alle Par 3</button>
               <button onclick="setAllPar(4)" class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)">Alle Par 4</button>
@@ -1139,22 +1136,23 @@ async function loadTeams() {
     return;
   }
   try {
-    const d = await api('/api/admin/tournament/'+tid+'/teams');
-    document.getElementById('teamCount').textContent = `(${d.teams.length} lag)`;
-    document.getElementById('teamsTable').innerHTML = !d.teams.length
+    const d = await api('/api/admin/team?tournament_id='+tid);
+    const teams = Array.isArray(d.data) ? d.data : [];
+    document.getElementById('teamCount').textContent = `(${teams.length} lag)`;
+    document.getElementById('teamsTable').innerHTML = !teams.length
       ? '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen lag ennå. Legg til ett ovenfor.</td></tr>'
-      : d.teams.map((t,i) => {
-          const hcp1 = t.player1_handicap || 0, hcp2 = t.player2_handicap || 0;
+      : teams.map((t,i) => {
+          const hcp1 = t.hcp_player1 || 0, hcp2 = t.hcp_player2 || 0;
           const hcpStr = (hcp1||hcp2) ? ` <span style="font-size:.75rem;color:var(--text-muted)">(Hcp: ${hcp1}/${hcp2})</span>` : '';
           return `
           <tr>
             <td>${i+1}</td>
             <td><strong>${t.team_name}</strong></td>
-            <td>${t.player1}${hcpStr ? '<br>' + hcpStr.replace('Hcp: ','Hcp '+hcp1+'/') : ''}</td>
-            <td>${t.player2}</td>
-            <td><code style="background:var(--gold-pale);padding:2px 8px;border-radius:4px;font-weight:700;color:var(--gold-dark)">${t.pin_code}</code></td>
+            <td>${t.player1_name}${hcpStr ? '<br>' + hcpStr.replace('Hcp: ','Hcp '+hcp1+'/') : ''}</td>
+            <td>${t.player2_name}</td>
+            <td><code style="background:var(--gold-pale);padding:2px 8px;border-radius:4px;font-weight:700;color:var(--gold-dark)">${t.pin}</code></td>
             <td style="display:flex;gap:6px">
-              <button onclick='editTeam(${t.id},${JSON.stringify(t.team_name)},${JSON.stringify(t.player1)},${JSON.stringify(t.player2)},${JSON.stringify(t.pin_code)},${hcp1},${hcp2})' class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)" title="Rediger"><i class="fas fa-pen"></i></button>
+              <button onclick='editTeam(${t.id},${JSON.stringify(t.team_name)},${JSON.stringify(t.player1_name)},${JSON.stringify(t.player2_name)},${JSON.stringify(t.pin)},${hcp1},${hcp2})' class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)" title="Rediger"><i class="fas fa-pen"></i></button>
               <button onclick='deleteTeam(${t.id},${JSON.stringify(t.team_name)})' class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
             </td>
           </tr>`;
@@ -1217,15 +1215,15 @@ function editTeam(id, team_name, player1, player2, pin_code, hcp1=0, hcp2=0) {
 async function saveTeamEdit() {
   const id = document.getElementById('editTeamId').value;
   const team_name = document.getElementById('editTeamName').value;
-  const player1 = document.getElementById('editTeamP1').value;
-  const player2 = document.getElementById('editTeamP2').value;
-  const pin_code = document.getElementById('editTeamPin').value;
-  const player1_handicap = document.getElementById('editTeamHcp1').value || 0;
-  const player2_handicap = document.getElementById('editTeamHcp2').value || 0;
-  if (!team_name || !player1 || !player2 || !pin_code) { showToast('Alle felt er påkrevd', 'error'); return; }
-  if (!/^\d{4}$/.test(pin_code)) { showToast('PIN må være nøyaktig 4 siffer', 'error'); return; }
+  const player1_name = document.getElementById('editTeamP1').value;
+  const player2_name = document.getElementById('editTeamP2').value;
+  const pin = document.getElementById('editTeamPin').value;
+  const hcp_player1 = document.getElementById('editTeamHcp1').value || 0;
+  const hcp_player2 = document.getElementById('editTeamHcp2').value || 0;
+  if (!team_name || !player1_name || !player2_name || !pin) { showToast('Alle felt er påkrevd', 'error'); return; }
+  if (!/^\d{4}$/.test(pin)) { showToast('PIN må være nøyaktig 4 siffer', 'error'); return; }
   try {
-    await api('/api/admin/team/' + id, { method: 'PUT', body: JSON.stringify({ team_name, player1, player2, pin_code, player1_handicap, player2_handicap }) });
+    await api('/api/admin/team/' + id, { method: 'PUT', body: JSON.stringify({ team_name, player1_name, player2_name, pin, hcp_player1, hcp_player2 }) });
     showToast('Lag oppdatert!');
     document.getElementById('editTeamCard').classList.add('d-none');
     await loadTeams();
@@ -1424,18 +1422,9 @@ async function loadHoles() {
     if (!d.success) {
       throw new Error(d.error || 'Kunne ikke hente hull');
     }
-    const rawHoles = Array.isArray(d?.data)
-      ? d.data
-      : Array.isArray(d?.holes)
-        ? d.holes
-        : [];
-    startHolesDebugTrace(selectedHolesTournamentId);
-    setHolesDebugStage('rawRefetchSample', rawHoles, HOLE_DEBUG_RAW_KEYS);
-    const normalizedHoles = mergeNormalizedHoleSet(rawHoles, []);
-    setHolesDebugStage('normalizedAfterRefetch', normalizedHoles, HOLE_DEBUG_CANONICAL_KEYS);
-    holesData = normalizedHoles;
+    const rawHoles = Array.isArray(d?.data) ? d.data : [];
+    holesData = rawHoles;
     renderHolesGrid();
-    captureRenderedStateFirstTwo();
   } catch (e) {
     holesData = [];
     renderHolesGrid();
@@ -1507,9 +1496,6 @@ async function saveHoles() {
     const holeNumber = Number.parseInt(h?.hole_number, 10);
     return buildNormalizedTournamentHoleFromDom(holeNumber, h);
   });
-  startHolesDebugTrace(tournamentId);
-  setHolesDebugStage('beforeSave', holes, HOLE_DEBUG_CANONICAL_KEYS);
-  setHolesDebugStage('outgoingPayload', holes, HOLE_DEBUG_CANONICAL_KEYS);
   const saveUrl = `/api/admin/tournament/${tournamentId}/holes`;
   const payload = { holes };
   try {
@@ -1517,24 +1503,8 @@ async function saveHoles() {
       method:'POST',
       body:JSON.stringify(payload)
     });
-    const rawPostRows = Array.isArray(saveResponse?.data)
-      ? saveResponse.data
-      : Array.isArray(saveResponse?.holes)
-        ? saveResponse.holes
-        : [];
-    setHolesDebugStage('rawPostResponseSample', rawPostRows, HOLE_DEBUG_RAW_KEYS);
-    const refetchUrl = `/api/admin/tournament/${tournamentId}/holes`;
-    const refetched = await api(refetchUrl);
-    const rawRefetchedHoles = Array.isArray(refetched?.data)
-      ? refetched.data
-      : Array.isArray(refetched?.holes)
-        ? refetched.holes
-        : [];
-    setHolesDebugStage('rawRefetchSample', rawRefetchedHoles, HOLE_DEBUG_RAW_KEYS);
-    holesData = mergeNormalizedHoleSet(rawRefetchedHoles, []);
-    setHolesDebugStage('normalizedAfterRefetch', holesData, HOLE_DEBUG_CANONICAL_KEYS);
+    holesData = Array.isArray(saveResponse?.data) ? saveResponse.data : [];
     renderHolesGrid();
-    captureRenderedStateFirstTwo();
     showToast('Hullkonfigurasjon lagret til turnering!');
   } catch(e) { showToast(e.message,'error'); }
 }
@@ -1939,11 +1909,11 @@ async function uploadCoinBack() {
   const fd = new FormData();
   fd.append('photo', file);
   try {
-    const d = await api('/api/admin/coin-back', { method: 'POST', body: fd });
+    const d = await api('/api/admin/uploads/coin-back', { method: 'POST', body: fd });
     showToast('Bakside-bilde oppdatert!');
-    _coinBackData.photo_path = d.photo_path;
+    _coinBackData.photo_path = d?.data?.public_url || '';
     const img = document.getElementById('coinBackPreview');
-    img.src = d.photo_path + '?t=' + Date.now();
+    img.src = _coinBackData.photo_path + '?t=' + Date.now();
     document.getElementById('coinBackPreviewWrap').style.display = 'block';
     document.getElementById('coinFocusBtn').style.display = 'inline-flex';
   } catch(e) { showToast('Opplasting mislyktes', 'error'); }
