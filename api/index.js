@@ -691,7 +691,7 @@ app.post(['/api/teams', '/api/admin/team'], asyncRoute(async (req, res) => {
       team_name: team_name,
       player1: player1_name,
       player2: player2_name,
-      pin: pin
+      pin_code: pin
     };
 
     console.log('[api:admin-team:create] final insert payload', finalPayload);
