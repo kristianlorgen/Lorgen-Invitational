@@ -1253,6 +1253,29 @@ function generatePin() {
 let holesData = [];
 let selectedHolesTournamentId = null;
 
+function normalizeAdminHoleForState(hole, fallbackHoleNumber) {
+  const parsedHoleNumber = Number.parseInt(
+    hole?.hole_number ?? hole?.hole ?? hole?.number ?? hole?.nr ?? fallbackHoleNumber,
+    10
+  );
+  const parsedPar = Number.parseInt(hole?.par, 10);
+  const parsedStrokeIndex = Number.parseInt(
+    hole?.stroke_index ?? hole?.strokeIndex ?? hole?.si ?? hole?.SI ?? parsedHoleNumber,
+    10
+  );
+  const toBool = (value) => value === true || value === 'true' || value === 1 || value === '1';
+  const nearestPin = toBool(hole?.is_nearest_pin ?? hole?.is_closest_to_pin ?? hole?.nearest_pin ?? hole?.closest_to_pin ?? hole?.nf);
+  return {
+    hole_number: Number.isInteger(parsedHoleNumber) ? parsedHoleNumber : fallbackHoleNumber,
+    par: Number.isInteger(parsedPar) ? parsedPar : 4,
+    stroke_index: Number.isInteger(parsedStrokeIndex) ? parsedStrokeIndex : (Number.isInteger(parsedHoleNumber) ? parsedHoleNumber : fallbackHoleNumber),
+    requires_photo: toBool(hole?.requires_photo ?? hole?.photo_required ?? hole?.photo_upload_required),
+    is_longest_drive: toBool(hole?.is_longest_drive ?? hole?.longest_drive ?? hole?.isLongestDrive ?? hole?.ld),
+    is_nearest_pin: nearestPin,
+    is_closest_to_pin: nearestPin
+  };
+}
+
 async function loadHoles() {
   const rawTournamentId = document.getElementById('holesTournamentSelect').value;
   const tournamentId = Number.parseInt(rawTournamentId, 10);
@@ -1280,11 +1303,12 @@ async function loadHoles() {
     if (!d.success) {
       throw new Error(d.error || 'Kunne ikke hente hull');
     }
-    const normalizedHoles = Array.isArray(d?.data)
+    const rawHoles = Array.isArray(d?.data)
       ? d.data
       : Array.isArray(d?.holes)
         ? d.holes
         : [];
+    const normalizedHoles = rawHoles.map((hole, index) => normalizeAdminHoleForState(hole, index + 1));
     console.log('[admin:holes:load]', {
       tournamentId: selectedHolesTournamentId,
       rawParsedResponse: d,
@@ -1374,11 +1398,12 @@ async function saveHoles() {
         });
       }
     });
-    holesData = Array.isArray(saveResult?.data)
+    const rawSavedHoles = Array.isArray(saveResult?.data)
       ? saveResult.data
       : Array.isArray(saveResult?.holes)
         ? saveResult.holes
         : holesData;
+    holesData = rawSavedHoles.map((hole, index) => normalizeAdminHoleForState(hole, index + 1));
     renderHolesGrid();
     showToast('Hullkonfigurasjon lagret til turnering!');
     await loadHoles();
