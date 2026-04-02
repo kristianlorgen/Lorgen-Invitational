@@ -365,6 +365,138 @@ function normalizeHoleFromDbRow(row = {}, mapping = {}, ownerId = null, ownerKey
   };
 }
 
+function getHoleRowDebugIdentity(row = {}, mapping = {}) {
+  const ownerIdColumn = mapping.ownerIdColumn || null;
+  const ownerKeyColumn = mapping.ownerKeyColumn || null;
+  const ownerColumn = mapping.ownerColumn || null;
+  return {
+    id: asInt(row.id) || null,
+    owner_id: ownerIdColumn ? asInt(row[ownerIdColumn]) : (asInt(row.owner_id) || null),
+    owner_key: ownerKeyColumn ? String(row[ownerKeyColumn] || '') : String(row.owner_key || ''),
+    tournament_id: asInt(row.tournament_id) || null,
+    course_id: asInt(row.course_id) || null,
+    owner_column: ownerColumn ? asInt(row[ownerColumn]) : null
+  };
+}
+
+function isTournamentOwnedHoleRow(row = {}, mapping = {}, tournamentId) {
+  const debugIdentity = getHoleRowDebugIdentity(row, mapping);
+  const expectedTournamentId = asInt(tournamentId);
+  const ownerIdColumn = mapping.ownerIdColumn || null;
+  const ownerKeyColumn = mapping.ownerKeyColumn || null;
+  const ownerColumn = mapping.ownerColumn || null;
+
+  const matchesOwnerIdColumn = ownerIdColumn ? asInt(row[ownerIdColumn]) === expectedTournamentId : false;
+  const matchesTournamentId = asInt(row.tournament_id) === expectedTournamentId;
+  const matchesOwnerColumn = ownerColumn ? asInt(row[ownerColumn]) === expectedTournamentId : false;
+
+  const rowOwnerKeyRaw = ownerKeyColumn ? row[ownerKeyColumn] : row.owner_key;
+  const rowOwnerKey = String(rowOwnerKeyRaw || '').trim().toLowerCase();
+  const ownerKeySupportsTournament = !rowOwnerKey || rowOwnerKey === 'tournament';
+
+  const matchesTournamentIdentity = matchesOwnerIdColumn || matchesTournamentId || matchesOwnerColumn;
+  const isTournamentOwned = matchesTournamentIdentity && ownerKeySupportsTournament;
+
+  return {
+    isTournamentOwned,
+    debugIdentity,
+    reason: isTournamentOwned
+      ? 'matches tournament owner identity'
+      : 'does not match tournament owner identity'
+  };
+}
+
+function mergeTournamentHoleRows(rawRows, mapping, tournamentId, routeTag = 'unknown') {
+  const rows = Array.isArray(rawRows) ? rawRows : [];
+  const grouped = new Map();
+
+  for (const row of rows) {
+    const normalized = normalizeHoleFromDbRow(row, mapping, tournamentId, 'tournament');
+    const holeNumber = asInt(normalized.hole_number);
+    if (!Number.isInteger(holeNumber) || holeNumber < 1 || holeNumber > 18) continue;
+    if (!grouped.has(holeNumber)) grouped.set(holeNumber, []);
+    grouped.get(holeNumber).push({ raw: row, normalized });
+  }
+
+  const mergedHoles = [];
+  for (let holeNumber = 1; holeNumber <= 18; holeNumber += 1) {
+    const holeRows = grouped.get(holeNumber) || [];
+    if (!holeRows.length) {
+      mergedHoles.push(normalizeHoleInput({ hole_number: holeNumber }, tournamentId, holeNumber));
+      continue;
+    }
+
+    const withOwnership = holeRows.map((entry) => ({
+      ...entry,
+      ownership: isTournamentOwnedHoleRow(entry.raw, mapping, tournamentId)
+    }));
+    const tournamentOwnedRows = withOwnership.filter((entry) => entry.ownership.isTournamentOwned);
+    const consideredRows = tournamentOwnedRows.length ? tournamentOwnedRows : withOwnership;
+    const winner = consideredRows[0];
+
+    const mergedFlags = consideredRows.reduce((acc, entry) => ({
+      requires_photo: acc.requires_photo || parseHoleBoolean(entry.normalized.requires_photo),
+      is_longest_drive: acc.is_longest_drive || parseHoleBoolean(entry.normalized.is_longest_drive ?? entry.normalized.longest_drive),
+      is_nearest_pin: acc.is_nearest_pin || parseHoleBoolean(entry.normalized.is_nearest_pin ?? entry.normalized.nearest_pin)
+    }), {
+      requires_photo: false,
+      is_longest_drive: false,
+      is_nearest_pin: false
+    });
+
+    mergedHoles.push({
+      owner_id: tournamentId,
+      owner_key: 'tournament',
+      hole_number: holeNumber,
+      par: winner.normalized.par,
+      stroke_index: winner.normalized.stroke_index,
+      requires_photo: mergedFlags.requires_photo,
+      longest_drive: mergedFlags.is_longest_drive,
+      nearest_pin: mergedFlags.is_nearest_pin,
+      is_longest_drive: mergedFlags.is_longest_drive,
+      is_nearest_pin: mergedFlags.is_nearest_pin,
+      is_closest_to_pin: mergedFlags.is_nearest_pin
+    });
+
+    if (holeNumber === 1 || holeNumber === 2) {
+      const rawRowsDebug = holeRows.map((entry) => ({
+        hole_number: holeNumber,
+        flags: {
+          requires_photo: entry.normalized.requires_photo,
+          is_longest_drive: entry.normalized.is_longest_drive,
+          is_nearest_pin: entry.normalized.is_nearest_pin
+        },
+        ...getHoleRowDebugIdentity(entry.raw, mapping)
+      }));
+      console.log(`[api:admin-holes:merge:${routeTag}] hole ${holeNumber} raw rows before merge`, rawRowsDebug);
+      console.log(`[api:admin-holes:merge:${routeTag}] hole ${holeNumber} grouped rows`, withOwnership.map((entry) => ({
+        ...entry.ownership.debugIdentity,
+        ownership_reason: entry.ownership.reason,
+        considered_for_merge: consideredRows.includes(entry),
+        flags: {
+          requires_photo: entry.normalized.requires_photo,
+          is_longest_drive: entry.normalized.is_longest_drive,
+          is_nearest_pin: entry.normalized.is_nearest_pin
+        }
+      })));
+      console.log(`[api:admin-holes:merge:${routeTag}] hole ${holeNumber} winner`, {
+        winner: getHoleRowDebugIdentity(winner.raw, mapping),
+        reason: tournamentOwnedRows.length
+          ? 'tournament-owned rows exist, fallback rows ignored'
+          : 'no tournament-owned row found, fallback rows used'
+      });
+      console.log(`[api:admin-holes:merge:${routeTag}] hole ${holeNumber} final merged row`, {
+        hole_number: holeNumber,
+        requires_photo: mergedFlags.requires_photo,
+        is_longest_drive: mergedFlags.is_longest_drive,
+        is_nearest_pin: mergedFlags.is_nearest_pin
+      });
+    }
+  }
+
+  return mergedHoles;
+}
+
 function buildHoleDbMapping(columns, options = {}) {
   const ownerType = options.ownerType || 'tournament';
   const ownerColumnCandidates = ownerType === 'course'
@@ -803,7 +935,7 @@ app.get('/api/admin/tournament/:id/holes', asyncRoute(async (req, res) => {
     console.log('[api:admin-holes:get] schema columns', { holesColumns, tournamentsColumns });
     const mapping = buildHoleDbMapping(holesColumns, { ownerType: 'tournament' });
     const holes = await ensureTournamentHoles(tournamentId);
-    const normalizedHoles = holes.map((row) => normalizeHoleFromDbRow(row, mapping, tournamentId, 'tournament'));
+    const normalizedHoles = mergeTournamentHoleRows(holes, mapping, tournamentId, 'get');
     return res.status(200).json({
       success: true,
       data: normalizedHoles,
@@ -999,7 +1131,7 @@ app.post('/api/admin/tournament/:id/holes', asyncRoute(async (req, res) => {
     return holeNumber === 1 || holeNumber === 2;
   });
   console.log('[api:admin-holes:save] raw Supabase returned rows sample (holes 1&2)', rawSavedRowsSample);
-  const normalizedSavedHoles = (data || []).map((row) => normalizeHoleFromDbRow(row, mapping, tournamentId, 'tournament'));
+  const normalizedSavedHoles = mergeTournamentHoleRows(data || [], mapping, tournamentId, 'post');
   const finalPostResponseSample = normalizedSavedHoles
     .filter((hole) => hole.hole_number === 1 || hole.hole_number === 2)
     .map((hole) => ({
