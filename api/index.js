@@ -225,18 +225,18 @@ function parseHoleBoolean(value, fallback = false) {
 }
 
 function getCanonicalHoleFlags(hole = {}) {
-  const isLongestDrive = Boolean(
-    hole.longest_drive
-    ?? hole.is_longest_drive
+  const isLongestDrive = parseHoleBoolean(
+    hole.is_longest_drive
+    ?? hole.longest_drive
     ?? hole.longestDrive
     ?? hole.ld
   );
 
-  const isNearestPin = Boolean(
-    hole.nearest_pin
-    ?? hole.is_nearest_pin
-    ?? hole.closest_to_pin
+  const isNearestPin = parseHoleBoolean(
+    hole.is_nearest_pin
     ?? hole.is_closest_to_pin
+    ?? hole.nearest_pin
+    ?? hole.closest_to_pin
     ?? hole.nf
   );
 
@@ -860,6 +860,13 @@ app.post('/api/admin/tournament/:id/holes', asyncRoute(async (req, res) => {
   console.log('[api:admin-holes:save] schema columns', { holesColumns, tournamentsColumns });
 
   const normalizedHoles = normalizeAdminHoleCards(requestedHoles, tournamentId, 'tournament');
+  const incomingCanonicalSample = normalizedHoles
+    .filter((hole) => hole.hole_number === 1 || hole.hole_number === 2)
+    .map((hole) => ({
+      hole_number: hole.hole_number,
+      is_longest_drive: hole.is_longest_drive,
+      is_nearest_pin: hole.is_nearest_pin
+    }));
 
   for (const hole of normalizedHoles) {
     if (!Number.isInteger(hole.hole_number) || hole.hole_number < 1 || hole.hole_number > 18) {
@@ -894,8 +901,18 @@ app.post('/api/admin/tournament/:id/holes', asyncRoute(async (req, res) => {
     skippedFields.forEach((field) => skippedFieldSet.add(field));
     return row;
   });
+  const finalDbPayloadSample = persistedPayload
+    .filter((row) => {
+      const holeNumber = asInt(row[mapping.holeNumberColumn] ?? row.hole_number);
+      return holeNumber === 1 || holeNumber === 2;
+    });
   console.log('[api:admin-holes:save] outgoing payload sample', normalizedHoles.slice(0, 2));
   console.log('[api:admin-holes:save] db upsert payload sample', persistedPayload.slice(0, 2));
+  console.log('[api:admin-holes:save] compact ld/nf debug', {
+    incomingCanonicalSample,
+    discoveredLiveColumns: holesColumns,
+    finalDbPayloadSample
+  });
 
   const ownerFilter = getHoleOwnerFilter(mapping, tournamentId, 'tournament');
   const onConflict = getHoleOnConflictColumns(mapping);
@@ -937,7 +954,12 @@ app.post('/api/admin/tournament/:id/holes', asyncRoute(async (req, res) => {
   }
 
   const normalizedSavedHoles = (data || []).map((row) => normalizeHoleFromDbRow(row, mapping, tournamentId, 'tournament'));
+  const rawSavedRowsSample = (data || []).filter((row) => {
+    const holeNumber = asInt(row[mapping.holeNumberColumn] ?? row.hole_number);
+    return holeNumber === 1 || holeNumber === 2;
+  });
   console.log('[api:admin-holes:save] db response sample', (data || []).slice(0, 2));
+  console.log('[api:admin-holes:save] compact ld/nf saved rows debug', rawSavedRowsSample);
 
   return res.status(200).json({
     success: true,
@@ -969,6 +991,9 @@ app.post('/api/admin/tournament/:id/holes', asyncRoute(async (req, res) => {
       discoveredLiveColumns: holesColumns,
       normalizedIncomingPayload: normalizedHoles,
       finalPersistedPayload: persistedPayload,
+      incomingCanonicalSample,
+      finalDbPayloadSample,
+      rawSavedRowsSample,
       skippedUnsupportedFields: [...skippedFieldSet],
       mappedFieldNames: {
         ownerId: mapping.ownerIdColumn || mapping.ownerColumn,
