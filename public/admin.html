@@ -967,18 +967,18 @@ function setTeamCreateDebug(info = {}) {
   debugEl.textContent = lines.join('\n');
 }
 
-function setHolesDebug(info = {}) {
+function setHolesDebug() {
   const debugEl = document.getElementById('holesDebug');
   if (!debugEl) return;
-  const lines = [
-    `Load URL: ${info.loadUrl || '—'}`,
-    `Save URL: ${info.saveUrl || '—'}`,
-    `Selected tournament_id: ${info.tournamentId ?? '—'}`,
-    `Request payload: ${info.payload ? JSON.stringify(info.payload) : '—'}`,
-    `Response status: ${info.status ?? '—'}`,
-    `Parsed response JSON: ${info.responseJson !== undefined ? JSON.stringify(info.responseJson) : '—'}`
-  ];
-  debugEl.textContent = lines.join('\n');
+  debugEl.textContent = JSON.stringify(holesDebugTrace || {
+    selectedTournamentId: selectedHolesTournamentId ?? null,
+    beforeSave: [],
+    outgoingPayload: [],
+    rawPostResponseSample: [],
+    rawRefetchSample: [],
+    normalizedAfterRefetch: [],
+    renderedCheckboxState: []
+  }, null, 2);
 }
 
 async function createTournament() {
@@ -1252,39 +1252,56 @@ function generatePin() {
 // ── Bane og Hull ──────────────────────────────────────────────────────────────
 let holesData = [];
 let selectedHolesTournamentId = null;
-const HOLE_DEBUG_KEYS = [
+const HOLE_DEBUG_CANONICAL_KEYS = ['hole_number', 'requires_photo', 'is_longest_drive', 'is_nearest_pin'];
+const HOLE_DEBUG_RAW_KEYS = [
   'hole_number',
   'requires_photo',
-  'is_longest_drive',
-  'is_nearest_pin',
   'longest_drive',
   'nearest_pin',
+  'is_longest_drive',
+  'is_nearest_pin',
   'ld',
   'nf',
   'closest_to_pin',
   'is_closest_to_pin'
 ];
+let holesDebugTrace = null;
 
-function pickHoleDebugFields(hole = {}) {
-  return HOLE_DEBUG_KEYS.reduce((acc, key) => {
+function pickHoleFields(hole = {}, keys = []) {
+  return keys.reduce((acc, key) => {
     acc[key] = hole?.[key];
     return acc;
   }, {});
 }
 
-function pickFirstTwoHolesDebug(rawHoles = []) {
+function pickHolesOneAndTwo(rawHoles = [], keys = []) {
   const byNumber = new Map();
   (Array.isArray(rawHoles) ? rawHoles : []).forEach((hole) => {
     const holeNumber = Number.parseInt(hole?.hole_number ?? hole?.hole ?? hole?.number ?? hole?.nr, 10);
     if ((holeNumber === 1 || holeNumber === 2) && !byNumber.has(holeNumber)) {
-      byNumber.set(holeNumber, pickHoleDebugFields(hole));
+      byNumber.set(holeNumber, pickHoleFields({ ...hole, hole_number: holeNumber }, keys));
     }
   });
-  return [1, 2].map((holeNumber) => byNumber.get(holeNumber) || pickHoleDebugFields({ hole_number: holeNumber }));
+  return [1, 2].map((holeNumber) => byNumber.get(holeNumber) || pickHoleFields({ hole_number: holeNumber }, keys));
 }
 
-function logFirstTwoHolePipeline(stage, rawHoles = []) {
-  console.log(`[admin:holes:pipeline] ${stage}[0..1]`, pickFirstTwoHolesDebug(rawHoles));
+function startHolesDebugTrace(tournamentId) {
+  holesDebugTrace = {
+    selectedTournamentId: tournamentId ?? null,
+    beforeSave: [],
+    outgoingPayload: [],
+    rawPostResponseSample: [],
+    rawRefetchSample: [],
+    normalizedAfterRefetch: [],
+    renderedCheckboxState: []
+  };
+  setHolesDebug();
+}
+
+function setHolesDebugStage(stage, rawHoles = [], keys = HOLE_DEBUG_CANONICAL_KEYS) {
+  if (!holesDebugTrace || !Object.prototype.hasOwnProperty.call(holesDebugTrace, stage)) return;
+  holesDebugTrace[stage] = pickHolesOneAndTwo(rawHoles, keys);
+  setHolesDebug();
 }
 
 function normalizeAdminHoleForState(hole, fallbackHoleNumber, fallbackHole = null) {
@@ -1381,21 +1398,14 @@ function mergeNormalizedHoleSet(serverHoles = [], localHoles = []) {
 
 function captureRenderedStateFirstTwo() {
   const rendered = [1, 2].map((holeNumber) => {
-    const current = holesData.find((hole) => hole.hole_number === holeNumber) || { hole_number: holeNumber };
     return {
       hole_number: holeNumber,
       requires_photo: Boolean(document.getElementById(`h-photo-${holeNumber}`)?.checked),
       is_longest_drive: Boolean(document.getElementById(`h-ld-${holeNumber}`)?.checked),
-      is_nearest_pin: Boolean(document.getElementById(`h-ctp-${holeNumber}`)?.checked),
-      longest_drive: current.longest_drive,
-      nearest_pin: current.nearest_pin,
-      ld: current.ld,
-      nf: current.nf,
-      closest_to_pin: current.closest_to_pin,
-      is_closest_to_pin: current.is_closest_to_pin
+      is_nearest_pin: Boolean(document.getElementById(`h-ctp-${holeNumber}`)?.checked)
     };
   });
-  logFirstTwoHolePipeline('renderedState', rendered);
+  setHolesDebugStage('renderedCheckboxState', rendered, HOLE_DEBUG_CANONICAL_KEYS);
 }
 
 async function loadHoles() {
@@ -1410,18 +1420,7 @@ async function loadHoles() {
   }
   try {
     const loadUrl = `/api/admin/tournament/${selectedHolesTournamentId}/holes`;
-    setHolesDebug({ loadUrl, saveUrl: `/api/admin/tournament/${selectedHolesTournamentId}/holes`, tournamentId: selectedHolesTournamentId });
-    const d = await api(loadUrl, {
-      debugHook: ({ status, parsedResponse }) => {
-        setHolesDebug({
-          loadUrl,
-          saveUrl: `/api/admin/tournament/${selectedHolesTournamentId}/holes`,
-          tournamentId: selectedHolesTournamentId,
-          status,
-          responseJson: parsedResponse
-        });
-      }
-    });
+    const d = await api(loadUrl);
     if (!d.success) {
       throw new Error(d.error || 'Kunne ikke hente hull');
     }
@@ -1430,23 +1429,10 @@ async function loadHoles() {
       : Array.isArray(d?.holes)
         ? d.holes
         : [];
-    logFirstTwoHolePipeline('rawServerData', rawHoles);
+    startHolesDebugTrace(selectedHolesTournamentId);
+    setHolesDebugStage('rawRefetchSample', rawHoles, HOLE_DEBUG_RAW_KEYS);
     const normalizedHoles = mergeNormalizedHoleSet(rawHoles, []);
-    logFirstTwoHolePipeline('normalizedFromDb', normalizedHoles);
-    setHolesDebug({
-      loadUrl,
-      saveUrl: `/api/admin/tournament/${selectedHolesTournamentId}/holes`,
-      tournamentId: selectedHolesTournamentId,
-      detectedLiveHolesColumns: d?.debug?.discoveredLiveColumns || [],
-      rawDbHoleSample: rawHoles.slice(0, 2),
-      normalizedHoleSample: normalizedHoles.slice(0, 2)
-    });
-    console.log('[admin:holes:load]', {
-      tournamentId: selectedHolesTournamentId,
-      rawParsedResponse: d,
-      normalizedHoleSample: normalizedHoles.slice(0, 2),
-      normalizedHolesLength: normalizedHoles.length
-    });
+    setHolesDebugStage('normalizedAfterRefetch', normalizedHoles, HOLE_DEBUG_CANONICAL_KEYS);
     holesData = normalizedHoles;
     renderHolesGrid();
     captureRenderedStateFirstTwo();
@@ -1495,20 +1481,13 @@ function renderHolesGrid() {
 }
 
 function buildNormalizedTournamentHoleFromDom(holeNumber, fallbackHole = {}) {
-  const ids = {
-    par: `h-par-${holeNumber}`,
-    stroke_index: `h-si-${holeNumber}`,
-    requires_photo: `h-photo-${holeNumber}`,
-    is_longest_drive: `h-ld-${holeNumber}`,
-    is_nearest_pin: `h-ctp-${holeNumber}`
-  };
-  const parEl = document.getElementById(ids.par);
-  const strokeEl = document.getElementById(ids.stroke_index);
-  const photoEl = document.getElementById(ids.requires_photo);
-  const ldEl = document.getElementById(ids.is_longest_drive);
-  const nfEl = document.getElementById(ids.is_nearest_pin);
+  const parEl = document.getElementById(`h-par-${holeNumber}`);
+  const strokeEl = document.getElementById(`h-si-${holeNumber}`);
+  const photoEl = document.getElementById(`h-photo-${holeNumber}`);
+  const ldEl = document.getElementById(`h-ld-${holeNumber}`);
+  const nfEl = document.getElementById(`h-ctp-${holeNumber}`);
   const normalizedFallback = normalizeAdminHoleForState(fallbackHole, holeNumber, null);
-  const normalized = {
+  return {
     hole_number: holeNumber,
     par: Number.parseInt(parEl?.value ?? normalizedFallback.par ?? 4, 10) || 4,
     stroke_index: Number.parseInt(strokeEl?.value ?? normalizedFallback.stroke_index ?? holeNumber, 10) || holeNumber,
@@ -1516,7 +1495,6 @@ function buildNormalizedTournamentHoleFromDom(holeNumber, fallbackHole = {}) {
     is_longest_drive: ldEl ? Boolean(ldEl.checked) : normalizedFallback.is_longest_drive,
     is_nearest_pin: nfEl ? Boolean(nfEl.checked) : normalizedFallback.is_nearest_pin
   };
-  return { ids, normalized };
 }
 
 async function saveHoles() {
@@ -1527,78 +1505,34 @@ async function saveHoles() {
   const sourceHoles = holesData.length ? holesData : Array.from({ length: 18 }, (_, index) => ({ hole_number: index + 1 }));
   const holes = sourceHoles.map((h) => {
     const holeNumber = Number.parseInt(h?.hole_number, 10);
-    const { ids, normalized } = buildNormalizedTournamentHoleFromDom(holeNumber, h);
-    if (holeNumber <= 2) {
-      console.log('[admin:holes:save:debug:first2]', {
-        hole_number: holeNumber,
-        checkbox_ids_found: {
-          is_longest_drive: ids.is_longest_drive,
-          is_nearest_pin: ids.is_nearest_pin
-        },
-        checked_values_read: {
-          is_longest_drive: normalized.is_longest_drive,
-          is_nearest_pin: normalized.is_nearest_pin
-        },
-        normalized_hole: normalized
-      });
-    }
-    return normalized;
+    return buildNormalizedTournamentHoleFromDom(holeNumber, h);
   });
-  logFirstTwoHolePipeline('domBeforeSave', holes);
-  logFirstTwoHolePipeline('outgoingPayload', holes);
+  startHolesDebugTrace(tournamentId);
+  setHolesDebugStage('beforeSave', holes, HOLE_DEBUG_CANONICAL_KEYS);
+  setHolesDebugStage('outgoingPayload', holes, HOLE_DEBUG_CANONICAL_KEYS);
   const saveUrl = `/api/admin/tournament/${tournamentId}/holes`;
   const payload = { holes };
-  console.log('[admin:holes:save:payload]', payload);
-  setHolesDebug({
-    loadUrl: `/api/admin/tournament/${tournamentId}/holes`,
-    saveUrl,
-    tournamentId,
-    payload,
-    status: 'pending',
-    responseJson: '-'
-  });
   try {
     const saveResponse = await api(saveUrl,{
       method:'POST',
-      body:JSON.stringify(payload),
-      debugHook: ({ status, parsedResponse }) => {
-        setHolesDebug({
-          loadUrl: `/api/admin/tournament/${tournamentId}/holes`,
-          saveUrl,
-          tournamentId,
-          payload,
-          status,
-          responseJson: parsedResponse
-        });
-      }
+      body:JSON.stringify(payload)
     });
     const rawPostRows = Array.isArray(saveResponse?.data)
       ? saveResponse.data
       : Array.isArray(saveResponse?.holes)
         ? saveResponse.holes
         : [];
-    logFirstTwoHolePipeline('rawServerData', rawPostRows);
+    setHolesDebugStage('rawPostResponseSample', rawPostRows, HOLE_DEBUG_RAW_KEYS);
     const refetchUrl = `/api/admin/tournament/${tournamentId}/holes`;
-    const refetched = await api(refetchUrl, {
-      debugHook: ({ status, parsedResponse }) => {
-        setHolesDebug({
-          loadUrl: refetchUrl,
-          saveUrl,
-          tournamentId,
-          payload,
-          status,
-          responseJson: parsedResponse
-        });
-      }
-    });
+    const refetched = await api(refetchUrl);
     const rawRefetchedHoles = Array.isArray(refetched?.data)
       ? refetched.data
       : Array.isArray(refetched?.holes)
         ? refetched.holes
         : [];
-    logFirstTwoHolePipeline('rawServerData', rawRefetchedHoles);
+    setHolesDebugStage('rawRefetchSample', rawRefetchedHoles, HOLE_DEBUG_RAW_KEYS);
     holesData = mergeNormalizedHoleSet(rawRefetchedHoles, []);
-    logFirstTwoHolePipeline('normalizedFromDb', holesData);
+    setHolesDebugStage('normalizedAfterRefetch', holesData, HOLE_DEBUG_CANONICAL_KEYS);
     renderHolesGrid();
     captureRenderedStateFirstTwo();
     showToast('Hullkonfigurasjon lagret til turnering!');
