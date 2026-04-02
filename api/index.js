@@ -121,14 +121,37 @@ function logApiDebug(tag, data = {}) {
 
 
 
-let teamsSchemaCache = null;
-let teamsSchemaLoadedAt = 0;
+const schemaColumnsCache = {};
+const schemaCacheTimestamps = {};
 
-async function fetchTeamsColumns() {
+function extractTableColumnsFromOpenApi(openApi, tableName) {
+  const allSchemas = {
+    ...(openApi?.definitions || {}),
+    ...(openApi?.components?.schemas || {})
+  };
+
+  const directMatch = allSchemas[tableName];
+  if (directMatch?.properties) return Object.keys(directMatch.properties);
+
+  const publicMatch = allSchemas[`public.${tableName}`];
+  if (publicMatch?.properties) return Object.keys(publicMatch.properties);
+
+  for (const [schemaName, schemaDef] of Object.entries(allSchemas)) {
+    if (schemaName.endsWith(`.${tableName}`) && schemaDef?.properties) {
+      return Object.keys(schemaDef.properties);
+    }
+  }
+
+  return [];
+}
+
+async function fetchTableColumns(tableName) {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return [];
   const now = Date.now();
-  if (teamsSchemaCache && (now - teamsSchemaLoadedAt) < 5 * 60 * 1000) {
-    return teamsSchemaCache;
+  const cachedColumns = schemaColumnsCache[tableName];
+  const cachedAt = schemaCacheTimestamps[tableName] || 0;
+  if (cachedColumns && (now - cachedAt) < 5 * 60 * 1000) {
+    return cachedColumns;
   }
 
   try {
@@ -140,30 +163,21 @@ async function fetchTeamsColumns() {
       }
     });
     if (!response.ok) {
-      console.error('[api:teams-schema] Failed to fetch OpenAPI schema', { status: response.status, statusText: response.statusText });
-      return teamsSchemaCache || [];
+      console.error('[api:schema] Failed to fetch OpenAPI schema', { table: tableName, status: response.status, statusText: response.statusText });
+      return cachedColumns || [];
     }
 
     const openApi = await response.json();
-    const teamsDefinition = openApi?.definitions?.teams || openApi?.components?.schemas?.teams;
-    const properties = teamsDefinition?.properties || {};
-    const columns = Object.keys(properties);
+    const columns = extractTableColumnsFromOpenApi(openApi, tableName);
 
-    teamsSchemaCache = columns;
-    teamsSchemaLoadedAt = now;
-    console.log('[api:teams-schema] public.teams columns', columns);
+    schemaColumnsCache[tableName] = columns;
+    schemaCacheTimestamps[tableName] = now;
+    console.log(`[api:schema] public.${tableName} columns`, columns);
     return columns;
   } catch (error) {
-    console.error('[api:teams-schema] Could not read teams schema', error?.message || error);
-    return teamsSchemaCache || [];
+    console.error('[api:schema] Could not read table schema', { table: tableName, error: error?.message || error });
+    return cachedColumns || [];
   }
-}
-
-function pickFirstExistingColumn(columns, candidates = []) {
-  for (const candidate of candidates) {
-    if (columns.includes(candidate)) return candidate;
-  }
-  return null;
 }
 
 function buildDefaultHoles(tournamentId) {
@@ -205,9 +219,16 @@ async function getActiveTournament() {
 }
 
 async function ensureTournamentHoles(tournamentId) {
+  const holesColumns = await fetchTableColumns('holes');
+  const requiredReadColumns = ['tournament_id', 'hole_number'];
+  const missingReadColumns = requiredReadColumns.filter((column) => !holesColumns.includes(column));
+  if (missingReadColumns.length) {
+    throw new Error(`public.holes mangler nødvendige kolonner for lasting: ${missingReadColumns.join(', ')}`);
+  }
+
   const { data, error } = await supabase
     .from('holes')
-    .select('*')
+    .select(holesColumns.join(','))
     .eq('tournament_id', tournamentId)
     .order('hole_number', { ascending: true });
   if (error) throw new Error(error.message);
@@ -215,14 +236,26 @@ async function ensureTournamentHoles(tournamentId) {
   if ((data || []).length > 0) return data;
 
   const fallbackHoles = buildDefaultHoles(tournamentId);
+  const fallbackInsertPayload = fallbackHoles.map((hole) => {
+    const row = {};
+    for (const [key, value] of Object.entries(hole)) {
+      if (holesColumns.includes(key)) row[key] = value;
+    }
+    return row;
+  });
+
+  if (fallbackInsertPayload.some((row) => !Object.prototype.hasOwnProperty.call(row, 'tournament_id') || !Object.prototype.hasOwnProperty.call(row, 'hole_number'))) {
+    throw new Error('public.holes støtter ikke påkrevde felter tournament_id og hole_number for standardhull');
+  }
+
   const { error: insertError } = await supabase
     .from('holes')
-    .upsert(fallbackHoles, { onConflict: 'tournament_id,hole_number' });
+    .upsert(fallbackInsertPayload, { onConflict: 'tournament_id,hole_number' });
   if (insertError) throw new Error(insertError.message);
 
   const { data: created, error: createdError } = await supabase
     .from('holes')
-    .select('*')
+    .select(holesColumns.join(','))
     .eq('tournament_id', tournamentId)
     .order('hole_number', { ascending: true });
   if (createdError) throw new Error(createdError.message);
@@ -531,15 +564,26 @@ app.get('/api/admin/tournament/:id/holes', asyncRoute(async (req, res) => {
   console.log('LOAD HOLES:', tournamentId);
   if (!tournamentId) return fail(res, 400, 'Ugyldig turnerings-ID');
   try {
+    const [holesColumns, tournamentsColumns] = await Promise.all([
+      fetchTableColumns('holes'),
+      fetchTableColumns('tournaments')
+    ]);
+    console.log('[api:admin-holes:get] schema columns', { holesColumns, tournamentsColumns });
     const holes = await ensureTournamentHoles(tournamentId);
     return res.status(200).json({
       success: true,
-      data: holes
+      data: holes,
+      debug: {
+        holesColumns,
+        tournamentsColumns,
+        stackHint: 'admin_holes_get'
+      }
     });
   } catch (error) {
     return res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
+      stackHint: 'admin_holes_get'
     });
   }
 }));
@@ -553,6 +597,12 @@ app.post('/api/admin/tournament/:id/holes', asyncRoute(async (req, res) => {
 
   const requestedHoles = Array.isArray(req.body?.holes) ? req.body.holes : null;
   if (!requestedHoles) return fail(res, 400, 'holes må være en liste');
+
+  const [holesColumns, tournamentsColumns] = await Promise.all([
+    fetchTableColumns('holes'),
+    fetchTableColumns('tournaments')
+  ]);
+  console.log('[api:admin-holes:save] schema columns', { holesColumns, tournamentsColumns });
 
   const normalizedHoles = requestedHoles.length
     ? requestedHoles.map((hole, index) => normalizeHoleInput(hole, tournamentId, index + 1))
@@ -573,21 +623,47 @@ app.post('/api/admin/tournament/:id/holes', asyncRoute(async (req, res) => {
 
   console.log('SAVE HOLES:', normalizedHoles);
 
+  const requiredHoleColumns = ['tournament_id', 'hole_number', 'par', 'stroke_index', 'requires_photo', 'is_longest_drive', 'is_nearest_pin'];
+  const unmappedHoleFields = requiredHoleColumns.filter((field) => !holesColumns.includes(field));
+  if (unmappedHoleFields.length) {
+    return res.status(500).json({
+      success: false,
+      error: 'public.holes støtter ikke nødvendig felter for admin-hulloppsett',
+      actualColumns: holesColumns,
+      unmappedFrontendFields: unmappedHoleFields,
+      stackHint: 'admin_holes_save'
+    });
+  }
+
+  const insertPayload = normalizedHoles.map((hole) => {
+    const row = {};
+    for (const [key, value] of Object.entries(hole)) {
+      if (holesColumns.includes(key)) row[key] = value;
+    }
+    return row;
+  });
+
   const { error } = await supabase
     .from('holes')
-    .upsert(normalizedHoles, { onConflict: 'tournament_id,hole_number' });
+    .upsert(insertPayload, { onConflict: 'tournament_id,hole_number' });
   if (error) return res.status(500).json({ success: false, error: error.message });
 
   const { data, error: fetchError } = await supabase
     .from('holes')
-    .select('*')
+    .select(holesColumns.join(','))
     .eq('tournament_id', tournamentId)
     .order('hole_number', { ascending: true });
   if (fetchError) return res.status(500).json({ success: false, error: fetchError.message });
 
   return res.status(200).json({
     success: true,
-    data: data || []
+    data: data || [],
+    debug: {
+      holesColumns,
+      tournamentsColumns,
+      finalInsertPayload: insertPayload,
+      stackHint: 'admin_holes_save'
+    }
   });
 }));
 
@@ -598,8 +674,16 @@ app.post(['/api/teams', '/api/admin/team'], asyncRoute(async (req, res) => {
     const b = (req.body && typeof req.body === 'object') ? req.body : {};
     console.log('[api:admin-team:create] request payload', b);
 
-    const teamsColumns = await fetchTeamsColumns();
-    console.log('[api:admin-team:create] public.teams columns', teamsColumns);
+    const [teamsColumns, tournamentsColumns, holesColumns] = await Promise.all([
+      fetchTableColumns('teams'),
+      fetchTableColumns('tournaments'),
+      fetchTableColumns('holes')
+    ]);
+    console.log('[api:admin-team:create] schema columns', {
+      teamsColumns,
+      tournamentsColumns,
+      holesColumns
+    });
 
     const tournamentId = Number(b.tournament_id);
     const teamName = String(b.team_name || '').trim();
@@ -616,25 +700,44 @@ app.post(['/api/teams', '/api/admin/team'], asyncRoute(async (req, res) => {
       return fail(res, 400, 'hcp_player1 og hcp_player2 må være tall');
     }
 
-    const nameColumn = pickFirstExistingColumn(teamsColumns, ['team_name', 'name']);
-    const player1Column = pickFirstExistingColumn(teamsColumns, ['player1_name', 'player1']);
-    const player2Column = pickFirstExistingColumn(teamsColumns, ['player2_name', 'player2']);
-    const pinColumn = pickFirstExistingColumn(teamsColumns, ['pin', 'pin_code']);
-    const hcp1Column = pickFirstExistingColumn(teamsColumns, ['hcp_player1', 'player1_hcp', 'player1_handicap']);
-    const hcp2Column = pickFirstExistingColumn(teamsColumns, ['hcp_player2', 'player2_hcp', 'player2_handicap']);
+    const frontendToExactColumn = {
+      tournament_id: 'tournament_id',
+      team_name: 'team_name',
+      player1_name: 'player1_name',
+      player2_name: 'player2_name',
+      pin: 'pin',
+      hcp_player1: 'hcp_player1',
+      hcp_player2: 'hcp_player2'
+    };
 
-    const finalPayload = { tournament_id: tournamentId };
-    if (nameColumn) finalPayload[nameColumn] = teamName;
-    if (player1Column) finalPayload[player1Column] = player1Name;
-    if (player2Column) finalPayload[player2Column] = player2Name;
-    if (pinColumn) finalPayload[pinColumn] = pinRaw;
-    if (hcp1Column) finalPayload[hcp1Column] = hcpPlayer1;
-    if (hcp2Column) finalPayload[hcp2Column] = hcpPlayer2;
+    const sourcePayload = {
+      tournament_id: tournamentId,
+      team_name: teamName,
+      player1_name: player1Name,
+      player2_name: player2Name,
+      pin: pinRaw,
+      hcp_player1: hcpPlayer1,
+      hcp_player2: hcpPlayer2
+    };
 
-    if (!nameColumn || !pinColumn || !hcp1Column || !hcp2Column) {
+    const finalPayload = {};
+    const unmappedFrontendFields = [];
+    for (const [frontendField, columnName] of Object.entries(frontendToExactColumn)) {
+      if (teamsColumns.includes(columnName)) {
+        finalPayload[columnName] = sourcePayload[frontendField];
+      } else {
+        unmappedFrontendFields.push(frontendField);
+      }
+    }
+
+    if (unmappedFrontendFields.length > 0) {
       return res.status(500).json({
         success: false,
-        error: `Missing required teams columns in schema: ${JSON.stringify({ nameColumn, pinColumn, hcp1Column, hcp2Column })}`,
+        error: 'Frontend payload kan ikke mappes mot live public.teams schema uten gjetting.',
+        actualColumns: teamsColumns,
+        unmappedFrontendFields,
+        requestPayload: b,
+        finalInsertPayload: finalPayload,
         stackHint: 'admin_create_team'
       });
     }
@@ -647,19 +750,36 @@ app.post(['/api/teams', '/api/admin/team'], asyncRoute(async (req, res) => {
       return res.status(500).json({
         success: false,
         error: result.error.message,
+        requestPayload: b,
+        actualColumns: teamsColumns,
+        finalInsertPayload: finalPayload,
+        supabaseError: result.error,
         stackHint: 'admin_create_team'
       });
     }
 
     return res.status(201).json({
       success: true,
-      data: result.data
+      data: result.data,
+      debug: {
+        requestPayload: b,
+        teamsColumns,
+        tournamentsColumns,
+        holesColumns,
+        finalInsertPayload: finalPayload,
+        supabaseError: null,
+        stackHint: 'admin_create_team'
+      }
     });
   } catch (err) {
     console.error('[api:admin-team:create] unexpected error', err);
     return res.status(500).json({
       success: false,
       error: err?.message || 'Unknown error',
+      requestPayload: req.body || null,
+      actualColumns: schemaColumnsCache.teams || [],
+      finalInsertPayload: null,
+      supabaseError: null,
       stackHint: 'admin_create_team'
     });
   }
