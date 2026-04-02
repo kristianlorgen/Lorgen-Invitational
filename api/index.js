@@ -679,28 +679,19 @@ app.post(['/api/teams', '/api/admin/team'], asyncRoute(async (req, res) => {
     const player1_name = String(b.player1_name || '').trim();
     const player2_name = String(b.player2_name || '').trim();
     const pin = String(b.pin ?? '').trim();
-    const hcp_player1 = b.hcp_player1;
-    const hcp_player2 = b.hcp_player2;
 
     const tournamentId = Number(tournament_id);
-    const hcpPlayer1 = Number(hcp_player1);
-    const hcpPlayer2 = Number(hcp_player2);
 
     if (!Number.isInteger(tournamentId)) return fail(res, 400, 'tournament_id er påkrevd');
     if (!team_name) return fail(res, 400, 'team_name er påkrevd');
     if (!/^\d{4}$/.test(pin)) return fail(res, 400, 'PIN må være nøyaktig 4 siffer');
-    if (!Number.isFinite(hcpPlayer1) || !Number.isFinite(hcpPlayer2)) {
-      return fail(res, 400, 'hcp_player1 og hcp_player2 må være tall');
-    }
 
     const finalPayload = {
       tournament_id: Number(tournament_id),
       team_name: team_name,
       player1: player1_name,
       player2: player2_name,
-      pin: pin,
-      hcp_player1: Number(hcp_player1),
-      hcp_player2: Number(hcp_player2)
+      pin: pin
     };
 
     console.log('[api:admin-team:create] final insert payload', finalPayload);
