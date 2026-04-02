@@ -119,6 +119,53 @@ function logApiDebug(tag, data = {}) {
   }
 }
 
+
+
+let teamsSchemaCache = null;
+let teamsSchemaLoadedAt = 0;
+
+async function fetchTeamsColumns() {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return [];
+  const now = Date.now();
+  if (teamsSchemaCache && (now - teamsSchemaLoadedAt) < 5 * 60 * 1000) {
+    return teamsSchemaCache;
+  }
+
+  try {
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/`, {
+      headers: {
+        apikey: SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        Accept: 'application/openapi+json'
+      }
+    });
+    if (!response.ok) {
+      console.error('[api:teams-schema] Failed to fetch OpenAPI schema', { status: response.status, statusText: response.statusText });
+      return teamsSchemaCache || [];
+    }
+
+    const openApi = await response.json();
+    const teamsDefinition = openApi?.definitions?.teams || openApi?.components?.schemas?.teams;
+    const properties = teamsDefinition?.properties || {};
+    const columns = Object.keys(properties);
+
+    teamsSchemaCache = columns;
+    teamsSchemaLoadedAt = now;
+    console.log('[api:teams-schema] public.teams columns', columns);
+    return columns;
+  } catch (error) {
+    console.error('[api:teams-schema] Could not read teams schema', error?.message || error);
+    return teamsSchemaCache || [];
+  }
+}
+
+function pickFirstExistingColumn(columns, candidates = []) {
+  for (const candidate of candidates) {
+    if (columns.includes(candidate)) return candidate;
+  }
+  return null;
+}
+
 function buildDefaultHoles(tournamentId) {
   return Array.from({ length: 18 }, (_, index) => {
     const holeNumber = index + 1;
@@ -549,38 +596,71 @@ app.post(['/api/teams', '/api/admin/team'], asyncRoute(async (req, res) => {
   if (req.path.includes('/api/admin/') && !requireAdmin(req, res)) return;
   try {
     const b = (req.body && typeof req.body === 'object') ? req.body : {};
-    console.log('TEAM PAYLOAD:', b);
-    console.log(await supabase.from('teams').select('*').limit(1));
+    console.log('[api:admin-team:create] request payload', b);
 
-    const finalPayload = {
-      tournament_id: Number(b.tournament_id),
-      name: b.team_name,
-      player1: b.player1_name || '',
-      player2: b.player2_name || '',
-      pin: String(b.pin),
-      hcp1: Number(b.hcp_player1),
-      hcp2: Number(b.hcp_player2)
-    };
+    const teamsColumns = await fetchTeamsColumns();
+    console.log('[api:admin-team:create] public.teams columns', teamsColumns);
 
-    if (!Number.isInteger(finalPayload.tournament_id)) return fail(res, 400, 'tournament_id er påkrevd');
-    if (!String(finalPayload.name || '').trim()) return fail(res, 400, 'team_name er påkrevd');
-    if (!/^\d{4}$/.test(finalPayload.pin)) return fail(res, 400, 'PIN må være nøyaktig 4 siffer');
-    if (!Number.isFinite(finalPayload.hcp1) || !Number.isFinite(finalPayload.hcp2)) {
+    const tournamentId = Number(b.tournament_id);
+    const teamName = String(b.team_name || '').trim();
+    const player1Name = String(b.player1_name || '').trim();
+    const player2Name = String(b.player2_name || '').trim();
+    const pinRaw = String(b.pin ?? '').trim();
+    const hcpPlayer1 = Number(b.hcp_player1);
+    const hcpPlayer2 = Number(b.hcp_player2);
+
+    if (!Number.isInteger(tournamentId)) return fail(res, 400, 'tournament_id er påkrevd');
+    if (!teamName) return fail(res, 400, 'team_name er påkrevd');
+    if (!/^\d{4}$/.test(pinRaw)) return fail(res, 400, 'PIN må være nøyaktig 4 siffer');
+    if (!Number.isFinite(hcpPlayer1) || !Number.isFinite(hcpPlayer2)) {
       return fail(res, 400, 'hcp_player1 og hcp_player2 må være tall');
     }
 
+    const nameColumn = pickFirstExistingColumn(teamsColumns, ['team_name', 'name']);
+    const player1Column = pickFirstExistingColumn(teamsColumns, ['player1_name', 'player1']);
+    const player2Column = pickFirstExistingColumn(teamsColumns, ['player2_name', 'player2']);
+    const pinColumn = pickFirstExistingColumn(teamsColumns, ['pin', 'pin_code']);
+    const hcp1Column = pickFirstExistingColumn(teamsColumns, ['hcp_player1', 'player1_hcp', 'player1_handicap']);
+    const hcp2Column = pickFirstExistingColumn(teamsColumns, ['hcp_player2', 'player2_hcp', 'player2_handicap']);
+
+    const finalPayload = { tournament_id: tournamentId };
+    if (nameColumn) finalPayload[nameColumn] = teamName;
+    if (player1Column) finalPayload[player1Column] = player1Name;
+    if (player2Column) finalPayload[player2Column] = player2Name;
+    if (pinColumn) finalPayload[pinColumn] = pinRaw;
+    if (hcp1Column) finalPayload[hcp1Column] = hcpPlayer1;
+    if (hcp2Column) finalPayload[hcp2Column] = hcpPlayer2;
+
+    if (!nameColumn || !pinColumn || !hcp1Column || !hcp2Column) {
+      return res.status(500).json({
+        success: false,
+        error: `Missing required teams columns in schema: ${JSON.stringify({ nameColumn, pinColumn, hcp1Column, hcp2Column })}`,
+        stackHint: 'admin_create_team'
+      });
+    }
+
+    console.log('[api:admin-team:create] final insert payload', finalPayload);
     const result = await supabase.from('teams').insert(finalPayload).select('*').single();
-    if (result.error) throw result.error;
+
+    if (result.error) {
+      console.error('[api:admin-team:create] supabase error object', result.error);
+      return res.status(500).json({
+        success: false,
+        error: result.error.message,
+        stackHint: 'admin_create_team'
+      });
+    }
 
     return res.status(201).json({
       success: true,
       data: result.data
     });
   } catch (err) {
-    console.error('TEAM CREATE ERROR:', err);
+    console.error('[api:admin-team:create] unexpected error', err);
     return res.status(500).json({
       success: false,
-      error: err.message
+      error: err?.message || 'Unknown error',
+      stackHint: 'admin_create_team'
     });
   }
 }));
@@ -878,9 +958,76 @@ app.get('/api/admin/legacy', asyncRoute(async (req, res) => {
 }));
 app.get('/api/coin-back', asyncRoute(async (_req, res) => {
   if (!requireSupabase(res)) return;
-  const { data, error } = await supabase.from('site_assets').select('*').eq('key', 'coin_back').maybeSingle();
-  if (error) return ok(res, { coin_back: null });
-  return ok(res, { coin_back: data?.value || null });
+  const { data, error } = await supabase
+    .from('coin_back_images')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+
+  const photos = data || [];
+  const active = photos.find((p) => p.is_active && p.photo_path) || photos[0] || null;
+  return ok(res, {
+    photos,
+    photo_path: active?.photo_path || null,
+    focal_point: active?.focal_point || '50% 50%'
+  });
+}));
+
+app.post('/api/admin/coin-back', upload.single('photo'), asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
+  if (!requireAdmin(req, res)) return;
+  if (!req.file) return fail(res, 400, 'Ingen fil lastet opp');
+
+  const extension = (req.file.originalname.split('.').pop() || 'jpg').toLowerCase();
+  const filePath = `coin-back/back-${Date.now()}-${Math.round(Math.random() * 1e6)}.${extension}`;
+
+  const uploadResult = await supabase.storage.from('tournament-gallery').upload(filePath, req.file.buffer, {
+    contentType: req.file.mimetype || 'application/octet-stream',
+    upsert: true
+  });
+
+  if (uploadResult.error) {
+    return res.status(500).json({ success: false, error: uploadResult.error.message });
+  }
+
+  const publicUrl = supabase.storage.from('tournament-gallery').getPublicUrl(filePath).data.publicUrl;
+
+  const { data: activeRow, error: activeError } = await supabase
+    .from('coin_back_images')
+    .select('focal_point')
+    .eq('is_active', true)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (activeError) {
+    return res.status(500).json({ success: false, error: activeError.message });
+  }
+
+  const focalPoint = activeRow?.focal_point || '50% 50%';
+
+  const deactivate = await supabase.from('coin_back_images').update({ is_active: false }).eq('is_active', true);
+  if (deactivate.error) {
+    return res.status(500).json({ success: false, error: deactivate.error.message });
+  }
+
+  const insert = await supabase
+    .from('coin_back_images')
+    .insert({ photo_path: publicUrl, focal_point: focalPoint, is_active: true })
+    .select('*')
+    .single();
+
+  if (insert.error) {
+    return res.status(500).json({ success: false, error: insert.error.message });
+  }
+
+  return ok(res, {
+    photo_path: insert.data?.photo_path || publicUrl,
+    focal_point: insert.data?.focal_point || '50% 50%'
+  });
 }));
 app.get('/api/scoreboard', asyncRoute(async (_req, res) => {
   if (!requireSupabase(res)) return;
