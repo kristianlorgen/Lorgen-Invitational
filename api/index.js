@@ -285,24 +285,23 @@ function parseTournamentCreateBody(req) {
   const name = String(body.name || '').trim();
   const date = String(body.date || '').trim();
   const course = String(body.course || '').trim();
-  const description = String(body.description || '');
-  const slope_rating = Number(body.slope_rating || 113);
-  const year = body.year ? Number(body.year) : (date ? new Date(date).getFullYear() : new Date().getFullYear());
   const status = String(body.status || 'upcoming');
+  const dateObj = new Date(date);
   const missing = [];
   if (!name) missing.push('name');
   if (!date) missing.push('date');
   if (!course) missing.push('course');
-  return { body, name, date, course, description, slope_rating, year, status, missing };
+  return { body, name, date, course, status, dateObj, missing };
 }
 
 function buildTournamentInsertPayload(parsed) {
-  // Current schema in this repo (see supabase/migrations/20260331_rebuild_backend_bigint.sql)
-  // only guarantees these columns on public.tournaments.
+  const year = parsed.dateObj.getFullYear();
   return {
     name: parsed.name,
     course: parsed.course,
-    status: parsed.status
+    date: parsed.date,
+    year,
+    status: parsed.status || 'upcoming'
   };
 }
 
@@ -361,17 +360,18 @@ async function handleAdminCreateTournament(req, res, options = {}) {
       name: parsed.name,
       date: parsed.date,
       course: parsed.course,
-      description: parsed.description,
-      slope_rating: parsed.slope_rating,
-      year: parsed.year,
       status: parsed.status
     });
 
     if (parsed.missing.length) {
       return res.status(400).json({ success: false, error: 'Mangler required fields', missing: parsed.missing });
     }
+    if (Number.isNaN(parsed.dateObj.getTime())) {
+      return res.status(400).json({ success: false, error: 'Ugyldig datoformat' });
+    }
 
     const payload = buildTournamentInsertPayload(parsed);
+    console.log('FINAL TOURNAMENT PAYLOAD:', payload);
     if (dryRun) {
       return res.status(200).json({ success: true, validated: true, payload });
     }
