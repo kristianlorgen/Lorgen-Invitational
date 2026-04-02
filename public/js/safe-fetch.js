@@ -1,13 +1,13 @@
 (function () {
-  function parseApiResponse(response) {
-    return response.text().then((text) => {
-      if (!text) return {};
-      try {
-        return JSON.parse(text);
-      } catch (_error) {
-        return { __nonJson: true, raw: text };
-      }
-    });
+  async function parseApiResponse(response) {
+    const text = await response.text();
+    if (!text) return { data: {}, isJson: true, rawText: '' };
+
+    try {
+      return { data: JSON.parse(text), isJson: true, rawText: text };
+    } catch (_error) {
+      return { data: text, isJson: false, rawText: text };
+    }
   }
 
   async function safeJsonFetch(url, options = {}) {
@@ -18,33 +18,57 @@
       ...(options.headers || {})
     };
 
+    const { debugHook, ...fetchOptions } = options;
+
     let response;
     try {
       response = await fetch(url, {
         credentials: 'same-origin',
-        ...options,
+        ...fetchOptions,
         headers
       });
     } catch (networkError) {
       console.error('[safeJsonFetch] Network error', { url, method, error: networkError });
-      throw new Error('Kunne ikke nå serveren. Prøv igjen.');
+      throw new Error(networkError?.message || 'Kunne ikke nå serveren. Prøv igjen.');
     }
 
-    const payload = await parseApiResponse(response);
+    const parsed = await parseApiResponse(response);
+    if (typeof debugHook === 'function') {
+      try {
+        debugHook({
+          url,
+          method,
+          status: response.status,
+          ok: response.ok,
+          parsedResponse: parsed.isJson ? parsed.data : { raw: parsed.rawText }
+        });
+      } catch (_debugError) {
+        // Ignorer debug-feil slik at API-kall ikke påvirkes.
+      }
+    }
+
     if (!response.ok) {
-      console.error('[safeJsonFetch] HTTP error', { url, method, status: response.status, payload });
-      const message = payload && typeof payload === 'object' && payload.error
-        ? payload.error
-        : `Serverfeil (${response.status})`;
+      console.error('[safeJsonFetch] HTTP error', {
+        url,
+        method,
+        status: response.status,
+        payload: parsed.data
+      });
+      let message = `Serverfeil (${response.status})`;
+      if (parsed.isJson && parsed.data && typeof parsed.data === 'object') {
+        message = parsed.data.error || parsed.data.message || message;
+      } else if (!parsed.isJson && parsed.rawText) {
+        message = parsed.rawText;
+      }
       throw new Error(message);
     }
 
-    if (payload && payload.__nonJson) {
-      console.error('[safeJsonFetch] Non-JSON response', { url, method, status: response.status });
-      throw new Error('Serveren svarte ikke med JSON.');
+    if (!parsed.isJson) {
+      console.error('[safeJsonFetch] Non-JSON success response', { url, method, status: response.status });
+      return { raw: parsed.rawText };
     }
 
-    return payload;
+    return parsed.data;
   }
 
   window.safeJsonFetch = safeJsonFetch;

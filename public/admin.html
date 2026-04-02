@@ -198,6 +198,7 @@
             </div>
             <div style="margin-top:16px">
               <button onclick="createTournament()" class="btn btn--gold btn--sm"><i class="fas fa-plus"></i> Opprett turnering</button>
+              <div id="createTournamentDebug" style="margin-top:8px;padding:8px 10px;background:var(--gold-pale);border:1px dashed var(--gold-border);border-radius:8px;font-size:.72rem;color:var(--text-muted);font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;white-space:pre-wrap">Debug (midlertidig): ingen forespørsel sendt ennå.</div>
             </div>
           </div>
         </div>
@@ -923,35 +924,56 @@ function renderTournamentsTable() {
     </tr>`).join('');
 }
 
+function setCreateTournamentDebug(info = {}) {
+  const debugEl = document.getElementById('createTournamentDebug');
+  if (!debugEl) return;
+  const lines = [
+    `URL: ${info.url || '—'}`,
+    `Payload: ${info.payload ? JSON.stringify(info.payload) : '—'}`,
+    `Response status: ${info.status ?? '—'}`,
+    `Response JSON: ${info.responseJson !== undefined ? JSON.stringify(info.responseJson) : '—'}`
+  ];
+  debugEl.textContent = lines.join('\n');
+}
+
 async function createTournament() {
-  const name=(document.getElementById('tName').value || 'Lorgen Invitational').trim(), date=document.getElementById('tDate').value, course=document.getElementById('tCourse').value,
-        description=document.getElementById('tDesc').value,
-        slope_rating=document.getElementById('tSlope').value||113;
-  const year = date ? new Date(date).getFullYear() : null;
-  if (!year||!date) { showToast('Dato og klokkeslett er påkrevd','error'); return; }
+  const name = (document.getElementById('tName').value || 'Lorgen Invitational').trim();
+  const date = document.getElementById('tDate').value;
+  const course = document.getElementById('tCourse').value;
+  const description = document.getElementById('tDesc').value;
+  const slope_rating = document.getElementById('tSlope').value || 113;
+  if (!date) { showToast('Dato og klokkeslett er påkrevd','error'); return; }
+
   const url = '/api/admin/tournaments';
-  const requestBody = {
-    name,
-    date,
-    course,
-    description,
-    slope_rating,
-    year,
-    status: 'upcoming'
-  };
-  console.log('[admin:createTournament] fetch url', url);
-  console.log('[admin:createTournament] request body', requestBody);
+  const payload = { name, date, course, description, slope_rating };
+  console.log('[admin:createTournament] URL', url);
+  console.log('[admin:createTournament] payload', payload);
+  setCreateTournamentDebug({ url, payload });
+
   try {
     await safeJsonFetch(url, {
       method: 'POST',
-      body: JSON.stringify(requestBody)
+      credentials: 'same-origin',
+      body: JSON.stringify(payload),
+      debugHook: ({ status, parsedResponse }) => {
+        console.log('[admin:createTournament] response status', status);
+        console.log('[admin:createTournament] response json', parsedResponse);
+        setCreateTournamentDebug({
+          url,
+          payload,
+          status,
+          responseJson: parsedResponse
+        });
+      }
     });
-    showToast('Turnering opprettet!');
-    ['tDate','tCourse','tDesc'].forEach(id=>document.getElementById(id).value='');
-    document.getElementById('tName').value='Lorgen Invitational';
-    document.getElementById('tSlope').value='113';
-    await loadTournaments(); await loadDashboard();
-  } catch(error) {
+
+    showToast('Turneringen ble opprettet.', 'success');
+    ['tDate','tCourse','tDesc'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('tName').value = 'Lorgen Invitational';
+    document.getElementById('tSlope').value = '113';
+    await loadTournaments();
+    await loadDashboard();
+  } catch (error) {
     console.error('[admin:createTournament] create failed', error);
     showToast(error.message || 'Kunne ikke opprette turnering', 'error');
   }
