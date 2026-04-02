@@ -111,6 +111,13 @@ function asyncRoute(fn) {
     }
   };
 }
+function logApiDebug(tag, data = {}) {
+  try {
+    console.log(tag, JSON.stringify(data));
+  } catch (_error) {
+    console.log(tag, data);
+  }
+}
 
 function buildDefaultHoles(tournamentId) {
   return Array.from({ length: 18 }, (_, index) => {
@@ -224,6 +231,53 @@ app.get('/api/admin/tournaments', asyncRoute(async (req, res) => {
   const { data, error } = await supabase.from('tournaments').select('*').order('id', { ascending: false });
   if (error) return fail(res, 500, 'Kunne ikke hente turneringer', error.message);
   return ok(res, { tournaments: data || [] });
+}));
+
+app.get('/api/admin/courses', asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
+  if (!requireAdmin(req, res)) return;
+
+  const fallbackFromTournaments = async () => {
+    const { data: tournaments, error: tournamentError } = await supabase
+      .from('tournaments')
+      .select('course')
+      .order('id', { ascending: false });
+    if (tournamentError) {
+      logApiDebug('[api:admin-courses] fallback failed', { error: tournamentError.message });
+      return [];
+    }
+    const uniqueCourses = [...new Set((tournaments || [])
+      .map((t) => String(t.course || '').trim())
+      .filter(Boolean))]
+      .map((courseName, index) => ({
+        id: -(index + 1),
+        name: courseName,
+        slope_rating: 113,
+        source: 'tournaments_fallback'
+      }));
+    return uniqueCourses;
+  };
+
+  let courses = [];
+  const { data, error } = await supabase
+    .from('courses')
+    .select('*')
+    .order('id', { ascending: true });
+
+  if (error) {
+    logApiDebug('[api:admin-courses] courses table unavailable, using fallback', {
+      error: error.message,
+      code: error.code || null
+    });
+    courses = await fallbackFromTournaments();
+  } else {
+    courses = (data || []).map((course) => ({
+      ...course,
+      name: course.name || course.course_name || course.title || ''
+    }));
+  }
+
+  return ok(res, { courses });
 }));
 
 function parseTournamentCreateBody(req) {
@@ -477,10 +531,138 @@ app.post(['/api/teams', '/api/admin/team'], asyncRoute(async (req, res) => {
     player1_handicap: asInt(b.player1_handicap ?? b.player1_hcp),
     player2_handicap: asInt(b.player2_handicap ?? b.player2_hcp)
   };
-  if (!payload.team_name || !payload.pin_code) return fail(res, 400, 'team_name og pin_code er påkrevd');
-  const { data, error } = await supabase.from('teams').insert(payload).select('*').single();
-  if (error) return fail(res, 500, 'Kunne ikke opprette lag', error.message);
+  if (!payload.team_name) return fail(res, 400, 'team_name er påkrevd');
+  if (!payload.player1 || !payload.player2) return fail(res, 400, 'player1 og player2 er påkrevd');
+  if (!payload.pin_code || !/^\d{4}$/.test(payload.pin_code)) return fail(res, 400, 'pin_code må være nøyaktig 4 siffer');
+
+  logApiDebug('[api:admin-team:create] incoming', {
+    path: req.path,
+    method: req.method,
+    payload
+  });
+
+  const tryInsert = async (insertPayload) => supabase.from('teams').insert(insertPayload).select('*').single();
+  let insertPayload = { ...payload };
+  let result = await tryInsert(insertPayload);
+
+  if (result.error && /column .* does not exist/i.test(result.error.message || '')) {
+    const missingColumn = (result.error.message.match(/column\s+"?([a-zA-Z0-9_]+)"?\s+does not exist/i) || [])[1];
+    logApiDebug('[api:admin-team:create] first insert failed, retrying with fallback payload', {
+      error: result.error.message,
+      missingColumn
+    });
+    if (missingColumn) delete insertPayload[missingColumn];
+    insertPayload = {
+      tournament_id: tournamentId,
+      name: payload.name,
+      pin_code: payload.pin_code,
+      player1_hcp: payload.player1_hcp,
+      player2_hcp: payload.player2_hcp,
+      ...insertPayload
+    };
+    result = await tryInsert(insertPayload);
+  }
+
+  if (result.error) {
+    logApiDebug('[api:admin-team:create] failed', { error: result.error.message, payload: insertPayload });
+    return fail(res, 500, 'Kunne ikke opprette lag', result.error.message);
+  }
+  const data = result.data;
+  logApiDebug('[api:admin-team:create] success', { teamId: data?.id || null });
   return ok(res, { team: data }, 201);
+}));
+
+app.post('/api/admin/tournament/:id/gallery', upload.single('photo'), asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
+  if (!requireAdmin(req, res)) return;
+  const tournamentId = asInt(req.params.id);
+  if (!tournamentId) {
+    logApiDebug('[api:admin-gallery:upload] invalid tournament id', { id: req.params.id });
+    return fail(res, 400, 'Ugyldig turnerings-ID');
+  }
+  if (!req.file) {
+    logApiDebug('[api:admin-gallery:upload] missing file', { tournamentId, body: req.body || {} });
+    return fail(res, 400, 'Ingen fil lastet opp');
+  }
+  if (!GALLERY_BUCKET) {
+    logApiDebug('[api:admin-gallery:upload] missing bucket env', { tournamentId });
+    return fail(res, 500, 'Mangler storage bucket-konfigurasjon');
+  }
+  const ext = (req.file.originalname.split('.').pop() || 'jpg').toLowerCase();
+  const storagePath = `gallery/${tournamentId}/${Date.now()}-${Math.round(Math.random() * 1e6)}.${ext}`;
+  logApiDebug('[api:admin-gallery:upload] upload start', {
+    tournamentId,
+    bucket: GALLERY_BUCKET,
+    storagePath,
+    mimeType: req.file.mimetype || null,
+    size: req.file.size || null
+  });
+
+  const uploadResult = await supabase.storage.from(GALLERY_BUCKET).upload(storagePath, req.file.buffer, {
+    contentType: req.file.mimetype || 'application/octet-stream',
+    upsert: true
+  });
+  if (uploadResult.error) {
+    logApiDebug('[api:admin-gallery:upload] storage upload failed', {
+      tournamentId,
+      bucket: GALLERY_BUCKET,
+      storagePath,
+      error: uploadResult.error.message
+    });
+    return fail(res, 500, 'Opplasting til storage feilet', uploadResult.error.message);
+  }
+
+  const publicUrl = supabase.storage.from(GALLERY_BUCKET).getPublicUrl(storagePath).data.publicUrl;
+  const caption = String(req.body?.caption || '').trim() || null;
+  const { data, error } = await supabase
+    .from('tournament_gallery_images')
+    .insert({
+      tournament_id: tournamentId,
+      photo_path: publicUrl,
+      storage_path: storagePath,
+      caption
+    })
+    .select('*')
+    .single();
+
+  if (error) {
+    logApiDebug('[api:admin-gallery:upload] metadata insert failed', {
+      tournamentId,
+      storagePath,
+      error: error.message
+    });
+    return fail(res, 500, 'Kunne ikke lagre bildefil i databasen', error.message);
+  }
+
+  return ok(res, { image: data, storage_path: storagePath, photo_path: publicUrl, url: publicUrl }, 201);
+}));
+
+app.get('/api/admin/tournament/:id/gallery', asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
+  if (!requireAdmin(req, res)) return;
+  const tournamentId = asInt(req.params.id);
+  if (!tournamentId) return fail(res, 400, 'Ugyldig turnerings-ID');
+  const { data, error } = await supabase
+    .from('tournament_gallery_images')
+    .select('*')
+    .eq('tournament_id', tournamentId)
+    .order('uploaded_at', { ascending: false });
+  if (error) return fail(res, 500, 'Kunne ikke hente turneringsbilder', error.message);
+  return ok(res, { images: data || [], gallery: data || [], photos: data || [] });
+}));
+
+app.get('/api/admin/tournament/:id/photos', asyncRoute(async (req, res) => {
+  if (!requireSupabase(res)) return;
+  if (!requireAdmin(req, res)) return;
+  const tournamentId = asInt(req.params.id);
+  if (!tournamentId) return fail(res, 400, 'Ugyldig turnerings-ID');
+  const { data, error } = await supabase
+    .from('hole_images')
+    .select('*')
+    .eq('tournament_id', tournamentId)
+    .order('created_at', { ascending: false });
+  if (error) return fail(res, 500, 'Kunne ikke hente hullbilder', error.message);
+  return ok(res, { photos: data || [] });
 }));
 
 app.put('/api/admin/team/:id', asyncRoute(async (req, res) => {

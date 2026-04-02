@@ -740,6 +740,23 @@ async function api(url, options={}) {
   return safeJsonFetch(url, options);
 }
 
+function apiDebugHook(label) {
+  return ({ url, method, status, parsedResponse }) => {
+    try {
+      const payload = {
+        label,
+        url,
+        method,
+        status,
+        parsedJson: parsedResponse
+      };
+      console.log('[admin:api-debug]', JSON.stringify(payload));
+    } catch (_error) {
+      console.log('[admin:api-debug]', label, url, method, status, parsedResponse);
+    }
+  };
+}
+
 // ── Auth ──────────────────────────────────────────────────────────────────────
 async function loginWithGitHub() {
   try {
@@ -1133,7 +1150,17 @@ async function addTeam() {
   if (!team_name||!player1||!player2||!pin_code) { showToast('Alle felt er påkrevd','error'); return; }
   if (!/^\d{4}$/.test(pin_code)) { showToast('PIN må være nøyaktig 4 siffer','error'); return; }
   try {
-    await api('/api/admin/team',{method:'POST',body:JSON.stringify({tournament_id:tid,team_name,player1,player2,pin_code,player1_handicap,player2_handicap})});
+    console.log('[admin:api-debug]', JSON.stringify({
+      label: 'addTeam:request',
+      url: '/api/admin/team',
+      method: 'POST',
+      payload: { tournament_id:tid,team_name,player1,player2,pin_code,player1_handicap,player2_handicap }
+    }));
+    await api('/api/admin/team',{
+      method:'POST',
+      body:JSON.stringify({tournament_id:tid,team_name,player1,player2,pin_code,player1_handicap,player2_handicap}),
+      debugHook: apiDebugHook('addTeam')
+    });
     showToast('Lag lagt til!');
     ['newTeamName','newPlayer1','newPlayer2','newPin','newHcp1','newHcp2'].forEach(id=>document.getElementById(id).value='');
     await loadTeams(); await loadDashboard(); loadAwardTeams();
@@ -1480,7 +1507,17 @@ async function uploadAdminTurneringsbilder() {
   fd.append('caption', document.getElementById('adminTurneringsbilderCaption').value || '');
 
   try {
-    await api('/api/admin/tournament/' + tid + '/gallery', { method: 'POST', body: fd });
+    console.log('[admin:api-debug]', JSON.stringify({
+      label: 'uploadAdminTurneringsbilder:request',
+      url: '/api/admin/tournament/' + tid + '/gallery',
+      method: 'POST',
+      payload: { tournament_id: tid, file_name: file?.name || null, caption: document.getElementById('adminTurneringsbilderCaption').value || '' }
+    }));
+    await api('/api/admin/tournament/' + tid + '/gallery', {
+      method: 'POST',
+      body: fd,
+      debugHook: apiDebugHook('uploadAdminTurneringsbilder')
+    });
 
     fileInput.value = '';
     document.getElementById('adminTurneringsbilderCaption').value = '';
@@ -1972,8 +2009,14 @@ let _allCourses = [];
 
 async function loadCourses() {
   try {
-    const d = await api('/api/admin/courses');
-    _allCourses = d.courses;
+    console.log('[admin:api-debug]', JSON.stringify({
+      label: 'loadCourses:request',
+      url: '/api/admin/courses',
+      method: 'GET',
+      payload: null
+    }));
+    const d = await api('/api/admin/courses', { debugHook: apiDebugHook('loadCourses') });
+    _allCourses = Array.isArray(d.courses) ? d.courses : [];
     renderCoursesTable();
     // Populate import selector in Bane og Hull panel
     const sel = document.getElementById('importCourseSelect');
