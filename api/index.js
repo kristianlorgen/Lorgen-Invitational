@@ -674,73 +674,34 @@ app.post(['/api/teams', '/api/admin/team'], asyncRoute(async (req, res) => {
     const b = (req.body && typeof req.body === 'object') ? req.body : {};
     console.log('[api:admin-team:create] request payload', b);
 
-    const [teamsColumns, tournamentsColumns, holesColumns] = await Promise.all([
-      fetchTableColumns('teams'),
-      fetchTableColumns('tournaments'),
-      fetchTableColumns('holes')
-    ]);
-    console.log('[api:admin-team:create] schema columns', {
-      teamsColumns,
-      tournamentsColumns,
-      holesColumns
-    });
+    const tournament_id = b.tournament_id;
+    const team_name = String(b.team_name || '').trim();
+    const player1_name = String(b.player1_name || '').trim();
+    const player2_name = String(b.player2_name || '').trim();
+    const pin = String(b.pin ?? '').trim();
+    const hcp_player1 = b.hcp_player1;
+    const hcp_player2 = b.hcp_player2;
 
-    const tournamentId = Number(b.tournament_id);
-    const teamName = String(b.team_name || '').trim();
-    const player1Name = String(b.player1_name || '').trim();
-    const player2Name = String(b.player2_name || '').trim();
-    const pinRaw = String(b.pin ?? '').trim();
-    const hcpPlayer1 = Number(b.hcp_player1);
-    const hcpPlayer2 = Number(b.hcp_player2);
+    const tournamentId = Number(tournament_id);
+    const hcpPlayer1 = Number(hcp_player1);
+    const hcpPlayer2 = Number(hcp_player2);
 
     if (!Number.isInteger(tournamentId)) return fail(res, 400, 'tournament_id er påkrevd');
-    if (!teamName) return fail(res, 400, 'team_name er påkrevd');
-    if (!/^\d{4}$/.test(pinRaw)) return fail(res, 400, 'PIN må være nøyaktig 4 siffer');
+    if (!team_name) return fail(res, 400, 'team_name er påkrevd');
+    if (!/^\d{4}$/.test(pin)) return fail(res, 400, 'PIN må være nøyaktig 4 siffer');
     if (!Number.isFinite(hcpPlayer1) || !Number.isFinite(hcpPlayer2)) {
       return fail(res, 400, 'hcp_player1 og hcp_player2 må være tall');
     }
 
-    const frontendToExactColumn = {
-      tournament_id: 'tournament_id',
-      team_name: 'team_name',
-      player1_name: 'player1_name',
-      player2_name: 'player2_name',
-      pin: 'pin',
-      hcp_player1: 'hcp_player1',
-      hcp_player2: 'hcp_player2'
+    const finalPayload = {
+      tournament_id: Number(tournament_id),
+      team_name: team_name,
+      player1: player1_name,
+      player2: player2_name,
+      pin: pin,
+      hcp_player1: Number(hcp_player1),
+      hcp_player2: Number(hcp_player2)
     };
-
-    const sourcePayload = {
-      tournament_id: tournamentId,
-      team_name: teamName,
-      player1_name: player1Name,
-      player2_name: player2Name,
-      pin: pinRaw,
-      hcp_player1: hcpPlayer1,
-      hcp_player2: hcpPlayer2
-    };
-
-    const finalPayload = {};
-    const unmappedFrontendFields = [];
-    for (const [frontendField, columnName] of Object.entries(frontendToExactColumn)) {
-      if (teamsColumns.includes(columnName)) {
-        finalPayload[columnName] = sourcePayload[frontendField];
-      } else {
-        unmappedFrontendFields.push(frontendField);
-      }
-    }
-
-    if (unmappedFrontendFields.length > 0) {
-      return res.status(500).json({
-        success: false,
-        error: 'Frontend payload kan ikke mappes mot live public.teams schema uten gjetting.',
-        actualColumns: teamsColumns,
-        unmappedFrontendFields,
-        requestPayload: b,
-        finalInsertPayload: finalPayload,
-        stackHint: 'admin_create_team'
-      });
-    }
 
     console.log('[api:admin-team:create] final insert payload', finalPayload);
     const result = await supabase.from('teams').insert(finalPayload).select('*').single();
@@ -750,36 +711,19 @@ app.post(['/api/teams', '/api/admin/team'], asyncRoute(async (req, res) => {
       return res.status(500).json({
         success: false,
         error: result.error.message,
-        requestPayload: b,
-        actualColumns: teamsColumns,
-        finalInsertPayload: finalPayload,
-        supabaseError: result.error,
         stackHint: 'admin_create_team'
       });
     }
 
     return res.status(201).json({
       success: true,
-      data: result.data,
-      debug: {
-        requestPayload: b,
-        teamsColumns,
-        tournamentsColumns,
-        holesColumns,
-        finalInsertPayload: finalPayload,
-        supabaseError: null,
-        stackHint: 'admin_create_team'
-      }
+      team: result.data
     });
   } catch (err) {
     console.error('[api:admin-team:create] unexpected error', err);
     return res.status(500).json({
       success: false,
-      error: err?.message || 'Unknown error',
-      requestPayload: req.body || null,
-      actualColumns: schemaColumnsCache.teams || [],
-      finalInsertPayload: null,
-      supabaseError: null,
+      error: err.message,
       stackHint: 'admin_create_team'
     });
   }
