@@ -22,11 +22,9 @@ test('team create/read roundtrip keeps canonical team keys', () => {
   });
 
   assert.deepEqual(Object.keys(created).sort(), [
-    'created_at',
     'hcp_player1',
     'hcp_player2',
     'id',
-    'is_locked',
     'pin',
     'player1_name',
     'player2_name',
@@ -79,12 +77,12 @@ test('scorecard is complete only when all holes have submitted score rows', () =
 });
 
 test('upload JSON response shape is canonical and missing file has canonical error shape', () => {
-  const success = { success: true, data: { path: 'coin-back/v2-123.png', publicUrl: 'https://example.invalid/coin-back/v2-123.png' } };
+  const success = { success: true, data: { path: 'coin-back/v2-123.png', public_url: 'https://example.invalid/coin-back/v2-123.png' } };
   const missingFileError = { success: false, error: 'Missing file upload', stackHint: 'missing_upload_file' };
 
   assert.equal(success.success, true);
   assert.ok(success.data.path.startsWith('coin-back/'));
-  assert.ok(success.data.publicUrl.startsWith('https://'));
+  assert.ok(success.data.public_url.startsWith('https://'));
   assert.equal(missingFileError.success, false);
   assert.equal(typeof missingFileError.stackHint, 'string');
 });

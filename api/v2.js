@@ -85,6 +85,9 @@ function normalizeHolePayload(tournamentId, holesPayload) {
 }
 
 function mapTeamToCanonical(row = {}) {
+  const hcpPlayer1 = Number(row.hcp_player1);
+  const hcpPlayer2 = Number(row.hcp_player2);
+
   return {
     id: asInt(row.id),
     tournament_id: asInt(row.tournament_id),
@@ -92,10 +95,8 @@ function mapTeamToCanonical(row = {}) {
     player1_name: String(row.player1_name || ''),
     player2_name: String(row.player2_name || ''),
     pin: String(row.pin || ''),
-    hcp_player1: asInt(row.hcp_player1) || 0,
-    hcp_player2: asInt(row.hcp_player2) || 0,
-    is_locked: Boolean(row.is_locked),
-    created_at: row.created_at || null
+    hcp_player1: Number.isFinite(hcpPlayer1) ? hcpPlayer1 : 0,
+    hcp_player2: Number.isFinite(hcpPlayer2) ? hcpPlayer2 : 0
   };
 }
 
