@@ -1,6 +1,7 @@
-const { ok, fail, methodNotAllowed, readRawBody } = require('../../../lib/json');
-const { getSupabaseAdmin } = require('../../../lib/supabaseAdmin');
-const { asInt } = require('../../../lib/validators');
+const path = require('path');
+const { ok, fail, methodNotAllowed, readRawBody } = require(path.join(__dirname, '..', '..', '..', 'lib', 'json'));
+const { getSupabaseAdmin } = require(path.join(__dirname, '..', '..', '..', 'lib', 'supabaseAdmin'));
+const { asInt } = require(path.join(__dirname, '..', '..', '..', 'lib', 'validators'));
 
 function parseMultipart(req, raw) {
   const contentType = String(req.headers?.['content-type'] || req.headers?.['Content-Type'] || '');
@@ -43,9 +44,9 @@ function parseMultipart(req, raw) {
 }
 
 module.exports = async function handler(req, res) {
-  if (req.method !== 'POST') return methodNotAllowed(res, ['POST'], 'v2_upload_coin_back_method');
-
   try {
+    if (req.method !== 'POST') return methodNotAllowed(res, ['POST'], 'v2_upload_coin_back_method');
+
     let file = req.file || null;
     let body = req.body || {};
 
@@ -78,13 +79,13 @@ module.exports = async function handler(req, res) {
       return 'bin';
     })();
 
-    const path = `coin-back/tournament-${tournamentId}-${Date.now()}.${ext}`;
+    const storagePath = `coin-back/tournament-${tournamentId}-${Date.now()}.${ext}`;
     const supabase = getSupabaseAdmin();
     const bucket = process.env.SUPABASE_STORAGE_BUCKET || 'uploads';
 
     const uploadResult = await supabase.storage
       .from(bucket)
-      .upload(path, file.buffer, {
+      .upload(storagePath, file.buffer, {
         contentType: file.mimetype || 'application/octet-stream',
         upsert: true
       });
@@ -93,14 +94,15 @@ module.exports = async function handler(req, res) {
       return fail(res, 500, uploadResult.error.message, 'v2_upload_coin_back_storage_upload');
     }
 
-    const publicUrlResult = supabase.storage.from(bucket).getPublicUrl(path);
+    const publicUrlResult = supabase.storage.from(bucket).getPublicUrl(storagePath);
     const publicUrl = publicUrlResult?.data?.publicUrl;
     if (!publicUrl) {
       return fail(res, 500, 'Failed to build public URL', 'v2_upload_coin_back_public_url');
     }
 
-    return ok(res, { path, public_url: publicUrl });
-  } catch (error) {
-    return fail(res, 500, error.message || 'Unexpected server error', 'v2_upload_coin_back_handler');
+    return ok(res, { path: storagePath, public_url: publicUrl });
+  } catch (err) {
+    console.error('FATAL:', err);
+    return fail(res, 500, err.message || 'Server crash', 'v2_upload_coin_back_crash');
   }
 };
