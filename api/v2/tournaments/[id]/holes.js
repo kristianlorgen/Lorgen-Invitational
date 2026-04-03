@@ -36,14 +36,14 @@ async function ensure18Holes(supabase, tournamentId) {
 
 module.exports = async function handler(req, res) {
   const tournamentId = asInt(req.query?.id);
-  if (!tournamentId) return fail(res, 400, 'Invalid tournament id');
+  if (!tournamentId) return fail(res, 400, 'Invalid tournament id', 'v2_tournament_holes_invalid_id');
 
   try {
     const supabase = getSupabaseAdmin();
 
     if (req.method === 'GET') {
       const holes = await ensure18Holes(supabase, tournamentId);
-      if (holes.length !== 18) return fail(res, 500, 'Failed to produce 18 holes');
+      if (holes.length !== 18) return fail(res, 500, 'Failed to produce 18 holes', 'v2_tournament_holes_get_count');
       return ok(res, holes);
     }
 
@@ -55,18 +55,18 @@ module.exports = async function handler(req, res) {
         .from('tournament_holes')
         .upsert(normalized, { onConflict: 'tournament_id,hole_number' });
 
-      if (error) return fail(res, 500, error.message);
+      if (error) return fail(res, 500, error.message, 'v2_tournament_holes_post_upsert');
 
       const refetched = await readCanonicalHoles(supabase, tournamentId);
       if (refetched.length !== 18) {
-        return fail(res, 500, 'Expected 18 canonical holes after save');
+        return fail(res, 500, 'Expected 18 canonical holes after save', 'v2_tournament_holes_post_refetch_count');
       }
 
       return ok(res, refetched);
     }
 
-    return methodNotAllowed(res, ['GET', 'POST']);
+    return methodNotAllowed(res, ['GET', 'POST'], 'v2_tournament_holes_method');
   } catch (error) {
-    return fail(res, 500, error.message || 'Unexpected server error');
+    return fail(res, 500, error.message || 'Unexpected server error', 'v2_tournament_holes_handler');
   }
 };
