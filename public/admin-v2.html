@@ -24,9 +24,9 @@
         <input id="teamName" placeholder="Lagnavn" required />
         <input id="player1Name" placeholder="Spiller 1" required />
         <input id="player2Name" placeholder="Spiller 2" required />
-        <input id="pin" type="text" inputmode="numeric" placeholder="PIN (4 siffer)" required />
-        <input id="hcp1" type="text" inputmode="numeric" placeholder="HCP spiller 1" value="0" />
-        <input id="hcp2" type="text" inputmode="numeric" placeholder="HCP spiller 2" value="0" />
+        <input id="pin" type="text" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="PIN (4 siffer)" required />
+        <input id="hcpPlayer1" type="text" inputmode="numeric" placeholder="HCP spiller 1" value="0" />
+        <input id="hcpPlayer2" type="text" inputmode="numeric" placeholder="HCP spiller 2" value="0" />
         <button class="btn btn--gold" type="submit">Opprett lag</button>
       </form>
       <table style="width:100%;margin-top:1rem;">
@@ -136,10 +136,8 @@
       await loadTournamentHolesV2();
     }
 
-    async function loadTeamsV2() {
-      if (!selectedTournamentId) return;
-      const json = await apiFetch(`/api/v2/teams?tournament_id=${selectedTournamentId}`);
-      teamsState = json.data;
+    function renderTeams(teams) {
+      teamsState = teams;
       const body = document.getElementById('teamsBody');
       body.innerHTML = '';
       teamsState.forEach((team) => {
@@ -152,6 +150,14 @@
       if (teamsState[0]) {
         scorecardLink.href = `/enter-score.html?tournament=${selectedTournamentId}&team=${teamsState[0].id}`;
       }
+    }
+
+    async function loadTeamsV2() {
+      if (!selectedTournamentId) return;
+      const response = await fetch(`/api/v2/teams?tournament_id=${selectedTournamentId}`);
+      const res = await response.json();
+      if (!res.success) throw new Error(res.error);
+      renderTeams(res.data);
     }
 
     function parseHandicapValue(rawValue, label) {
@@ -171,8 +177,8 @@
         throw new Error('PIN må være nøyaktig 4 siffer');
       }
 
-      const hcp1 = parseHandicapValue(document.getElementById('hcp1').value, 'HCP spiller 1');
-      const hcp2 = parseHandicapValue(document.getElementById('hcp2').value, 'HCP spiller 2');
+      const hcp1 = parseHandicapValue(document.getElementById('hcpPlayer1').value, 'HCP spiller 1');
+      const hcp2 = parseHandicapValue(document.getElementById('hcpPlayer2').value, 'HCP spiller 2');
 
       await apiFetch('/api/v2/teams', {
         method: 'POST',
