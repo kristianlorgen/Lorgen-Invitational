@@ -201,7 +201,8 @@
       const file = document.getElementById('coinBackFile').files[0];
       if (!file) return;
       const formData = new FormData();
-      formData.append('photo', file);
+      formData.append('file', file);
+      formData.append('tournament_id', String(selectedTournamentId));
       const response = await fetch('/api/v2/uploads/coin-back', {
         method: 'POST',
         credentials: 'include',
