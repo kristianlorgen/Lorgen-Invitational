@@ -12,6 +12,7 @@
 
     <section class="card" style="padding:1rem;margin:1rem 0;">
       <h2>1. Aktiv turnering</h2>
+      <div id="activeTournamentMeta" style="margin-bottom:.5rem;color:var(--text-muted);"></div>
       <select id="tournamentSelect"></select>
       <button class="btn btn--gold" id="reloadBtn" type="button">Last inn V2-data</button>
       <p id="statusText"></p>
@@ -64,6 +65,12 @@
     let holesState = [];
     let teamsState = [];
 
+    function showError(message) {
+      const status = document.getElementById('statusText');
+      status.textContent = message;
+      status.style.color = 'crimson';
+    }
+
     async function apiFetch(url, options = {}) {
       const response = await fetch(url, {
         credentials: 'include',
@@ -78,16 +85,16 @@
     }
 
     async function loadTournaments() {
-      const json = await apiFetch('/api/admin/tournaments');
+      const active = await apiFetch('/api/v2/tournaments/active');
+      const tournament = active.data;
       const select = document.getElementById('tournamentSelect');
       select.innerHTML = '';
-      (json.tournaments || []).forEach((tournament) => {
-        const option = document.createElement('option');
-        option.value = tournament.id;
-        option.textContent = `${tournament.name || 'Turnering'} (${tournament.year || ''})`;
-        select.appendChild(option);
-      });
-      selectedTournamentId = Number(select.value || 0);
+      const option = document.createElement('option');
+      option.value = tournament.id;
+      option.textContent = `${tournament.name || 'Turnering'} (${tournament.year || ''})`;
+      select.appendChild(option);
+      selectedTournamentId = Number(tournament.id || 0);
+      document.getElementById('activeTournamentMeta').textContent = `ID ${tournament.id} • ${tournament.course || 'Uten bane'} • ${tournament.date || 'Ingen dato'}`;
     }
 
     async function loadTournamentHolesV2() {
@@ -143,7 +150,7 @@
 
       const scorecardLink = document.getElementById('scorecardLink');
       if (teamsState[0]) {
-        scorecardLink.href = `/api/v2/scorecard/${selectedTournamentId}/${teamsState[0].id}`;
+        scorecardLink.href = `/enter-score.html?tournament=${selectedTournamentId}&team=${teamsState[0].id}`;
       }
     }
 
@@ -180,7 +187,7 @@
       if (!response.ok || json.success === false) {
         throw new Error(json.error || 'Opplasting feilet');
       }
-      document.getElementById('uploadResult').textContent = `Lagret: ${json.data.public_url}`;
+      document.getElementById('uploadResult').innerHTML = `Lagret: <a href="${json.data.publicUrl}" target="_blank" rel="noreferrer">${json.data.publicUrl}</a>`;
     }
 
     async function loadAllV2() {
@@ -189,13 +196,13 @@
       await Promise.all([loadTournamentHolesV2(), loadTeamsV2()]);
     }
 
-    document.getElementById('reloadBtn').addEventListener('click', () => loadAllV2().catch((error) => alert(error.message)));
-    document.getElementById('saveHolesBtn').addEventListener('click', () => saveTournamentHolesV2().catch((error) => alert(error.message)));
-    document.getElementById('teamForm').addEventListener('submit', (event) => createTeamV2(event).catch((error) => alert(error.message)));
-    document.getElementById('uploadForm').addEventListener('submit', (event) => uploadCoinBackV2(event).catch((error) => alert(error.message)));
-    document.getElementById('tournamentSelect').addEventListener('change', () => loadAllV2().catch((error) => alert(error.message)));
+    document.getElementById('reloadBtn').addEventListener('click', () => loadAllV2().catch((error) => showError(error.message)));
+    document.getElementById('saveHolesBtn').addEventListener('click', () => saveTournamentHolesV2().catch((error) => showError(error.message)));
+    document.getElementById('teamForm').addEventListener('submit', (event) => createTeamV2(event).catch((error) => showError(error.message)));
+    document.getElementById('uploadForm').addEventListener('submit', (event) => uploadCoinBackV2(event).catch((error) => showError(error.message)));
+    document.getElementById('tournamentSelect').addEventListener('change', () => loadAllV2().catch((error) => showError(error.message)));
 
-    loadTournaments().then(loadAllV2).catch((error) => alert(error.message));
+    loadTournaments().then(loadAllV2).catch((error) => showError(error.message));
   </script>
 </body>
 </html>

@@ -24,7 +24,7 @@ function buildScorecard(holes, scores, locked = false) {
     return { ...h, strokes: strokes > 0 ? strokes : null, completed: strokes > 0 };
   });
   const completed = merged.filter((h) => h.completed).length;
-  return { is_round_complete: locked || completed === 18, completed_holes: completed };
+  return { is_round_complete: completed === 18, completed_holes: completed };
 }
 
 test('BACKEND hole save/load persistence keeps LD/NF/photo true', () => {
@@ -74,14 +74,12 @@ test('SCORECARD empty team is not complete', () => {
   assert.equal(result.completed_holes, 0);
 });
 
-test('SCORECARD complete only with all holes or explicit lock', () => {
+test('SCORECARD complete only with all submitted hole scores', () => {
   const holes = Array.from({ length: 18 }, (_, i) => ({ hole_number: i + 1 }));
   const partial = buildScorecard(holes, [{ hole_number: 1, strokes: 4 }], false);
   const all = buildScorecard(holes, holes.map((h) => ({ hole_number: h.hole_number, strokes: 4 })), false);
-  const locked = buildScorecard(holes, [], true);
   assert.equal(partial.is_round_complete, false);
   assert.equal(all.is_round_complete, true);
-  assert.equal(locked.is_round_complete, true);
 });
 
 test('TEAM create/load canonical shape has no null/null drift', () => {
@@ -93,8 +91,8 @@ test('TEAM create/load canonical shape has no null/null drift', () => {
 });
 
 test('UPLOAD response shape is stable JSON', () => {
-  const response = { success: true, data: { path: 'coin-back/example.png', public_url: 'https://cdn.example/coin-back/example.png' } };
+  const response = { success: true, data: { path: 'coin-back/example.png', publicUrl: 'https://cdn.example/coin-back/example.png' } };
   assert.equal(typeof response.success, 'boolean');
   assert.ok(response.data.path.includes('coin-back/'));
-  assert.ok(response.data.public_url.startsWith('https://'));
+  assert.ok(response.data.publicUrl.startsWith('https://'));
 });

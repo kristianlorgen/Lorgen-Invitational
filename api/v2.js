@@ -3,6 +3,14 @@ function asInt(value) {
   return Number.isInteger(parsed) ? parsed : null;
 }
 
+function canonicalError(error, stackHint, status = 400) {
+  return { status, body: { success: false, error, stackHint } };
+}
+
+function canonicalSuccess(data, status = 200) {
+  return { status, body: { success: true, data } };
+}
+
 function defaultHole(tournamentId, holeNumber) {
   return {
     tournament_id: tournamentId,
@@ -19,6 +27,19 @@ function buildDefaultHoles(tournamentId) {
   return Array.from({ length: 18 }, (_, index) => defaultHole(tournamentId, index + 1));
 }
 
+function toCanonicalTournament(row = {}) {
+  return {
+    id: asInt(row.id),
+    year: asInt(row.year),
+    name: String(row.name || ''),
+    date: row.date || null,
+    course: row.course || null,
+    description: row.description || null,
+    slope_rating: row.slope_rating == null ? null : Number(row.slope_rating),
+    status: row.status || null
+  };
+}
+
 function toCanonicalHole(row = {}) {
   return {
     hole_number: asInt(row.hole_number) || 1,
@@ -32,7 +53,7 @@ function toCanonicalHole(row = {}) {
 
 function normalizeHolePayload(tournamentId, holesPayload) {
   if (!Array.isArray(holesPayload) || holesPayload.length !== 18) {
-    throw new Error('Må sende nøyaktig 18 hull');
+    throw new Error('holes must contain exactly 18 rows');
   }
 
   const normalized = holesPayload.map((hole) => {
@@ -40,9 +61,9 @@ function normalizeHolePayload(tournamentId, holesPayload) {
     const par = asInt(hole?.par);
     const strokeIndex = asInt(hole?.stroke_index);
 
-    if (!holeNumber || holeNumber < 1 || holeNumber > 18) throw new Error('Ugyldig hole_number');
-    if (!par || par < 3 || par > 6) throw new Error('Ugyldig par');
-    if (!strokeIndex || strokeIndex < 1 || strokeIndex > 18) throw new Error('Ugyldig stroke_index');
+    if (!holeNumber || holeNumber < 1 || holeNumber > 18) throw new Error('invalid hole_number');
+    if (!par || par < 3 || par > 6) throw new Error('invalid par');
+    if (!strokeIndex || strokeIndex < 1 || strokeIndex > 18) throw new Error('invalid stroke_index');
 
     return {
       tournament_id: tournamentId,
@@ -57,7 +78,7 @@ function normalizeHolePayload(tournamentId, holesPayload) {
 
   const uniqueHoleNumbers = new Set(normalized.map((hole) => hole.hole_number));
   if (uniqueHoleNumbers.size !== 18) {
-    throw new Error('Hullene må være unike fra 1-18');
+    throw new Error('hole_number must be unique from 1..18');
   }
 
   return normalized.sort((a, b) => a.hole_number - b.hole_number);
@@ -73,57 +94,58 @@ function mapTeamToCanonical(row = {}) {
     pin: String(row.pin || ''),
     hcp_player1: asInt(row.hcp_player1) || 0,
     hcp_player2: asInt(row.hcp_player2) || 0,
-    created_at: row.created_at || null,
-    locked: Boolean(row.locked)
+    is_locked: Boolean(row.is_locked),
+    created_at: row.created_at || null
   };
+}
+
+function normalizeScoreRows(scoreRows = []) {
+  const unique = new Map();
+  for (const row of (Array.isArray(scoreRows) ? scoreRows : [])) {
+    const holeNumber = asInt(row.hole_number);
+    const gross = asInt(row.gross_score ?? row.strokes ?? row.score);
+    if (!holeNumber || holeNumber < 1 || holeNumber > 18) continue;
+    if (!gross || gross < 1) continue;
+    unique.set(holeNumber, {
+      hole_number: holeNumber,
+      gross_score: gross,
+      submitted_at: row.submitted_at || row.updated_at || null
+    });
+  }
+  return Array.from(unique.values()).sort((a, b) => a.hole_number - b.hole_number);
 }
 
 function buildScorecardData(teamRow, holeRows, scoreRows) {
   const team = mapTeamToCanonical(teamRow);
-  const holeMap = new Map((holeRows || []).map((row) => [asInt(row.hole_number), toCanonicalHole(row)]));
-  const scoreMap = new Map((scoreRows || []).map((row) => [asInt(row.hole_number), asInt(row.strokes)]));
+  const canonicalHoles = (Array.isArray(holeRows) ? holeRows : []).map(toCanonicalHole).sort((a, b) => a.hole_number - b.hole_number);
+  const submittedScores = normalizeScoreRows(scoreRows);
+  const scoreMap = new Map(submittedScores.map((row) => [row.hole_number, row]));
 
-  const holes = Array.from({ length: 18 }, (_, index) => {
-    const holeNumber = index + 1;
-    const hole = holeMap.get(holeNumber) || defaultHole(team.tournament_id, holeNumber);
-    const strokes = scoreMap.get(holeNumber);
-    const completed = Number.isInteger(strokes) && strokes > 0;
+  const completedHoles = canonicalHoles
+    .filter((hole) => scoreMap.has(hole.hole_number))
+    .length;
 
-    return {
-      hole_number: holeNumber,
-      par: hole.par,
-      stroke_index: hole.stroke_index,
-      requires_photo: hole.requires_photo,
-      is_longest_drive: hole.is_longest_drive,
-      is_nearest_pin: hole.is_nearest_pin,
-      strokes: completed ? strokes : null,
-      completed
-    };
-  });
-
-  const completedHoles = holes.filter((hole) => hole.completed).length;
-  const totalHoles = 18;
+  const requiredPlayableHoles = canonicalHoles.length;
+  const isRoundComplete = requiredPlayableHoles > 0 && completedHoles === requiredPlayableHoles;
 
   return {
-    team: {
-      id: team.id,
-      team_name: team.team_name,
-      player1_name: team.player1_name,
-      player2_name: team.player2_name,
-      pin: team.pin
-    },
-    holes,
+    team,
+    holes: canonicalHoles,
+    submitted_scores: submittedScores,
     completed_holes: completedHoles,
-    total_holes: totalHoles,
-    is_round_complete: Boolean(team.locked) || completedHoles === totalHoles
+    is_round_complete: isRoundComplete
   };
 }
 
 module.exports = {
   asInt,
+  canonicalError,
+  canonicalSuccess,
   buildDefaultHoles,
+  toCanonicalTournament,
   toCanonicalHole,
   normalizeHolePayload,
   mapTeamToCanonical,
+  normalizeScoreRows,
   buildScorecardData
 };
