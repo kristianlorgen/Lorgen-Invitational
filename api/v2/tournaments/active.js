@@ -3,7 +3,7 @@ const { getSupabaseAdmin } = require('../../../lib/supabaseAdmin');
 const { canonicalTournamentRow } = require('../../../lib/validators');
 
 module.exports = async function handler(req, res) {
-  if (req.method !== 'GET') return methodNotAllowed(res, ['GET']);
+  if (req.method !== 'GET') return methodNotAllowed(res, ['GET'], 'v2_tournaments_active_method');
 
   try {
     const supabase = getSupabaseAdmin();
@@ -15,7 +15,7 @@ module.exports = async function handler(req, res) {
       .limit(1)
       .maybeSingle();
 
-    if (error) return fail(res, 500, error.message);
+    if (error) return fail(res, 500, error.message, 'v2_tournaments_active_query');
 
     if (!data) {
       const fallback = await supabase
@@ -26,13 +26,13 @@ module.exports = async function handler(req, res) {
         .limit(1)
         .maybeSingle();
 
-      if (fallback.error) return fail(res, 500, fallback.error.message);
-      if (!fallback.data) return fail(res, 404, 'No tournament found');
+      if (fallback.error) return fail(res, 500, fallback.error.message, 'v2_tournaments_active_fallback');
+      if (!fallback.data) return fail(res, 404, 'No tournament found', 'v2_tournaments_active_missing');
       return ok(res, canonicalTournamentRow(fallback.data));
     }
 
     return ok(res, canonicalTournamentRow(data));
   } catch (error) {
-    return fail(res, 500, error.message || 'Unexpected server error');
+    return fail(res, 500, error.message || 'Unexpected server error', 'v2_tournaments_active_get');
   }
 };

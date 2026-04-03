@@ -33,6 +33,34 @@ function createReq(method, query = {}) {
   return stream;
 }
 
+
+function loadFresh(modulePath) {
+  delete require.cache[require.resolve(modulePath)];
+  return require(modulePath);
+}
+
+function parseBody(res) {
+  assert.match(res.headers['content-type'] || '', /application\/json/i);
+  const payload = JSON.parse(res.body);
+  assert.equal(typeof payload.success, 'boolean');
+  return payload;
+}
+
+test('health route returns JSON-only envelope', async () => {
+  process.env.SUPABASE_URL = 'https://example.invalid';
+  process.env.SUPABASE_SERVICE_ROLE_KEY = 'svc';
+  supabaseAdmin.getSupabaseAdmin = () => ({ from: () => ({}) });
+
+  const handler = loadFresh('../api/v2/health');
+  const req = createReq('GET');
+  const res = createRes();
+  await handler(req, res);
+
+  const json = parseBody(res);
+  assert.equal(json.success, true);
+  assert.equal(json.data.status, 'ok');
+});
+
 test('active tournament route returns canonical JSON', async () => {
   supabaseAdmin.getSupabaseAdmin = () => ({
     from: () => ({
@@ -48,44 +76,58 @@ test('active tournament route returns canonical JSON', async () => {
     })
   });
 
-  const handler = require('../api/v2/tournaments/active');
+  const handler = loadFresh('../api/v2/tournaments/active');
   const req = createReq('GET');
   const res = createRes();
   await handler(req, res);
 
-  const json = JSON.parse(res.body);
+  const json = parseBody(res);
   assert.equal(json.success, true);
   assert.equal(json.data.id, 1);
 });
 
-test('teams GET and POST return canonical JSON', async () => {
-  let inserted = null;
+test('teams GET empty list keeps JSON contract', async () => {
   supabaseAdmin.getSupabaseAdmin = () => ({
     from: () => ({
       select: () => ({
         eq: () => ({
-          order: async () => ({ data: [{ id: 8, tournament_id: 1, team_name: 'A', player1_name: 'P1', player2_name: 'P2', pin: '1234', hcp_player1: 10, hcp_player2: 11 }], error: null })
+          order: async () => ({ data: [], error: null })
         })
-      }),
-      insert: (payload) => {
-        inserted = payload;
-        return {
-          select: () => ({
-            single: async () => ({ data: { id: 9, ...payload }, error: null })
-          })
-        };
-      }
+      })
     })
   });
 
-  const handler = require('../api/v2/teams/index');
+  const handler = loadFresh('../api/v2/teams/index');
+  const req = createReq('GET', { tournament_id: '1' });
+  const res = createRes();
+  await handler(req, res);
 
-  const getReq = createReq('GET', { tournament_id: '1' });
-  const getRes = createRes();
-  await handler(getReq, getRes);
-  const getJson = JSON.parse(getRes.body);
-  assert.equal(getJson.success, true);
-  assert.equal(getJson.data.length, 1);
+  const json = parseBody(res);
+  assert.deepEqual(json, { success: true, data: [] });
+});
+
+test('teams POST create + GET returns canonical row only', async () => {
+  const rows = [];
+  supabaseAdmin.getSupabaseAdmin = () => ({
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          order: async () => ({ data: rows, error: null })
+        })
+      }),
+      insert: (payload) => ({
+        select: () => ({
+          single: async () => {
+            const inserted = { id: 9, ...payload };
+            rows.push(inserted);
+            return { data: inserted, error: null };
+          }
+        })
+      })
+    })
+  });
+
+  const handler = loadFresh('../api/v2/teams/index');
 
   const postReq = createJsonReq('POST', {
     tournament_id: 1,
@@ -98,17 +140,34 @@ test('teams GET and POST return canonical JSON', async () => {
   });
   const postRes = createRes();
   await handler(postReq, postRes);
-  const postJson = JSON.parse(postRes.body);
+  const postJson = parseBody(postRes);
   assert.equal(postJson.success, true);
-  assert.equal(inserted.pin, '4321');
+  assert.deepEqual(Object.keys(postJson.data).sort(), [
+    'hcp_player1',
+    'hcp_player2',
+    'id',
+    'pin',
+    'player1_name',
+    'player2_name',
+    'team_name',
+    'tournament_id'
+  ]);
+
+  const getReq = createReq('GET', { tournament_id: '1' });
+  const getRes = createRes();
+  await handler(getReq, getRes);
+  const getJson = parseBody(getRes);
+  assert.equal(getJson.success, true);
+  assert.equal(getJson.data.length, 1);
+  assert.equal(getJson.data[0].team_name, 'B');
 });
 
-test('holes GET seeds and holes POST returns 18 rows', async () => {
+test('holes GET returns exactly 18 rows', async () => {
   const eighteen = Array.from({ length: 18 }, (_, i) => ({
     hole_number: i + 1,
     par: 4,
     stroke_index: i + 1,
-    requires_photo: i === 0,
+    requires_photo: false,
     is_longest_drive: false,
     is_nearest_pin: false
   }));
@@ -124,29 +183,97 @@ test('holes GET seeds and holes POST returns 18 rows', async () => {
     })
   });
 
-  const handler = require('../api/v2/tournaments/[id]/holes');
+  const handler = loadFresh('../api/v2/tournaments/[id]/holes');
 
   const getReq = createReq('GET', { id: '1' });
   const getRes = createRes();
   await handler(getReq, getRes);
-  const getJson = JSON.parse(getRes.body);
+  const getJson = parseBody(getRes);
+  assert.equal(getJson.success, true);
   assert.equal(getJson.data.length, 18);
+});
 
+test('holes POST persists LD/NF/photo flags', async () => {
+  const eighteen = Array.from({ length: 18 }, (_, i) => ({
+    hole_number: i + 1,
+    par: 4,
+    stroke_index: i + 1,
+    requires_photo: i === 0,
+    is_longest_drive: i === 1,
+    is_nearest_pin: i === 2
+  }));
+
+  supabaseAdmin.getSupabaseAdmin = () => ({
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          order: async () => ({ data: eighteen, error: null })
+        })
+      }),
+      upsert: async () => ({ error: null })
+    })
+  });
+
+  const handler = loadFresh('../api/v2/tournaments/[id]/holes');
   const postReq = createJsonReq('POST', { holes: eighteen }, { id: '1' });
   const postRes = createRes();
   await handler(postReq, postRes);
-  const postJson = JSON.parse(postRes.body);
+  const postJson = parseBody(postRes);
+
   assert.equal(postJson.success, true);
   assert.equal(postJson.data[0].requires_photo, true);
+  assert.equal(postJson.data[1].is_longest_drive, true);
+  assert.equal(postJson.data[2].is_nearest_pin, true);
 });
 
-test('upload route returns JSON for method mismatch', async () => {
-  const handler = require('../api/v2/uploads/coin-back');
+test('upload route returns canonical JSON shape', async () => {
+  process.env.SUPABASE_STORAGE_BUCKET = 'uploads';
+
+  supabaseAdmin.getSupabaseAdmin = () => ({
+    storage: {
+      from: () => ({
+        upload: async () => ({ data: { path: 'coin-back/test.png' }, error: null }),
+        getPublicUrl: () => ({ data: { publicUrl: 'https://example.invalid/coin-back/test.png' } })
+      })
+    }
+  });
+
+  const handler = loadFresh('../api/v2/uploads/coin-back');
+  const req = createReq('POST');
+  req.body = { tournament_id: '1' };
+  req.file = {
+    originalname: 'coin.png',
+    mimetype: 'image/png',
+    buffer: Buffer.from('image-bytes')
+  };
+  const res = createRes();
+  await handler(req, res);
+
+  const json = parseBody(res);
+  assert.equal(json.success, true);
+  assert.equal(typeof json.data.path, 'string');
+  assert.equal(typeof json.data.public_url, 'string');
+});
+
+test('upload route always emits JSON error for method mismatch', async () => {
+  const handler = loadFresh('../api/v2/uploads/coin-back');
   const req = createReq('GET');
   const res = createRes();
   await handler(req, res);
 
-  const json = JSON.parse(res.body);
+  const json = parseBody(res);
   assert.equal(res.statusCode, 405);
   assert.equal(json.success, false);
+  assert.equal(typeof json.stackHint, 'string');
+});
+
+test('admin-v2 safe wrapper guards against non-JSON and direct response.json usage', async () => {
+  const fs = require('node:fs');
+  const html = fs.readFileSync('public/admin-v2.html', 'utf8');
+
+  assert.match(html, /async function fetchJson\(/);
+  assert.match(html, /response\.text\(\)/);
+  assert.match(html, /content-type/);
+  assert.match(html, /API returned non-JSON from/);
+  assert.doesNotMatch(html, /response\.json\(\)/);
 });

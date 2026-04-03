@@ -6,7 +6,7 @@ const CANONICAL_TEAM_COLUMNS = 'id, tournament_id, team_name, player1_name, play
 
 async function getTeams(req, res) {
   const tournamentId = asInt(req.query?.tournament_id);
-  if (!tournamentId) return fail(res, 400, 'tournament_id must be an integer');
+  if (!tournamentId) return fail(res, 400, 'tournament_id must be an integer', 'v2_teams_get_invalid_tournament');
 
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
@@ -15,7 +15,7 @@ async function getTeams(req, res) {
     .eq('tournament_id', tournamentId)
     .order('id', { ascending: true });
 
-  if (error) return fail(res, 500, error.message);
+  if (error) return fail(res, 500, error.message, 'v2_teams_get_query');
 
   return ok(res, (data || []).map(canonicalTeamRow));
 }
@@ -30,10 +30,10 @@ async function createTeam(req, res) {
   const hcpPlayer1 = asNumber(body.hcp_player1);
   const hcpPlayer2 = asNumber(body.hcp_player2);
 
-  if (!tournamentId) return fail(res, 400, 'tournament_id must be an integer');
-  if (!teamName || !player1Name || !player2Name) return fail(res, 400, 'Missing required team fields');
-  if (!validatePin(pin)) return fail(res, 400, 'pin must be exactly 4 digits');
-  if (hcpPlayer1 === null || hcpPlayer2 === null) return fail(res, 400, 'hcp_player1 and hcp_player2 must be numbers');
+  if (!tournamentId) return fail(res, 400, 'tournament_id must be an integer', 'v2_teams_post_invalid_tournament');
+  if (!teamName || !player1Name || !player2Name) return fail(res, 400, 'Missing required team fields', 'v2_teams_post_missing_fields');
+  if (!validatePin(pin)) return fail(res, 400, 'pin must be exactly 4 digits', 'v2_teams_post_invalid_pin');
+  if (hcpPlayer1 === null || hcpPlayer2 === null) return fail(res, 400, 'hcp_player1 and hcp_player2 must be numbers', 'v2_teams_post_invalid_hcp');
 
   const supabase = getSupabaseAdmin();
   const payload = {
@@ -52,7 +52,7 @@ async function createTeam(req, res) {
     .select(CANONICAL_TEAM_COLUMNS)
     .single();
 
-  if (error) return fail(res, 500, error.message);
+  if (error) return fail(res, 500, error.message, 'v2_teams_post_insert');
 
   return ok(res, canonicalTeamRow(data), 201);
 }
@@ -61,8 +61,8 @@ module.exports = async function handler(req, res) {
   try {
     if (req.method === 'GET') return await getTeams(req, res);
     if (req.method === 'POST') return await createTeam(req, res);
-    return methodNotAllowed(res, ['GET', 'POST']);
+    return methodNotAllowed(res, ['GET', 'POST'], 'v2_teams_method');
   } catch (error) {
-    return fail(res, 500, error.message || 'Unexpected server error');
+    return fail(res, 500, error.message || 'Unexpected server error', 'v2_teams_handler');
   }
 };

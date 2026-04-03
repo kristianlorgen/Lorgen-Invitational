@@ -29,6 +29,7 @@
         <input id="hcpPlayer2" type="text" inputmode="numeric" placeholder="HCP spiller 2" value="0" />
         <button class="btn btn--gold" type="submit">Opprett lag</button>
       </form>
+      <p id="teamsStatus" style="color:var(--text-muted);"></p>
       <table style="width:100%;margin-top:1rem;">
         <thead><tr><th>ID</th><th>Lag</th><th>Spiller 1</th><th>Spiller 2</th><th>PIN</th></tr></thead>
         <tbody id="teamsBody"></tbody>
@@ -38,6 +39,7 @@
     <section class="card" style="padding:1rem;margin:1rem 0;">
       <h2>3. Hulloppsett (V2)</h2>
       <button class="btn btn--gold" id="saveHolesBtn" type="button">Lagre hull</button>
+      <p id="holesStatus" style="color:var(--text-muted);"></p>
       <table style="width:100%;margin-top:1rem;">
         <thead><tr><th>Hull</th><th>Par</th><th>SI</th><th>Foto</th><th>LD</th><th>NF</th></tr></thead>
         <tbody id="holesBody"></tbody>
@@ -65,27 +67,65 @@
     let holesState = [];
     let teamsState = [];
 
-    function showError(message) {
-      const status = document.getElementById('statusText');
-      status.textContent = message;
-      status.style.color = 'crimson';
+    function setSectionMessage(id, message, isError = true) {
+      const element = document.getElementById(id);
+      if (!element) return;
+      element.textContent = message;
+      element.style.color = isError ? 'crimson' : 'inherit';
     }
 
-    async function apiFetch(url, options = {}) {
+    function showError(message) {
+      setSectionMessage('statusText', message, true);
+    }
+
+    async function fetchJson(url, options = {}) {
+      const headers = { ...(options.headers || {}) };
+      const hasBody = options.body !== undefined && options.body !== null;
+      if (hasBody && !(options.body instanceof FormData) && !headers['Content-Type']) {
+        headers['Content-Type'] = 'application/json';
+      }
+
       const response = await fetch(url, {
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
-        ...options
+        ...options,
+        headers
       });
-      const json = await response.json();
-      if (!response.ok || json.success === false) {
-        throw new Error(json.error || 'Ukjent feil');
+
+      const rawText = await response.text();
+      const contentType = (response.headers.get('content-type') || '').toLowerCase();
+      const looksLikeJson = rawText.trim().startsWith('{') || rawText.trim().startsWith('[');
+      const isJsonType = contentType.includes('application/json');
+      const canParseJson = rawText.trim() === '' ? true : (isJsonType || looksLikeJson);
+
+      if (!canParseJson) {
+        throw new Error(`API returned non-JSON from ${url}: ${rawText.slice(0, 200)}`);
       }
-      return json;
+
+      let parsed = {};
+      if (rawText.trim() !== '') {
+        try {
+          parsed = JSON.parse(rawText);
+        } catch (_error) {
+          throw new Error(`API returned invalid JSON from ${url}: ${rawText.slice(0, 200)}`);
+        }
+      }
+
+      if (!response.ok) {
+        const apiError = parsed && typeof parsed === 'object'
+          ? (parsed.error || parsed.message || JSON.stringify(parsed))
+          : rawText.slice(0, 200);
+        throw new Error(`HTTP ${response.status} for ${url}: ${apiError}`);
+      }
+
+      if (parsed && parsed.success === false) {
+        throw new Error(parsed.error || `API error from ${url}`);
+      }
+
+      return parsed;
     }
 
     async function loadTournaments() {
-      const active = await apiFetch('/api/v2/tournaments/active');
+      const active = await fetchJson('/api/v2/tournaments/active');
       const tournament = active.data;
       const select = document.getElementById('tournamentSelect');
       select.innerHTML = '';
@@ -99,8 +139,9 @@
 
     async function loadTournamentHolesV2() {
       if (!selectedTournamentId) return;
-      const json = await apiFetch(`/api/v2/tournaments/${selectedTournamentId}/holes`);
+      const json = await fetchJson(`/api/v2/tournaments/${selectedTournamentId}/holes`);
       holesState = json.data;
+      setSectionMessage('holesStatus', `Lastet ${holesState.length} hull`, false);
       const body = document.getElementById('holesBody');
       body.innerHTML = '';
 
@@ -129,7 +170,7 @@
     }
 
     async function saveTournamentHolesV2() {
-      await apiFetch(`/api/v2/tournaments/${selectedTournamentId}/holes`, {
+      await fetchJson(`/api/v2/tournaments/${selectedTournamentId}/holes`, {
         method: 'POST',
         body: JSON.stringify({ holes: holesState })
       });
@@ -154,10 +195,9 @@
 
     async function loadTeamsV2() {
       if (!selectedTournamentId) return;
-      const response = await fetch(`/api/v2/teams?tournament_id=${selectedTournamentId}`);
-      const res = await response.json();
-      if (!res.success) throw new Error(res.error);
+      const res = await fetchJson(`/api/v2/teams?tournament_id=${selectedTournamentId}`);
       renderTeams(res.data);
+      setSectionMessage('teamsStatus', `Lastet ${res.data.length} lag`, false);
     }
 
     function parseHandicapValue(rawValue, label) {
@@ -180,7 +220,7 @@
       const hcp1 = parseHandicapValue(document.getElementById('hcpPlayer1').value, 'HCP spiller 1');
       const hcp2 = parseHandicapValue(document.getElementById('hcpPlayer2').value, 'HCP spiller 2');
 
-      await apiFetch('/api/v2/teams', {
+      await fetchJson('/api/v2/teams', {
         method: 'POST',
         body: JSON.stringify({
           tournament_id: selectedTournamentId,
@@ -203,22 +243,28 @@
       const formData = new FormData();
       formData.append('file', file);
       formData.append('tournament_id', String(selectedTournamentId));
-      const response = await fetch('/api/v2/uploads/coin-back', {
+      const json = await fetchJson('/api/v2/uploads/coin-back', {
         method: 'POST',
-        credentials: 'include',
         body: formData
       });
-      const json = await response.json();
-      if (!response.ok || json.success === false) {
-        throw new Error(json.error || 'Opplasting feilet');
-      }
       document.getElementById('uploadResult').innerHTML = `Lagret: <a href="${json.data.public_url}" target="_blank" rel="noreferrer">${json.data.public_url}</a>`;
     }
 
     async function loadAllV2() {
       selectedTournamentId = Number(document.getElementById('tournamentSelect').value || 0);
-      document.getElementById('statusText').textContent = `Aktiv turnering: ${selectedTournamentId}`;
-      await Promise.all([loadTournamentHolesV2(), loadTeamsV2()]);
+      setSectionMessage('statusText', `Aktiv turnering: ${selectedTournamentId}`, false);
+
+      try {
+        await loadTeamsV2();
+      } catch (error) {
+        setSectionMessage('teamsStatus', `Teams-feil: ${error.message}`, true);
+      }
+
+      try {
+        await loadTournamentHolesV2();
+      } catch (error) {
+        setSectionMessage('holesStatus', `Hull-feil: ${error.message}`, true);
+      }
     }
 
     document.getElementById('reloadBtn').addEventListener('click', () => loadAllV2().catch((error) => showError(error.message)));
@@ -227,7 +273,10 @@
     document.getElementById('uploadForm').addEventListener('submit', (event) => uploadCoinBackV2(event).catch((error) => showError(error.message)));
     document.getElementById('tournamentSelect').addEventListener('change', () => loadAllV2().catch((error) => showError(error.message)));
 
-    loadTournaments().then(loadAllV2).catch((error) => showError(error.message));
+    loadTournaments()
+      .then(loadAllV2)
+      .catch((error) => showError(`Aktiv turnering-feil: ${error.message}`));
   </script>
+
 </body>
 </html>
