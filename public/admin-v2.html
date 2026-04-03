@@ -24,9 +24,9 @@
         <input id="teamName" placeholder="Lagnavn" required />
         <input id="player1Name" placeholder="Spiller 1" required />
         <input id="player2Name" placeholder="Spiller 2" required />
-        <input id="pin" placeholder="PIN (4 siffer)" pattern="\\d{4}" required />
-        <input id="hcp1" type="number" placeholder="HCP spiller 1" value="0" />
-        <input id="hcp2" type="number" placeholder="HCP spiller 2" value="0" />
+        <input id="pin" type="text" inputmode="numeric" placeholder="PIN (4 siffer)" required />
+        <input id="hcp1" type="text" inputmode="numeric" placeholder="HCP spiller 1" value="0" />
+        <input id="hcp2" type="text" inputmode="numeric" placeholder="HCP spiller 2" value="0" />
         <button class="btn btn--gold" type="submit">Opprett lag</button>
       </form>
       <table style="width:100%;margin-top:1rem;">
@@ -154,18 +154,36 @@
       }
     }
 
+    function parseHandicapValue(rawValue, label) {
+      const normalized = String(rawValue || '').trim().replace(',', '.');
+      if (!normalized) return 0;
+      const parsed = Number(normalized);
+      if (!Number.isFinite(parsed)) {
+        throw new Error(`${label} må være et gyldig tall`);
+      }
+      return parsed;
+    }
+
     async function createTeamV2(event) {
       event.preventDefault();
+      const pinValue = String(document.getElementById('pin').value || '').trim();
+      if (!/^\d{4}$/.test(pinValue)) {
+        throw new Error('PIN må være nøyaktig 4 siffer');
+      }
+
+      const hcp1 = parseHandicapValue(document.getElementById('hcp1').value, 'HCP spiller 1');
+      const hcp2 = parseHandicapValue(document.getElementById('hcp2').value, 'HCP spiller 2');
+
       await apiFetch('/api/v2/teams', {
         method: 'POST',
         body: JSON.stringify({
           tournament_id: selectedTournamentId,
-          team_name: document.getElementById('teamName').value,
-          player1_name: document.getElementById('player1Name').value,
-          player2_name: document.getElementById('player2Name').value,
-          pin: document.getElementById('pin').value,
-          hcp_player1: Number(document.getElementById('hcp1').value || 0),
-          hcp_player2: Number(document.getElementById('hcp2').value || 0)
+          team_name: document.getElementById('teamName').value.trim(),
+          player1_name: document.getElementById('player1Name').value.trim(),
+          player2_name: document.getElementById('player2Name').value.trim(),
+          pin: pinValue,
+          hcp_player1: hcp1,
+          hcp_player2: hcp2
         })
       });
       event.target.reset();
@@ -187,7 +205,7 @@
       if (!response.ok || json.success === false) {
         throw new Error(json.error || 'Opplasting feilet');
       }
-      document.getElementById('uploadResult').innerHTML = `Lagret: <a href="${json.data.publicUrl}" target="_blank" rel="noreferrer">${json.data.publicUrl}</a>`;
+      document.getElementById('uploadResult').innerHTML = `Lagret: <a href="${json.data.public_url}" target="_blank" rel="noreferrer">${json.data.public_url}</a>`;
     }
 
     async function loadAllV2() {

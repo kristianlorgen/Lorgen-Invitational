@@ -133,6 +133,16 @@ function asyncRoute(fn) {
     }
   };
 }
+function v2AsyncRoute(fn, defaultStackHint = 'v2_unhandled_error') {
+  return async (req, res) => {
+    try {
+      await fn(req, res);
+    } catch (error) {
+      console.error(`[api:v2:error] ${req.method} ${req.path}`, error);
+      return v2Fail(res, 500, error?.message || 'Unexpected server error', defaultStackHint);
+    }
+  };
+}
 function logApiDebug(tag, data = {}) {
   try {
     console.log(tag, JSON.stringify(data));
@@ -837,26 +847,21 @@ app.get('/api/auth/status', asyncRoute(async (req, res) => {
 }));
 
 
-app.get('/api/v2/health', asyncRoute(async (_req, res) => {
-  if (!supabase) return v2Fail(res, 503, 'Supabase is not configured', 'supabase_not_configured');
-
-  let db = 'ok';
-  let storage = 'ok';
-
-  const dbProbe = await supabase.from('tournaments').select('id').limit(1);
-  if (dbProbe.error) db = 'error';
-
-  try {
-    const bucketProbe = await supabase.storage.from(GALLERY_BUCKET).list('coin-back', { limit: 1 });
-    if (bucketProbe.error) storage = 'error';
-  } catch (_error) {
-    storage = 'error';
+app.get('/api/v2/health', v2AsyncRoute(async (_req, res) => {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    return v2Fail(res, 503, 'Supabase environment is not configured', 'missing_supabase_env');
   }
 
-  return v2Ok(res, { runtime: 'vercel', db, storage });
+  return res.status(200).json({
+    success: true,
+    env: {
+      hasSupabaseUrl: Boolean(SUPABASE_URL),
+      hasServiceRoleKey: Boolean(SUPABASE_SERVICE_ROLE_KEY)
+    }
+  });
 }));
 
-app.get('/api/v2/tournaments/active', asyncRoute(async (_req, res) => {
+app.get('/api/v2/tournaments/active', v2AsyncRoute(async (_req, res) => {
   if (!supabase) return v2Fail(res, 503, 'Supabase is not configured', 'supabase_not_configured');
 
   const { data, error } = await supabase
@@ -874,7 +879,7 @@ app.get('/api/v2/tournaments/active', asyncRoute(async (_req, res) => {
   return v2Ok(res, toCanonicalTournament(data));
 }));
 
-app.get('/api/v2/tournaments/:id/holes', asyncRoute(async (req, res) => {
+app.get('/api/v2/tournaments/:id/holes', v2AsyncRoute(async (req, res) => {
   if (!supabase) return v2Fail(res, 503, 'Supabase is not configured', 'supabase_not_configured');
   const tournamentId = asIntV2(req.params.id);
   if (!tournamentId) return v2Fail(res, 400, 'Invalid tournament id', 'invalid_tournament_id');
@@ -889,10 +894,12 @@ app.get('/api/v2/tournaments/:id/holes', asyncRoute(async (req, res) => {
     .eq('tournament_id', tournamentId)
     .order('hole_number', { ascending: true });
   if (error) return v2Fail(res, 500, 'Failed to load hole config', 'tournament_holes_select_failed');
-  return v2Ok(res, (data || []).map(toCanonicalHole));
+  const canonicalRows = (data || []).map(toCanonicalHole);
+  if (canonicalRows.length !== 18) return v2Fail(res, 500, 'Hole config must contain exactly 18 rows', 'tournament_holes_invalid_count');
+  return v2Ok(res, canonicalRows);
 }));
 
-app.post('/api/v2/tournaments/:id/holes', asyncRoute(async (req, res) => {
+app.post('/api/v2/tournaments/:id/holes', v2AsyncRoute(async (req, res) => {
   if (!supabase) return v2Fail(res, 503, 'Supabase is not configured', 'supabase_not_configured');
   if (!requireAdmin(req, res)) return;
 
@@ -901,7 +908,8 @@ app.post('/api/v2/tournaments/:id/holes', asyncRoute(async (req, res) => {
 
   let normalizedHoles = [];
   try {
-    normalizedHoles = normalizeHolePayload(tournamentId, req.body?.holes);
+    const incomingHoles = Array.isArray(req.body) ? req.body : req.body?.holes;
+    normalizedHoles = normalizeHolePayload(tournamentId, incomingHoles);
   } catch (error) {
     return v2Fail(res, 400, error.message, 'invalid_holes_payload');
   }
@@ -917,24 +925,26 @@ app.post('/api/v2/tournaments/:id/holes', asyncRoute(async (req, res) => {
     .eq('tournament_id', tournamentId)
     .order('hole_number', { ascending: true });
   if (refetchError) return v2Fail(res, 500, 'Failed to reload hole config', 'tournament_holes_refetch_failed');
-  return v2Ok(res, (freshRows || []).map(toCanonicalHole));
+  const canonicalRows = (freshRows || []).map(toCanonicalHole);
+  if (canonicalRows.length !== 18) return v2Fail(res, 500, 'Hole config must contain exactly 18 rows', 'tournament_holes_invalid_count');
+  return v2Ok(res, canonicalRows);
 }));
 
-app.get('/api/v2/teams', asyncRoute(async (req, res) => {
+app.get('/api/v2/teams', v2AsyncRoute(async (req, res) => {
   if (!supabase) return v2Fail(res, 503, 'Supabase is not configured', 'supabase_not_configured');
   const tournamentId = asIntV2(req.query.tournament_id);
   if (!tournamentId) return v2Fail(res, 400, 'tournament_id is required', 'missing_tournament_id');
 
   const { data, error } = await supabase
     .from('teams')
-    .select('id,tournament_id,team_name,player1_name,player2_name,pin,hcp_player1,hcp_player2,created_at,is_locked')
+    .select('id,tournament_id,team_name,player1_name,player2_name,pin,hcp_player1,hcp_player2')
     .eq('tournament_id', tournamentId)
     .order('id', { ascending: true });
   if (error) return v2Fail(res, 500, 'Failed to load teams', 'teams_select_failed');
   return v2Ok(res, (data || []).map(mapTeamToCanonical));
 }));
 
-app.post('/api/v2/teams', asyncRoute(async (req, res) => {
+app.post('/api/v2/teams', v2AsyncRoute(async (req, res) => {
   if (!supabase) return v2Fail(res, 503, 'Supabase is not configured', 'supabase_not_configured');
   if (!requireAdmin(req, res)) return;
 
@@ -944,12 +954,13 @@ app.post('/api/v2/teams', asyncRoute(async (req, res) => {
   const player1Name = String(body.player1_name || '').trim();
   const player2Name = String(body.player2_name || '').trim();
   const pin = String(body.pin || '').trim();
-  const hcpPlayer1 = asIntV2(body.hcp_player1) || 0;
-  const hcpPlayer2 = asIntV2(body.hcp_player2) || 0;
+  const hcpPlayer1 = Number(body.hcp_player1);
+  const hcpPlayer2 = Number(body.hcp_player2);
 
   if (!tournamentId) return v2Fail(res, 400, 'tournament_id is required', 'missing_tournament_id');
   if (!teamName || !player1Name || !player2Name) return v2Fail(res, 400, 'team_name, player1_name and player2_name are required', 'missing_team_fields');
   if (!/^\d{4}$/.test(pin)) return v2Fail(res, 400, 'PIN must be exactly 4 digits', 'invalid_pin');
+  if (!Number.isFinite(hcpPlayer1) || !Number.isFinite(hcpPlayer2)) return v2Fail(res, 400, 'hcp_player1 and hcp_player2 must be valid numbers', 'invalid_hcp');
 
   const { data, error } = await supabase
     .from('teams')
@@ -962,7 +973,7 @@ app.post('/api/v2/teams', asyncRoute(async (req, res) => {
       hcp_player1: hcpPlayer1,
       hcp_player2: hcpPlayer2
     })
-    .select('id,tournament_id,team_name,player1_name,player2_name,pin,hcp_player1,hcp_player2,created_at,is_locked')
+    .select('id,tournament_id,team_name,player1_name,player2_name,pin,hcp_player1,hcp_player2')
     .single();
   if (error) return v2Fail(res, 500, 'Failed to create team', 'team_insert_failed');
   return v2Ok(res, mapTeamToCanonical(data), 201);
@@ -1027,7 +1038,7 @@ app.post('/api/v2/scorecard/:tournamentId/:teamId', asyncRoute(async (req, res) 
   return v2Ok(res, data);
 }));
 
-app.post('/api/v2/uploads/coin-back', upload.single('photo'), asyncRoute(async (req, res) => {
+app.post('/api/v2/uploads/coin-back', upload.single('photo'), v2AsyncRoute(async (req, res) => {
   if (!supabase) return v2Fail(res, 503, 'Supabase is not configured', 'supabase_not_configured');
   if (!requireAdmin(req, res)) return;
   if (!req.file) return v2Fail(res, 400, 'Missing file upload', 'missing_upload_file');
@@ -1045,7 +1056,7 @@ app.post('/api/v2/uploads/coin-back', upload.single('photo'), asyncRoute(async (
   if (uploadResp.error) return v2Fail(res, 500, 'Upload failed', 'coin_back_upload_failed');
 
   const { data: publicData } = supabase.storage.from(GALLERY_BUCKET).getPublicUrl(filePath);
-  return v2Ok(res, { path: filePath, publicUrl: publicData?.publicUrl || '' });
+  return v2Ok(res, { path: filePath, public_url: publicData?.publicUrl || '' });
 }));
 app.get('/api/admin/tournaments', asyncRoute(async (req, res) => {
   if (!requireSupabase(res)) return;

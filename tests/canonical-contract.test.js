@@ -91,8 +91,8 @@ test('TEAM create/load canonical shape has no null/null drift', () => {
 });
 
 test('UPLOAD response shape is stable JSON', () => {
-  const response = { success: true, data: { path: 'coin-back/example.png', publicUrl: 'https://cdn.example/coin-back/example.png' } };
+  const response = { success: true, data: { path: 'coin-back/example.png', public_url: 'https://cdn.example/coin-back/example.png' } };
   assert.equal(typeof response.success, 'boolean');
   assert.ok(response.data.path.includes('coin-back/'));
-  assert.ok(response.data.publicUrl.startsWith('https://'));
+  assert.ok(response.data.public_url.startsWith('https://'));
 });
