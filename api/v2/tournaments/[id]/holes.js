@@ -1,11 +1,12 @@
-const { ok, fail, methodNotAllowed, readJsonBody } = require('../../../../lib/json');
-const { getSupabaseAdmin } = require('../../../../lib/supabaseAdmin');
+const path = require('path');
+const { ok, fail, methodNotAllowed, readJsonBody } = require(path.join(__dirname, '..', '..', '..', '..', 'lib', 'json'));
+const { getSupabaseAdmin } = require(path.join(__dirname, '..', '..', '..', '..', 'lib', 'supabaseAdmin'));
 const {
   asInt,
   canonicalHoleRow,
   buildDefaultHoles,
   validateAndNormalizeHoles
-} = require('../../../../lib/validators');
+} = require(path.join(__dirname, '..', '..', '..', '..', 'lib', 'validators'));
 
 const HOLE_COLUMNS = 'hole_number, par, stroke_index, requires_photo, is_longest_drive, is_nearest_pin';
 
@@ -35,10 +36,10 @@ async function ensure18Holes(supabase, tournamentId) {
 }
 
 module.exports = async function handler(req, res) {
-  const tournamentId = asInt(req.query?.id);
-  if (!tournamentId) return fail(res, 400, 'Invalid tournament id', 'v2_tournament_holes_invalid_id');
-
   try {
+    const tournamentId = asInt(req.query?.id);
+    if (!tournamentId) return fail(res, 400, 'Invalid tournament id', 'v2_tournament_holes_invalid_id');
+
     const supabase = getSupabaseAdmin();
 
     if (req.method === 'GET') {
@@ -66,7 +67,8 @@ module.exports = async function handler(req, res) {
     }
 
     return methodNotAllowed(res, ['GET', 'POST'], 'v2_tournament_holes_method');
-  } catch (error) {
-    return fail(res, 500, error.message || 'Unexpected server error', 'v2_tournament_holes_handler');
+  } catch (err) {
+    console.error('FATAL:', err);
+    return fail(res, 500, err.message || 'Server crash', 'v2_tournament_holes_crash');
   }
 };

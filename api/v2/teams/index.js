@@ -1,6 +1,7 @@
-const { ok, fail, methodNotAllowed, readJsonBody } = require('../../../lib/json');
-const { getSupabaseAdmin } = require('../../../lib/supabaseAdmin');
-const { asInt, asNumber, validatePin, canonicalTeamRow } = require('../../../lib/validators');
+const path = require('path');
+const { ok, fail, methodNotAllowed, readJsonBody } = require(path.join(__dirname, '..', '..', '..', 'lib', 'json'));
+const { getSupabaseAdmin } = require(path.join(__dirname, '..', '..', '..', 'lib', 'supabaseAdmin'));
+const { asInt, asNumber, validatePin, canonicalTeamRow } = require(path.join(__dirname, '..', '..', '..', 'lib', 'validators'));
 
 const CANONICAL_TEAM_COLUMNS = 'id, tournament_id, team_name, player1_name, player2_name, pin, hcp_player1, hcp_player2';
 
@@ -62,7 +63,8 @@ module.exports = async function handler(req, res) {
     if (req.method === 'GET') return await getTeams(req, res);
     if (req.method === 'POST') return await createTeam(req, res);
     return methodNotAllowed(res, ['GET', 'POST'], 'v2_teams_method');
-  } catch (error) {
-    return fail(res, 500, error.message || 'Unexpected server error', 'v2_teams_handler');
+  } catch (err) {
+    console.error('FATAL:', err);
+    return fail(res, 500, err.message || 'Server crash', 'v2_teams_crash');
   }
 };

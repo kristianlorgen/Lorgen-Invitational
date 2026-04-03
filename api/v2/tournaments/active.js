@@ -1,38 +1,58 @@
-const { ok, fail, methodNotAllowed } = require('../../../lib/json');
-const { getSupabaseAdmin } = require('../../../lib/supabaseAdmin');
-const { canonicalTournamentRow } = require('../../../lib/validators');
+const path = require('path');
+const { ok, fail, methodNotAllowed } = require(path.join(__dirname, '..', '..', '..', 'lib', 'json'));
+const { getSupabaseAdmin } = require(path.join(__dirname, '..', '..', '..', 'lib', 'supabaseAdmin'));
+const { canonicalTournamentRow } = require(path.join(__dirname, '..', '..', '..', 'lib', 'validators'));
 
 module.exports = async function handler(req, res) {
-  if (req.method !== 'GET') return methodNotAllowed(res, ['GET'], 'v2_tournaments_active_method');
-
   try {
-    const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase
-      .from('tournaments')
-      .select('id, year, name, date, course, status')
-      .eq('status', 'active')
-      .order('year', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    if (req.method !== 'GET') return methodNotAllowed(res, ['GET'], 'v2_tournaments_active_method');
 
-    if (error) return fail(res, 500, error.message, 'v2_tournaments_active_query');
+    console.log('ENV CHECK:', {
+      url: !!process.env.SUPABASE_URL,
+      key: !!process.env.SUPABASE_SERVICE_ROLE_KEY
+    });
 
-    if (!data) {
-      const fallback = await supabase
+    let data;
+    try {
+      const supabase = getSupabaseAdmin();
+      const activeResult = await supabase
         .from('tournaments')
         .select('id, year, name, date, course, status')
+        .eq('status', 'active')
         .order('year', { ascending: false })
-        .order('id', { ascending: false })
         .limit(1)
         .maybeSingle();
 
-      if (fallback.error) return fail(res, 500, fallback.error.message, 'v2_tournaments_active_fallback');
-      if (!fallback.data) return fail(res, 404, 'No tournament found', 'v2_tournaments_active_missing');
-      return ok(res, canonicalTournamentRow(fallback.data));
+      if (activeResult.error) {
+        console.error('ACTIVE TOURNAMENT QUERY ERROR:', activeResult.error);
+        return fail(res, 500, activeResult.error.message, 'v2_tournaments_active_query');
+      }
+
+      data = activeResult.data;
+      if (!data) {
+        const fallback = await supabase
+          .from('tournaments')
+          .select('id, year, name, date, course, status')
+          .order('year', { ascending: false })
+          .order('id', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (fallback.error) {
+          console.error('ACTIVE TOURNAMENT FALLBACK QUERY ERROR:', fallback.error);
+          return fail(res, 500, fallback.error.message, 'v2_tournaments_active_fallback');
+        }
+        if (!fallback.data) return fail(res, 404, 'No tournament found', 'v2_tournaments_active_missing');
+        data = fallback.data;
+      }
+    } catch (error) {
+      console.error('SUPABASE ACTIVE ROUTE ERROR:', error);
+      return fail(res, 500, error.message || 'Supabase failure', 'v2_tournaments_active_supabase');
     }
 
     return ok(res, canonicalTournamentRow(data));
-  } catch (error) {
-    return fail(res, 500, error.message || 'Unexpected server error', 'v2_tournaments_active_get');
+  } catch (err) {
+    console.error('FATAL:', err);
+    return fail(res, 500, err.message || 'Server crash', 'v2_tournaments_active_crash');
   }
 };
