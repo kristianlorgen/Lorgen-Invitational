@@ -8,7 +8,6 @@ const {
   toCanonicalTournament,
   toCanonicalHole,
   normalizeHolePayload,
-  mapTeamToCanonical,
   normalizeScoreRows,
   buildScorecardData
 } = require('./v2');
@@ -258,12 +257,12 @@ function mapTeamRowToCanonical(row = {}) {
   return {
     id: asInt(row.id),
     tournament_id: asInt(row.tournament_id),
-    team_name: row.team_name || row.name || '',
-    player1_name: row.player1_name || row.player1 || '',
-    player2_name: row.player2_name || row.player2 || '',
-    pin: row.pin || row.pin_code || '',
-    hcp_player1: asInt(row.hcp_player1 ?? row.player1_hcp ?? row.player1_handicap) || 0,
-    hcp_player2: asInt(row.hcp_player2 ?? row.player2_hcp ?? row.player2_handicap) || 0,
+    team_name: row.team_name || '',
+    player1_name: row.player1_name || '',
+    player2_name: row.player2_name || '',
+    pin: row.pin || '',
+    hcp_player1: asInt(row.hcp_player1) || 0,
+    hcp_player2: asInt(row.hcp_player2) || 0,
     created_at: row.created_at || null,
     locked: Boolean(row.locked)
   };
@@ -811,7 +810,7 @@ app.post('/api/auth/team-login', asyncRoute(async (req, res) => {
   if (!requireSupabase(res)) return;
   const pin = String(req.body?.pin || '').trim();
   if (!/^\d{4}$/.test(pin)) return fail(res, 400, 'PIN må være nøyaktig 4 siffer');
-  const { data: team, error } = await supabase.from('teams').select('*').or(`pin_code.eq.${pin},pin.eq.${pin}`).limit(1).maybeSingle();
+  const { data: team, error } = await supabase.from('teams').select('*').eq('pin', pin).limit(1).maybeSingle();
   if (error) return fail(res, 500, 'Kunne ikke sjekke PIN', error.message);
   if (!team) return fail(res, 401, 'Ugyldig PIN');
 
@@ -930,54 +929,80 @@ app.post('/api/v2/tournaments/:id/holes', v2AsyncRoute(async (req, res) => {
   return v2Ok(res, canonicalRows);
 }));
 
-app.get('/api/v2/teams', v2AsyncRoute(async (req, res) => {
-  if (!supabase) return v2Fail(res, 503, 'Supabase is not configured', 'supabase_not_configured');
-  const tournamentId = asIntV2(req.query.tournament_id);
-  if (!tournamentId) return v2Fail(res, 400, 'tournament_id is required', 'missing_tournament_id');
+app.get('/api/v2/teams', async (req, res) => {
+  try {
+    if (!supabase) return v2Fail(res, 503, 'Supabase is not configured', 'supabase_not_configured');
+    const tournamentId = asIntV2(req.query.tournament_id);
+    if (!tournamentId) return v2Fail(res, 400, 'tournament_id is required', 'missing_tournament_id');
 
-  const { data, error } = await supabase
-    .from('teams')
-    .select('id,tournament_id,team_name,player1_name,player2_name,pin,hcp_player1,hcp_player2')
-    .eq('tournament_id', tournamentId)
-    .order('id', { ascending: true });
-  if (error) return v2Fail(res, 500, 'Failed to load teams', 'teams_select_failed');
-  return v2Ok(res, (data || []).map(mapTeamToCanonical));
-}));
+    const { data, error } = await supabase
+      .from('teams')
+      .select('id, tournament_id, team_name, player1_name, player2_name, pin, hcp_player1, hcp_player2, created_at')
+      .eq('tournament_id', tournamentId)
+      .order('id', { ascending: true });
+    if (error) throw error;
 
-app.post('/api/v2/teams', v2AsyncRoute(async (req, res) => {
-  if (!supabase) return v2Fail(res, 503, 'Supabase is not configured', 'supabase_not_configured');
-  if (!requireAdmin(req, res)) return;
+    return res.json({ success: true, data });
+  } catch (err) {
+    console.error('V2 TEAMS ERROR:', err);
+    return res.status(500).json({
+      success: false,
+      error: err.message,
+      stackHint: 'v2_teams'
+    });
+  }
+});
 
-  const body = req.body || {};
-  const tournamentId = asIntV2(body.tournament_id);
-  const teamName = String(body.team_name || '').trim();
-  const player1Name = String(body.player1_name || '').trim();
-  const player2Name = String(body.player2_name || '').trim();
-  const pin = String(body.pin || '').trim();
-  const hcpPlayer1 = Number(body.hcp_player1);
-  const hcpPlayer2 = Number(body.hcp_player2);
+app.post('/api/v2/teams', async (req, res) => {
+  try {
+    if (!supabase) return v2Fail(res, 503, 'Supabase is not configured', 'supabase_not_configured');
+    if (!requireAdmin(req, res)) return;
 
-  if (!tournamentId) return v2Fail(res, 400, 'tournament_id is required', 'missing_tournament_id');
-  if (!teamName || !player1Name || !player2Name) return v2Fail(res, 400, 'team_name, player1_name and player2_name are required', 'missing_team_fields');
-  if (!/^\d{4}$/.test(pin)) return v2Fail(res, 400, 'PIN must be exactly 4 digits', 'invalid_pin');
-  if (!Number.isFinite(hcpPlayer1) || !Number.isFinite(hcpPlayer2)) return v2Fail(res, 400, 'hcp_player1 and hcp_player2 must be valid numbers', 'invalid_hcp');
-
-  const { data, error } = await supabase
-    .from('teams')
-    .insert({
-      tournament_id: tournamentId,
-      team_name: teamName,
-      player1_name: player1Name,
-      player2_name: player2Name,
+    const {
+      tournament_id,
+      team_name,
+      player1_name,
+      player2_name,
       pin,
-      hcp_player1: hcpPlayer1,
-      hcp_player2: hcpPlayer2
-    })
-    .select('id,tournament_id,team_name,player1_name,player2_name,pin,hcp_player1,hcp_player2')
-    .single();
-  if (error) return v2Fail(res, 500, 'Failed to create team', 'team_insert_failed');
-  return v2Ok(res, mapTeamToCanonical(data), 201);
-}));
+      hcp_player1,
+      hcp_player2
+    } = req.body || {};
+
+    const tournamentId = asIntV2(tournament_id);
+    if (!tournamentId) return v2Fail(res, 400, 'tournament_id is required', 'missing_tournament_id');
+    if (!String(team_name || '').trim() || !String(player1_name || '').trim() || !String(player2_name || '').trim()) {
+      return v2Fail(res, 400, 'team_name, player1_name and player2_name are required', 'missing_team_fields');
+    }
+    if (!/^\d{4}$/.test(String(pin || '').trim())) return v2Fail(res, 400, 'PIN must be exactly 4 digits', 'invalid_pin');
+    if (!Number.isFinite(Number(hcp_player1)) || !Number.isFinite(Number(hcp_player2))) {
+      return v2Fail(res, 400, 'hcp_player1 and hcp_player2 must be valid numbers', 'invalid_hcp');
+    }
+
+    const { data, error } = await supabase
+      .from('teams')
+      .insert({
+        tournament_id: tournamentId,
+        team_name: String(team_name).trim(),
+        player1_name: String(player1_name).trim(),
+        player2_name: String(player2_name).trim(),
+        pin: String(pin).trim(),
+        hcp_player1: Number(hcp_player1),
+        hcp_player2: Number(hcp_player2)
+      })
+      .select('id, tournament_id, team_name, player1_name, player2_name, pin, hcp_player1, hcp_player2, created_at')
+      .single();
+    if (error) throw error;
+
+    return res.status(201).json({ success: true, data });
+  } catch (err) {
+    console.error('V2 TEAMS ERROR:', err);
+    return res.status(500).json({
+      success: false,
+      error: err.message,
+      stackHint: 'v2_teams'
+    });
+  }
+});
 
 app.get('/api/v2/scorecard/:tournamentId/:teamId', asyncRoute(async (req, res) => {
   if (!supabase) return v2Fail(res, 503, 'Supabase is not configured', 'supabase_not_configured');
@@ -1654,19 +1679,11 @@ app.put('/api/admin/team/:id', asyncRoute(async (req, res) => {
   const b = req.body || {};
   const updates = {
     team_name: b.team_name,
-    name: b.team_name,
     player1_name: b.player1_name,
-    player1: b.player1_name,
     player2_name: b.player2_name,
-    player2: b.player2_name,
     pin: b.pin,
-    pin_code: b.pin,
     hcp_player1: asInt(b.hcp_player1) || 0,
-    player1_hcp: asInt(b.hcp_player1) || 0,
-    player1_handicap: asInt(b.hcp_player1) || 0,
-    hcp_player2: asInt(b.hcp_player2) || 0,
-    player2_hcp: asInt(b.hcp_player2) || 0,
-    player2_handicap: asInt(b.hcp_player2) || 0
+    hcp_player2: asInt(b.hcp_player2) || 0
   };
   const { data, error } = await supabase.from('teams').update(updates).eq('id', id).select('*').single();
   if (error) return fail(res, 500, 'Kunne ikke oppdatere lag', error.message);
@@ -1713,19 +1730,11 @@ app.post(['/api/teams', '/api/admin/team'], asyncRoute(async (req, res) => {
   const insert = {
     tournament_id: tournamentId,
     team_name,
-    name: team_name,
     player1_name,
-    player1: player1_name,
     player2_name,
-    player2: player2_name,
     pin,
-    pin_code: pin,
     hcp_player1,
-    player1_hcp: hcp_player1,
-    player1_handicap: hcp_player1,
-    hcp_player2,
-    player2_hcp: hcp_player2,
-    player2_handicap: hcp_player2
+    hcp_player2
   };
 
   const { data, error } = await supabase.from('teams').insert(insert).select('*').single();
@@ -1920,7 +1929,7 @@ app.post('/api/chat/send', upload.single('image'), asyncRoute(async (req, res) =
   const { data: team } = await supabase.from('teams').select('*').eq('id', asInt(session.team_id)).maybeSingle();
   const { data, error } = await supabase.from('chat_messages').insert({
     tournament_id: asInt(session.tournament_id), team_id: asInt(session.team_id),
-    team_name: team?.team_name || team?.name || req.body?.team_name || 'Lag',
+    team_name: team?.team_name || req.body?.team_name || 'Lag',
     message: message || null, image_path: imagePath, created_at: new Date().toISOString(), event_type: 'chat_message'
   }).select('*').single();
   if (error) return fail(res, 500, 'Kunne ikke sende chatmelding', error.message);
@@ -1936,7 +1945,7 @@ app.post('/api/team/birdie-shot', asyncRoute(async (req, res) => {
   const message = `⛳ ${note || 'Alle spillere må ta birdie shots! 🥃'}`;
   const { error } = await supabase.from('chat_messages').insert({
     tournament_id: asInt(session.tournament_id), team_id: asInt(session.team_id),
-    team_name: team?.team_name || team?.name || 'Lag', message, event_type: 'birdie_shot', created_at: new Date().toISOString()
+    team_name: team?.team_name || 'Lag', message, event_type: 'birdie_shot', created_at: new Date().toISOString()
   });
   if (error) return fail(res, 500, 'Kunne ikke sende birdie shoutout', error.message);
   return ok(res);
@@ -2097,11 +2106,11 @@ app.get('/api/scoreboard', asyncRoute(async (_req, res) => {
       total += sc;
       par += parByHole[h] || 4;
     }
-    const hcp = asInt(team.player1_handicap || team.player1_hcp || 0) + asInt(team.player2_handicap || team.player2_hcp || 0);
+    const hcp = asInt(team.hcp_player1 || 0) + asInt(team.hcp_player2 || 0);
     const netScore = total > 0 ? Math.max(total - Math.round((hcp || 0) / 2), 0) : 0;
     return {
-      team_id: asInt(team.id), team_name: team.team_name || team.name || 'Lag', player1: team.player1 || '', player2: team.player2 || '',
-      player1_handicap: asInt(team.player1_handicap || team.player1_hcp || 0), player2_handicap: asInt(team.player2_handicap || team.player2_hcp || 0),
+      team_id: asInt(team.id), team_name: team.team_name || 'Lag', player1: team.player1_name || '', player2: team.player2_name || '',
+      player1_handicap: asInt(team.hcp_player1 || 0), player2_handicap: asInt(team.hcp_player2 || 0),
       handicap: Math.round((hcp || 0) / 2),
       hole_scores: holeScores,
       holes_completed: Object.keys(holeScores).length,
@@ -2112,7 +2121,7 @@ app.get('/api/scoreboard', asyncRoute(async (_req, res) => {
     };
   }).sort((a, b) => (a.holes_completed === 0 ? 1 : 0) - (b.holes_completed === 0 ? 1 : 0) || a.net_to_par - b.net_to_par || a.total_score - b.total_score);
 
-  const awards = (awardsResp.data || []).map((a) => ({ ...a, team_name: a.team_name || a.teams?.team_name || a.teams?.name || null }));
+  const awards = (awardsResp.data || []).map((a) => ({ ...a, team_name: a.team_name || a.teams?.team_name || null }));
   return ok(res, { tournament, holes, scoreboard, awards });
 }));
 
