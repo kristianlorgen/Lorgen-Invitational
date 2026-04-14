@@ -11,25 +11,6 @@ const bootTimestamp = Date.now();
 app.use(express.json({ limit: '4mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-const allowedOrigins = new Set([
-  'https://lorgen-invitational-production.up.railway.app',
-  'https://www.lorgen-invitational.no',
-  'https://lorgen-invitational.no'
-]);
-
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  if (origin && (allowedOrigins.has(origin) || origin.endsWith('.vercel.app'))) {
-    res.header('Access-Control-Allow-Origin', origin);
-    res.header('Access-Control-Allow-Credentials', 'true');
-    res.header('Vary', 'Origin');
-  }
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-  if (req.method === 'OPTIONS') return res.sendStatus(204);
-  return next();
-});
-
 const publicDir = path.join(__dirname, '..', 'public');
 const staticPages = {
   '/': 'index.html',
@@ -125,11 +106,11 @@ function decode(token) {
   } catch { return null; }
 }
 function setCookie(res, name, value, maxAge) {
-  const attrs = [`${name}=${encodeURIComponent(value)}`, 'Path=/', 'HttpOnly', 'SameSite=None', 'Secure'];
+  const attrs = [`${name}=${encodeURIComponent(value)}`, 'Path=/', 'HttpOnly', 'SameSite=Lax', 'Secure'];
   if (maxAge) attrs.push(`Max-Age=${maxAge}`);
   res.append('Set-Cookie', attrs.join('; '));
 }
-function clearCookie(res, name) { res.append('Set-Cookie', `${name}=; Path=/; HttpOnly; SameSite=None; Secure; Max-Age=0`); }
+function clearCookie(res, name) { res.append('Set-Cookie', `${name}=; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=0`); }
 function getAdminSession(req) { return decode(parseCookies(req).admin_session); }
 function getTeamSession(req) { return decode(parseCookies(req).team_session); }
 function requireAdmin(req, res) {
