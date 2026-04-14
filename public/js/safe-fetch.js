@@ -1,33 +1,4 @@
 (function () {
-  const RAILWAY_FALLBACK_ORIGIN = 'https://lorgen-invitational-production.up.railway.app';
-
-  function resolveApiUrl(url) {
-    if (typeof url !== 'string') return url;
-    if (!url.startsWith('/')) return url;
-
-    const explicitOrigin =
-      (typeof window !== 'undefined' && window.__LORGEN_API_ORIGIN) ||
-      (typeof document !== 'undefined' && document.querySelector('meta[name="lorgen-api-origin"]')?.content) ||
-      '';
-    if (explicitOrigin) return `${explicitOrigin.replace(/\/+$/, '')}${url}`;
-
-    if (typeof window === 'undefined' || !window.location) return url;
-
-    const host = window.location.hostname || '';
-    const isRailwayHost = host.endsWith('.up.railway.app');
-    if (isRailwayHost) return url;
-
-    const isLikelyLegacyFrontend =
-      host.endsWith('.vercel.app') ||
-      host === 'www.lorgen-invitational.no' ||
-      host === 'lorgen-invitational.no';
-    if (isLikelyLegacyFrontend) {
-      return `${RAILWAY_FALLBACK_ORIGIN}${url}`;
-    }
-
-    return url;
-  }
-
   async function parseApiResponse(response) {
     const text = await response.text();
     if (!text) return { data: {}, isJson: true, rawText: '' };
@@ -40,7 +11,6 @@
   }
 
   async function safeJsonFetch(url, options = {}) {
-    const resolvedUrl = resolveApiUrl(url);
     const method = (options.method || 'GET').toUpperCase();
     const hasBody = options.body !== undefined && options.body !== null;
     const headers = {
@@ -52,13 +22,13 @@
 
     let response;
     try {
-      response = await fetch(resolvedUrl, {
-        credentials: 'include',
+      response = await fetch(url, {
+        credentials: 'same-origin',
         ...fetchOptions,
         headers
       });
     } catch (networkError) {
-      console.error('[safeJsonFetch] Network error', { url, resolvedUrl, method, error: networkError });
+      console.error('[safeJsonFetch] Network error', { url, method, error: networkError });
       throw new Error(networkError?.message || 'Kunne ikke nå serveren. Prøv igjen.');
     }
 
@@ -67,7 +37,6 @@
       try {
         debugHook({
           url,
-          resolvedUrl,
           method,
           status: response.status,
           ok: response.ok,
@@ -81,7 +50,6 @@
     if (!response.ok) {
       console.error('[safeJsonFetch] HTTP error', {
         url,
-        resolvedUrl,
         method,
         status: response.status,
         payload: parsed.data
@@ -96,7 +64,7 @@
     }
 
     if (!parsed.isJson) {
-      console.error('[safeJsonFetch] Non-JSON success response', { url, resolvedUrl, method, status: response.status });
+      console.error('[safeJsonFetch] Non-JSON success response', { url, method, status: response.status });
       return { raw: parsed.rawText };
     }
 
