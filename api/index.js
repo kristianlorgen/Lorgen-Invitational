@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const express = require('express');
 const multer = require('multer');
+const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
@@ -9,6 +10,22 @@ const bootTimestamp = Date.now();
 
 app.use(express.json({ limit: '4mb' }));
 app.use(express.urlencoded({ extended: true }));
+
+const publicDir = path.join(__dirname, '..', 'public');
+const staticPages = {
+  '/': 'index.html',
+  '/admin': 'admin.html',
+  '/enter-score': 'enter-score.html',
+  '/gameday': 'gameday.html',
+  '/gallery': 'gallery.html',
+  '/legacy': 'legacy.html',
+  '/scoreboard': 'scoreboard.html'
+};
+
+for (const [routePath, fileName] of Object.entries(staticPages)) {
+  app.get(routePath, (_req, res) => res.sendFile(path.join(publicDir, fileName)));
+}
+app.use(express.static(publicDir));
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
