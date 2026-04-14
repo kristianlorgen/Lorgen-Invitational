@@ -116,6 +116,14 @@ function getTeamSession(req) { return decode(parseCookies(req).team_session); }
 function requireAdmin(req, res) {
   const admin = getAdminSession(req);
   if (admin?.role === 'admin') return true;
+  const headerToken = req.headers['x-admin-api-key'] || req.headers['x-admin-token'];
+  const bearerToken = typeof req.headers.authorization === 'string' && req.headers.authorization.startsWith('Bearer ')
+    ? req.headers.authorization.slice(7).trim()
+    : '';
+  const expectedApiKey = process.env.ADMIN_API_KEY || '';
+  if (expectedApiKey && (headerToken === expectedApiKey || bearerToken === expectedApiKey)) {
+    return true;
+  }
   fail(res, 401, 'Admin authentication required');
   return false;
 }
@@ -142,18 +150,50 @@ function isMissingRelationError(error) {
   return code === '42P01' || code === 'PGRST205' || message.includes('relation') && message.includes('does not exist');
 }
 
+function isMissingColumnError(error) {
+  const code = String(error?.code || '');
+  const message = String(error?.message || '').toLowerCase();
+  return code === '42703'
+    || code === 'PGRST204'
+    || message.includes('column')
+    && (message.includes('does not exist') || message.includes('not found in schema cache'));
+}
+
+function logDeleteRoute(event, payload = {}) {
+  console.log(`[api:delete:${event}]`, {
+    ...payload,
+    at: new Date().toISOString()
+  });
+}
+
 async function safeDeleteByEq(table, column, value) {
+  const columns = await fetchTableColumns(table);
+  if (Array.isArray(columns) && columns.length && !columns.includes(column)) {
+    logDeleteRoute('skip-missing-column', { table, column, value });
+    return;
+  }
   const { error } = await supabase.from(table).delete().eq(column, value);
-  if (error && !isMissingRelationError(error)) {
+  if (error && !isMissingRelationError(error) && !isMissingColumnError(error)) {
     throw new Error(`${table}.${column}: ${error.message}`);
+  }
+  if (error) {
+    logDeleteRoute('skip-nonfatal-error', { table, column, value, error: serializeSupabaseError(error) });
   }
 }
 
 async function safeDeleteByIn(table, column, values) {
   if (!Array.isArray(values) || values.length === 0) return;
+  const columns = await fetchTableColumns(table);
+  if (Array.isArray(columns) && columns.length && !columns.includes(column)) {
+    logDeleteRoute('skip-missing-column', { table, column, valueCount: values.length });
+    return;
+  }
   const { error } = await supabase.from(table).delete().in(column, values);
-  if (error && !isMissingRelationError(error)) {
+  if (error && !isMissingRelationError(error) && !isMissingColumnError(error)) {
     throw new Error(`${table}.${column}: ${error.message}`);
+  }
+  if (error) {
+    logDeleteRoute('skip-nonfatal-error', { table, column, valueCount: values.length, error: serializeSupabaseError(error) });
   }
 }
 
@@ -1076,38 +1116,54 @@ app.put('/api/admin/tournament/:id', asyncRoute(async (req, res) => {
 
 app.delete('/api/admin/tournament/:id', asyncRoute(async (req, res) => {
   if (!requireSupabase(res)) return;
-  if (!requireAdmin(req, res)) return;
+  const adminOk = requireAdmin(req, res);
+  logDeleteRoute('auth', { method: req.method, path: req.path, resource: 'tournament', adminOk });
+  if (!adminOk) return;
   const id = asInt(req.params.id); if (!id) return fail(res, 400, 'Ugyldig turnerings-ID');
+  logDeleteRoute('start', { method: req.method, path: req.path, resource: 'tournament', id });
   const { data: tournamentTeams, error: teamsError } = await supabase
     .from('teams')
     .select('id')
     .eq('tournament_id', id);
   if (teamsError && !isMissingRelationError(teamsError)) {
+    logDeleteRoute('db-error', { method: req.method, path: req.path, resource: 'tournament', id, step: 'fetch-teams', error: serializeSupabaseError(teamsError) });
     return fail(res, 500, 'Kunne ikke hente lag før sletting', teamsError.message);
   }
 
   const teamIds = (tournamentTeams || []).map((row) => asInt(row.id)).filter(Boolean);
 
   try {
+    // Tournament-level dependencies first (explicit order for non-cascade schemas)
     await safeDeleteByEq('scores', 'tournament_id', id);
-    await safeDeleteByEq('hole_images', 'tournament_id', id);
+    await safeDeleteByEq('holes', 'tournament_id', id);
+    await safeDeleteByEq('tournament_holes', 'tournament_id', id);
     await safeDeleteByEq('award_claims', 'tournament_id', id);
+    await safeDeleteByEq('players', 'tournament_id', id);
+    await safeDeleteByEq('rounds', 'tournament_id', id);
+    await safeDeleteByEq('hole_images', 'tournament_id', id);
     await safeDeleteByEq('awards', 'tournament_id', id);
     await safeDeleteByEq('chat_messages', 'tournament_id', id);
     await safeDeleteByEq('tournament_gallery_images', 'tournament_id', id);
     await safeDeleteByEq('sponsors', 'tournament_id', id);
-    await safeDeleteByEq('tournament_holes', 'tournament_id', id);
+    // Team-linked dependencies second
     await safeDeleteByIn('scores', 'team_id', teamIds);
     await safeDeleteByIn('hole_images', 'team_id', teamIds);
     await safeDeleteByIn('award_claims', 'team_id', teamIds);
     await safeDeleteByIn('awards', 'team_id', teamIds);
+    await safeDeleteByIn('players', 'team_id', teamIds);
+    await safeDeleteByIn('rounds', 'team_id', teamIds);
     await safeDeleteByEq('teams', 'tournament_id', id);
   } catch (cleanupError) {
+    logDeleteRoute('db-error', { method: req.method, path: req.path, resource: 'tournament', id, step: 'cleanup', error: cleanupError?.message || cleanupError });
     return fail(res, 500, 'Kunne ikke rydde turneringsdata før sletting', cleanupError.message || cleanupError);
   }
 
   const { error } = await supabase.from('tournaments').delete().eq('id', id);
-  if (error) return fail(res, 500, 'Kunne ikke slette turnering', error.message);
+  if (error) {
+    logDeleteRoute('db-error', { method: req.method, path: req.path, resource: 'tournament', id, step: 'delete-tournament', error: serializeSupabaseError(error) });
+    return fail(res, 500, 'Kunne ikke slette turnering', error.message);
+  }
+  logDeleteRoute('success', { method: req.method, path: req.path, resource: 'tournament', id });
   return ok(res, { deleted: true });
 }));
 
@@ -1497,18 +1553,29 @@ app.put('/api/admin/team/:id', asyncRoute(async (req, res) => {
 
 app.delete(['/api/teams/:id', '/api/admin/team/:id'], asyncRoute(async (req, res) => {
   if (!requireSupabase(res)) return;
-  if (req.path.includes('/api/admin/') && !requireAdmin(req, res)) return;
+  const isAdminPath = req.path.includes('/api/admin/');
+  const adminOk = !isAdminPath || requireAdmin(req, res);
+  logDeleteRoute('auth', { method: req.method, path: req.path, resource: 'team', adminOk, isAdminPath });
+  if (!adminOk) return;
   const id = asInt(req.params.id); if (!id) return fail(res, 400, 'Ugyldig lag-ID');
+  logDeleteRoute('start', { method: req.method, path: req.path, resource: 'team', id });
   try {
     await safeDeleteByEq('scores', 'team_id', id);
+    await safeDeleteByEq('players', 'team_id', id);
+    await safeDeleteByEq('rounds', 'team_id', id);
     await safeDeleteByEq('hole_images', 'team_id', id);
     await safeDeleteByEq('award_claims', 'team_id', id);
     await safeDeleteByEq('awards', 'team_id', id);
   } catch (cleanupError) {
+    logDeleteRoute('db-error', { method: req.method, path: req.path, resource: 'team', id, step: 'cleanup', error: cleanupError?.message || cleanupError });
     return fail(res, 500, 'Kunne ikke rydde lagdata før sletting', cleanupError.message || cleanupError);
   }
   const { error } = await supabase.from('teams').delete().eq('id', id);
-  if (error) return fail(res, 500, 'Kunne ikke slette lag', error.message);
+  if (error) {
+    logDeleteRoute('db-error', { method: req.method, path: req.path, resource: 'team', id, step: 'delete-team', error: serializeSupabaseError(error) });
+    return fail(res, 500, 'Kunne ikke slette lag', error.message);
+  }
+  logDeleteRoute('success', { method: req.method, path: req.path, resource: 'team', id });
   return ok(res, { deleted: true });
 }));
 
