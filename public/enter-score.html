@@ -5,12 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Scorekort — Lorgen Invitational</title>
   <meta name="description" content="Registrer poengsummen for ditt lag i Lorgen Invitational.">
-
-  <meta property="og:title" content="Lorgen Invitational">
-  <meta property="og:description" content="Power · Precision · Party — Live resultater, regler og galleri.">
-  <meta property="og:image" content="https://lorgen-invitational-production.up.railway.app/images/logo.png">
-  <meta property="og:type" content="website">
-  <meta name="twitter:card" content="summary_large_image">
   <link rel="icon" type="image/png" href="/images/logo.png">
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -449,13 +443,6 @@
     </div>
   </div>
 
-  <section style="background:var(--off-white);padding:28px 0" id="scoreStatusScreen" class="d-none">
-    <div class="container">
-      <div class="empty-state" id="scoreStatusCard"></div>
-    </div>
-  </section>
-
-  <div id="activeRoundContent">
   <!-- Hullnavigasjon (prikker) -->
   <div style="background:var(--white);padding:12px 16px;border-bottom:1px solid var(--gold-border)">
     <div class="container" style="max-width:600px">
@@ -523,7 +510,6 @@
       </div>
     </div>
   </div>
-  </div>
 </div>
 
 <!-- ── Rundeoppsummering modal ────────────────────────────────────────────── -->
@@ -554,7 +540,6 @@
 
 <input type="file" id="photoInput" accept="image/*" capture="environment" style="display:none">
 
-<script src="/js/safe-fetch.js"></script>
 <script>
 window.addEventListener('scroll', () => {
   document.getElementById('navbar').classList.toggle('scrolled', window.scrollY > 40);
@@ -613,8 +598,6 @@ let tournamentData = null;
 let holesData      = [];
 let scoresData     = {};
 let claimsData     = {};
-let holeSponsorsMap = {};
-let completionDebug = null;
 let pendingPhotoHole = null;
 let currentHoleIndex = 0;
 let teamPin = '';
@@ -732,94 +715,8 @@ async function notifyBirdieShot(payload) {
   } catch (_) {}
 }
 
-function getValidSubmittedScore(entry) {
-  if (!entry || typeof entry !== 'object') return null;
-  const rawScore = entry.score ?? entry.strokes;
-  if (rawScore === null || rawScore === undefined || rawScore === '') return null;
-  const parsedScore = Number.parseInt(rawScore, 10);
-  if (!Number.isInteger(parsedScore) || parsedScore <= 0) return null;
-  return parsedScore;
-}
-
-function moveToFirstPlayableHole() {
-  if (!holesData.length) {
-    currentHoleIndex = 0;
-    return;
-  }
-  const firstIncompleteIndex = holesData.findIndex((hole) => {
-    const saved = scoresData[hole.hole_number];
-    return getValidSubmittedScore(saved) === null;
-  });
-  currentHoleIndex = firstIncompleteIndex >= 0 ? firstIncompleteIndex : 0;
-}
-
-function getRoundCompletionDebug() {
-  const totalHoles = holesData.length;
-  const holesWithValidScore = holesData.reduce((count, hole) => {
-    const scoreEntry = scoresData[hole.hole_number];
-    return count + (getValidSubmittedScore(scoreEntry) !== null ? 1 : 0);
-  }, 0);
-  const completionThreshold = totalHoles;
-  const isRoundComplete = totalHoles > 0 && holesWithValidScore >= completionThreshold;
-  return { totalHoles, holesWithValidScore, completionThreshold, isRoundComplete };
-}
-
 function allHolesCompleted() {
-  if (completionDebug && typeof completionDebug.isRoundComplete === 'boolean') {
-    return completionDebug.isRoundComplete;
-  }
-  completionDebug = getRoundCompletionDebug();
-  return completionDebug.isRoundComplete;
-}
-
-function renderScoreStatus(kind) {
-  const statusWrap = document.getElementById('scoreStatusScreen');
-  const statusCard = document.getElementById('scoreStatusCard');
-  const activeWrap = document.getElementById('activeRoundContent');
-  if (!statusWrap || !statusCard || !activeWrap) return;
-
-  if (kind === 'active') {
-    statusWrap.classList.add('d-none');
-    activeWrap.classList.remove('d-none');
-    return;
-  }
-
-  activeWrap.classList.add('d-none');
-  statusWrap.classList.remove('d-none');
-
-  if (kind === 'idle') {
-    statusCard.innerHTML = `
-      <div class="empty-state__icon">⌛</div>
-      <h2 class="empty-state__title">Velkommen${teamData?.team_name ? `, ${teamData.team_name}` : ''}</h2>
-      <p class="empty-state__description">Laster scorekort…</p>
-      <div class="empty-state__actions">
-        <a href="/scoreboard" class="btn btn--outline" style="color:var(--gold-dark);border-color:var(--gold-border)">
-          <i class="fas fa-list-ol"></i> Gå til Live Resultater
-        </a>
-      </div>`;
-    return;
-  }
-
-  if (kind === 'locked') {
-    statusCard.innerHTML = `
-      <div class="empty-state__icon">🔒</div>
-      <h2 class="empty-state__title">Resultatkort låst</h2>
-      <p class="empty-state__description">Kontakt admin hvis noe må korrigeres.</p>
-      <div class="empty-state__actions">
-        <a href="/scoreboard" class="btn btn--gold"><i class="fas fa-list-ol"></i> Se Live Resultater</a>
-        <a href="/legacy" class="btn btn--outline" style="color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-trophy"></i> Hall of Fame</a>
-      </div>`;
-    return;
-  }
-
-  statusCard.innerHTML = `
-    <div class="empty-state__icon">🏁</div>
-    <h2 class="empty-state__title">Runden er fullført!</h2>
-    <p class="empty-state__description">Etter låsing kan kun admin endre poengene.</p>
-    <div class="empty-state__actions">
-      <a href="/scoreboard" class="btn btn--gold"><i class="fas fa-list-ol"></i> Se stillingen</a>
-      <button onclick="openSummary()" class="btn btn--outline" style="color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-lock"></i> Lås inn resultater</button>
-    </div>`;
+  return holesData.length > 0 && holesData.every(h => (scoresData[h.hole_number]?.score || 0) > 0);
 }
 
 async function doLogin() {
@@ -829,18 +726,18 @@ async function doLogin() {
   btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Bekrefter...';
   document.getElementById('loginError').textContent = '';
   try {
-    const d = await safeJsonFetch('/api/auth/team-login', {
+    const r = await fetch('/api/auth/team-login', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin })
     });
+    const d = await r.json();
     if (d.success) {
       teamPin = pin;
       sessionStorage.setItem('team_pin', pin);
       teamData = d.team;
       updateNotificationBanner();
+      await loadScorecard();
       document.getElementById('loginScreen').classList.add('d-none');
       document.getElementById('scorecardScreen').classList.remove('d-none');
-      renderScoreStatus('idle');
-      await loadScorecard();
     } else {
       document.getElementById('loginError').textContent = d.error || 'Ugyldig PIN';
       digits.forEach(d => d.value = ''); digits[0].focus();
@@ -854,7 +751,7 @@ async function doLogout() {
     showToast('Du må fylle ut alle hull før du kan lukke scorekortet.', 'error');
     return;
   }
-  await safeJsonFetch('/api/auth/logout', { method: 'POST' });
+  await fetch('/api/auth/logout', { method: 'POST' });
   sessionStorage.removeItem('team_pin');
   location.reload();
 }
@@ -876,28 +773,16 @@ window.addEventListener('beforeunload', (e) => {
 });
 
 async function loadScorecard() {
-  const d = await safeJsonFetch('/api/team/scorecard');
+  const r = await fetch('/api/team/scorecard');
+  const d = await r.json();
   teamData = d.team; holesData = d.holes; tournamentData = d.tournament || null;
-  scoresData = {};
   d.scores.forEach(s => { scoresData[s.hole_number] = s; });
-  completionDebug = d.completion_debug || getRoundCompletionDebug();
   if (d.claims) d.claims.forEach(c => { claimsData[c.hole_number + '_' + c.award_type] = c; });
-  holeSponsorsMap = {};
-  if (d.hole_sponsors) d.hole_sponsors.forEach(s => { holeSponsorsMap[s.hole_number] = s; });
-  moveToFirstPlayableHole();
   renderAll();
   loadPosition();
   await loadChatMessages();
   startChatEvents();
-  if (d.is_round_complete || teamData.locked) {
-    showLockedState();
-    return;
-  }
-  if (allHolesCompleted()) {
-    renderScoreStatus('finished');
-  } else {
-    renderScoreStatus('active');
-  }
+  if (teamData.locked) showLockedState();
 }
 
 function formatChatTime(timestamp) {
@@ -941,7 +826,8 @@ function renderChatMessages() {
 
 async function loadChatMessages() {
   try {
-    const d = await safeJsonFetch('/api/chat/messages');
+    const r = await fetch('/api/chat/messages');
+    const d = await r.json();
     chatMessages = Array.isArray(d.messages) ? d.messages : [];
     renderChatMessages();
   } catch (_) {
@@ -952,18 +838,41 @@ async function loadChatMessages() {
 
 function startChatEvents() {
   if (chatEventSource) return;
-  setInterval(async () => {
-    const before = chatMessages.length ? Number(chatMessages[chatMessages.length - 1].id || 0) : 0;
-    await loadChatMessages();
-    const afterMsg = chatMessages.length ? chatMessages[chatMessages.length - 1] : null;
-    const after = Number(afterMsg?.id || 0);
-    if (after > before && afterMsg?.event_type === 'birdie_shot') {
-      notifyBirdieShot(afterMsg);
-      showToast(`⛳ ${afterMsg.team_name || 'Et lag'} roper birdie! Alle spillere må ta birdie shots! 🥃`, 'info');
+  chatEventSource = new EventSource('/api/events');
+  chatEventSource.onmessage = (evt) => {
+    try {
+      const payload = JSON.parse(evt.data);
+      if (payload.type === 'chat_message' && payload.data) {
+        chatMessages.push(payload.data);
+        if (chatMessages.length > 100) chatMessages = chatMessages.slice(-100);
+        const incomingId = Number(payload.data.id) || 0;
+        if (!isChatWidgetOpen() && incomingId > lastSeenChatId) {
+          unreadChatCount += 1;
+          syncChatUnreadIndicator();
+        }
+        renderChatMessages();
+      }
+      if (payload.type === 'birdie_shot' && payload.data) {
+        const shoutBtn = document.getElementById('birdieShoutBtn');
+        if (shoutBtn) {
+          shoutBtn.classList.add('is-celebrating');
+          setTimeout(() => shoutBtn.classList.remove('is-celebrating'), 1700);
+        }
+        if (navigator.vibrate) navigator.vibrate([120, 90, 120]);
+        notifyBirdieShot(payload.data);
+        updateNotificationBanner();
+        showToast(`⛳ ${payload.data.team_name || 'Et lag'} roper birdie! Alle spillere må ta birdie shots! 🥃`, 'info');
+      }
+    } catch (_) {}
+  };
+  chatEventSource.onerror = () => {
+    if (chatEventSource) {
+      chatEventSource.close();
+      chatEventSource = null;
+      setTimeout(startChatEvents, 3000);
     }
-  }, 4000);
+  };
 }
-
 
 
 async function sendBirdieShoutout() {
@@ -971,11 +880,12 @@ async function sendBirdieShoutout() {
   if (btn) btn.classList.add('is-celebrating');
   if (navigator.vibrate) navigator.vibrate([120, 80, 120, 80, 180]);
   try {
-    const d = await safeJsonFetch('/api/team/birdie-shot', {
+    const r = await fetch('/api/team/birdie-shot', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ note: 'Alle spillere må ta birdie shots! 🥃', ...(teamPin ? { pin: teamPin } : {}) })
     });
+    const d = await r.json();
     if (!d.success) {
       showToast(d.error || 'Kunne ikke sende birdie shoutout', 'error');
     } else {
@@ -1014,15 +924,15 @@ async function sendChatMessage(event) {
       if (teamPin) formData.append('pin', teamPin);
       formData.append('message', message);
       formData.append('image', imageFile);
-      r = await safeJsonFetch('/api/chat/send', { method: 'POST', body: formData });
+      r = await fetch('/api/chat/send', { method: 'POST', body: formData });
     } else {
-      r = await safeJsonFetch('/api/chat/send', {
+      r = await fetch('/api/chat/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message, ...(teamPin ? { pin: teamPin } : {}) })
       });
     }
-    const d = r;
+    const d = await r.json();
     if (!d.success) {
       showToast(d.error || 'Kunne ikke sende melding', 'error');
     } else {
@@ -1057,14 +967,13 @@ function renderAll() {
 function updateSummary() {
   let totalScore = 0, totalPar = 0, holesCompleted = 0;
   Object.values(scoresData).forEach(s => {
-    const scoreValue = getValidSubmittedScore(s);
-    if (scoreValue !== null) {
+    if (s.score > 0) {
       const h = holesData.find(h => h.hole_number === s.hole_number);
-      if (h) { totalScore += scoreValue; totalPar += h.par; holesCompleted++; }
+      if (h) { totalScore += s.score; totalPar += h.par; holesCompleted++; }
     }
   });
-  document.getElementById('scProgress').textContent = holesCompleted + ' / ' + holesData.length;
-  document.getElementById('summaryHoles').textContent = holesCompleted + '/' + holesData.length;
+  document.getElementById('scProgress').textContent = holesCompleted + ' / 18';
+  document.getElementById('summaryHoles').textContent = holesCompleted + '/18';
   document.getElementById('summaryTotal').textContent = holesCompleted > 0 ? totalScore : '—';
   const toPar = totalScore - totalPar;
   document.getElementById('summaryToPar').textContent =
@@ -1086,7 +995,8 @@ function updateSummary() {
 
 async function loadPosition() {
   try {
-    const d = await safeJsonFetch('/api/scoreboard');
+    const r = await fetch('/api/scoreboard');
+    const d = await r.json();
     if (d.scoreboard && teamData) {
       const idx = d.scoreboard.findIndex(t => t.team_id === teamData.id);
       document.getElementById('summaryPos').textContent = idx >= 0 ? '#' + (idx + 1) : '—';
@@ -1098,7 +1008,7 @@ function renderDots() {
   const wrap = document.getElementById('holeDotsRow');
   wrap.innerHTML = holesData.map((h, i) => {
     const saved = scoresData[h.hole_number];
-    const hasScore = getValidSubmittedScore(saved) !== null;
+    const hasScore = saved && saved.score > 0;
     const needsPhoto = h.requires_photo;
     const hasPhoto = saved && saved.photo_path;
     let cls = 'hole-dot';
@@ -1115,24 +1025,13 @@ function renderCurrentHole() {
   const card = document.getElementById('singleHoleCard');
   const saved    = scoresData[h.hole_number];
   const hasPhoto = saved && saved.photo_path;
-  const hasScore = getValidSubmittedScore(saved) !== null;
+  const hasScore = saved && saved.score > 0;
   const needsPhoto = h.requires_photo;
   const blocked    = needsPhoto && !hasPhoto;
   const hasLd  = h.is_longest_drive;
-  const hasCtp = h.is_closest_to_pin || h.is_nearest_pin;
+  const hasCtp = h.is_closest_to_pin;
   const ldClaim  = claimsData[h.hole_number + '_longest_drive'];
   const ctpClaim = claimsData[h.hole_number + '_closest_to_pin'];
-  const holeSponsor = holeSponsorsMap[h.hole_number];
-
-  const sponsorBanner = holeSponsor ? `
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:10px;border:1px solid var(--gold-border);border-radius:var(--radius-sm);background:var(--gold-pale)">
-      ${holeSponsor.logo_path ? `<img src="${holeSponsor.logo_path}" alt="${holeSponsor.sponsor_name || 'Sponsor'}" style="width:92px;height:92px;object-fit:contain;border-radius:8px;background:var(--white);padding:4px">` : ''}
-      <div>
-        <div style="font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);font-weight:700">Hullsponsor</div>
-        <div style="font-weight:700;color:var(--dark)">${holeSponsor.sponsor_name || 'Sponsor'}</div>
-        ${holeSponsor.description ? `<div style="font-size:.78rem;color:var(--text-muted)">${holeSponsor.description}</div>` : ''}
-      </div>
-    </div>` : '';
 
   const competitionBanners = [
     hasLd  ? '<div class="competition-banner">🏌️ Utvalgt hull — <strong>Longest Drive</strong> konkurranse! Meld inn ditt beste slag nedenfor.</div>' : '',
@@ -1179,7 +1078,6 @@ function renderCurrentHole() {
       </div>
     </div>
 
-    ${sponsorBanner}
     ${competitionBanners}
 
     ${needsPhoto ? `
@@ -1195,7 +1093,7 @@ function renderCurrentHole() {
       <button class="stepper-btn" onclick="changeScore(${h.hole_number},-1)" ${blocked ? 'disabled' : ''}>−</button>
       <input class="stepper-val ${hasScore ? 'saved' : ''}" type="number" min="1" max="20"
         id="score-${h.hole_number}"
-        value="${hasScore ? getValidSubmittedScore(saved) : (blocked ? '' : h.par)}"
+        value="${hasScore ? saved.score : (blocked ? '' : h.par)}"
         placeholder="${blocked ? '—' : h.par}"
         ${blocked ? 'disabled' : ''}
         onchange="submitScore(${h.hole_number})">
@@ -1261,13 +1159,12 @@ function finishRound() {
   const holeDetails = [];
   holesData.forEach(h => {
     const s = scoresData[h.hole_number];
-    const validScore = getValidSubmittedScore(s);
-    if (validScore !== null) {
-      totalScore += validScore; totalPar += h.par; holesCompleted++;
-      const diff = validScore - h.par;
+    if (s && s.score > 0) {
+      totalScore += s.score; totalPar += h.par; holesCompleted++;
+      const diff = s.score - h.par;
       if (diff <= -2) eagles++; else if (diff === -1) birdies++;
       else if (diff === 0) pars++; else if (diff === 1) bogeys++; else doubles++;
-      holeDetails.push({ hole_number: h.hole_number, par: h.par, score: validScore, diff });
+      holeDetails.push({ hole_number: h.hole_number, par: h.par, score: s.score, diff });
     }
   });
   const toPar = holesCompleted > 0 ? totalScore - totalPar : null;
@@ -1281,7 +1178,7 @@ function finishRound() {
       { label: 'Hcp', value: courseHcp },
       { label: 'Netto', value: netScore !== null ? netScore : '—', gold: true }
     ] : []),
-    { label: 'Hull', value: holesCompleted + '/' + holesData.length }
+    { label: 'Hull', value: holesCompleted + '/18' }
   ];
   document.getElementById('summaryStats').style.gridTemplateColumns = `repeat(${statItems.length},1fr)`;
   document.getElementById('summaryStats').innerHTML = statItems.map(s => `
@@ -1327,7 +1224,7 @@ function finishRound() {
       </table>
     </div>`;
   if (holesCompleted < holesData.length) {
-    document.getElementById('summaryLockBtn').innerHTML = `<i class="fas fa-lock"></i> Lås inn (${holesCompleted}/${holesData.length} hull)`;
+    document.getElementById('summaryLockBtn').innerHTML = `<i class="fas fa-lock"></i> Lås inn (${holesCompleted}/18 hull)`;
   } else {
     document.getElementById('summaryLockBtn').innerHTML = '<i class="fas fa-lock"></i> Lås inn resultater';
   }
@@ -1342,7 +1239,8 @@ async function lockAndClose() {
   const btn = document.getElementById('summaryLockBtn');
   btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Låser...';
   try {
-    const d = await safeJsonFetch('/api/team/lock-scorecard', { method: 'POST' });
+    const r = await fetch('/api/team/lock-scorecard', { method: 'POST' });
+    const d = await r.json();
     if (d.success) {
       teamData.locked = 1;
       closeSummary(); showLockedState();
@@ -1356,7 +1254,7 @@ function showLockedState() {
   const banner = document.getElementById('lockedBanner');
   banner.classList.remove('d-none');
   banner.style.display = 'flex';
-  renderScoreStatus('locked');
+  renderDots(); renderCurrentHole();
 }
 
 async function submitScore(holeNum) {
@@ -1370,10 +1268,11 @@ async function submitScore(holeNum) {
   btn.disabled = true;
 
   try {
-    const d = await safeJsonFetch('/api/team/submit-score', {
+    const r = await fetch('/api/team/submit-score', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ hole_number: holeNum, score })
     });
+    const d = await r.json();
     if (d.success) {
       if (!scoresData[holeNum]) scoresData[holeNum] = {};
       scoresData[holeNum].score = score;
@@ -1382,7 +1281,6 @@ async function submitScore(holeNum) {
       renderDots();
       renderCurrentHole();
       loadPosition();
-      renderScoreStatus(allHolesCompleted() ? 'finished' : 'active');
     } else {
       showToast(d.error || 'Kunne ikke lagre poengsum', 'error');
       btn.disabled = false;
@@ -1409,7 +1307,8 @@ document.getElementById('photoInput').addEventListener('change', async e => {
   const fd = new FormData();
   fd.append('photo', file);
   try {
-    const d = await safeJsonFetch('/api/team/upload-photo/' + holeNum, { method: 'POST', body: fd });
+    const r = await fetch('/api/team/upload-photo/' + holeNum, { method: 'POST', body: fd });
+    const d = await r.json();
     if (d.success) {
       if (!scoresData[holeNum]) scoresData[holeNum] = {};
       scoresData[holeNum].photo_path = d.photo_path;
@@ -1426,10 +1325,11 @@ async function submitClaim(holeNum, awardType) {
   const detail = document.getElementById(prefix + '-detail-' + holeNum)?.value || '';
   if (!player_name) { showToast('Velg en spiller', 'error'); return; }
   try {
-    const d = await safeJsonFetch('/api/team/claim-award', {
+    const r = await fetch('/api/team/claim-award', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ hole_number: holeNum, award_type: awardType, player_name, detail })
     });
+    const d = await r.json();
     if (d.success) {
       claimsData[holeNum + '_' + awardType] = { player_name, detail, hole_number: holeNum, award_type: awardType };
       showToast('Kandidatur registrert!', 'success');
@@ -1441,8 +1341,16 @@ async function submitClaim(holeNum, awardType) {
 async function checkSession() {
   try {
     await initNotifications();
-    teamPin = '';
-    sessionStorage.removeItem('team_pin');
+    teamPin = sessionStorage.getItem('team_pin') || '';
+    const r = await fetch('/api/auth/status');
+    const d = await r.json();
+    if (d.type === 'team') {
+      teamData = d.team;
+      await ensureNotificationPermission();
+      await loadScorecard();
+      document.getElementById('loginScreen').classList.add('d-none');
+      document.getElementById('scorecardScreen').classList.remove('d-none');
+    }
   } catch (_) {}
 }
 

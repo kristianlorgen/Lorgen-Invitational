@@ -61,7 +61,6 @@
           style="background:rgba(255,255,255,.08);border-color:rgba(201,168,76,.3);color:var(--white);"
           onkeydown="if(event.key==='Enter')doAdminLogin()">
       </div>
-      <div id="backendStatus" style="display:none;text-align:left;font-size:.78rem;line-height:1.45;margin:-2px 0 12px;padding:10px 12px;border-radius:12px;border:1px solid rgba(201,168,76,.28);background:rgba(255,255,255,.04);color:rgba(255,255,255,.75)"></div>
       <div id="adminLoginErr" style="color:#f87171;font-size:.82rem;margin-bottom:12px;min-height:18px"></div>
       <button onclick="doAdminLogin()" class="btn btn--gold" style="width:100%;justify-content:center" id="adminLoginBtn">
         <i class="fas fa-lock-open"></i> Logg inn
@@ -98,7 +97,6 @@
         <div class="sidebar-link" onclick="showPanel('holes')"><i class="fas fa-golf-ball-tee"></i> Bane og Hull</div>
         <div class="sidebar-link" onclick="showPanel('courses')"><i class="fas fa-map-location-dot"></i> Baner</div>
         <div class="sidebar-link" onclick="showPanel('gameday')"><i class="fas fa-calendar-day"></i> Spilleregler & Informasjon</div>
-        <div class="sidebar-link" onclick="showPanel('sponsors')"><i class="fas fa-handshake"></i> Sponsorer</div>
       </div>
       <div class="sidebar-section">
         <div class="sidebar-label">Aktiv Dag</div>
@@ -541,7 +539,7 @@
             <button onclick="uploadAdminTurneringsbilder()" class="btn btn--gold btn--sm" style="justify-content:center"><i class="fas fa-upload"></i> Last opp</button>
           </div>
           <div class="card-footer" style="font-size:.8rem;color:var(--text-muted)">
-            Bildene lagres i <code>Supabase Storage (tournament-gallery)</code> og vises i Turneringsbilder.
+            Bildene lagres i <code>/uploads/glimtskudd</code> og vises i Turneringsbilder.
           </div>
         </div>
 
@@ -559,36 +557,6 @@
       </div>
 
       <!-- ── UTMERKELSER ────────────────────────────────────────────────────── -->
-      
-
-      <div class="admin-panel" id="panel-sponsors">
-        <div class="admin-panel-title">Sponsorer</div>
-        <div class="admin-panel-sub">Administrer sponsorplasser på forsiden og hullsponsorer i scorekortet</div>
-
-        <div class="card" style="margin-bottom:20px">
-          <div class="card-body">
-            <div class="form-group" style="max-width:360px;margin:0">
-              <label class="form-label">Turnering</label>
-              <select class="form-select" id="sponsorsTournamentSelect" onchange="loadSponsorsAdmin()"></select>
-            </div>
-          </div>
-        </div>
-
-        <div class="card" style="margin-bottom:20px">
-          <div class="card-header"><strong>Forside — 5 sponsorplasser</strong></div>
-          <div class="card-body" id="homeSponsorRows"></div>
-        </div>
-
-        <div class="card">
-          <div class="card-header"><strong>Scorekort — sponsor per hull</strong></div>
-          <div class="card-body" id="holeSponsorRows"></div>
-        </div>
-
-        <div style="margin-top:16px">
-          <button class="btn btn--gold btn--sm" onclick="saveSponsorsAdmin()"><i class="fas fa-floppy-disk"></i> Lagre sponsorer</button>
-        </div>
-      </div>
-
       <div class="admin-panel" id="panel-awards">
         <div class="admin-panel-title">Utmerkelser</div>
         <div class="admin-panel-sub">Tildel Lengste Drive og Nærmest Flagget</div>
@@ -724,7 +692,6 @@
   </div>
 </div>
 
-<script src="/js/safe-fetch.js"></script>
 <script>
 // ── Hjelpefunksjoner ──────────────────────────────────────────────────────────
 function showToast(msg, type='success') {
@@ -736,24 +703,10 @@ function showToast(msg, type='success') {
 }
 
 async function api(url, options={}) {
-  return safeJsonFetch(url, options);
-}
-
-function apiDebugHook(label) {
-  return ({ url, method, status, parsedResponse }) => {
-    try {
-      const payload = {
-        label,
-        url,
-        method,
-        status,
-        parsedJson: parsedResponse
-      };
-      console.log('[admin:api-debug]', JSON.stringify(payload));
-    } catch (_error) {
-      console.log('[admin:api-debug]', label, url, method, status, parsedResponse);
-    }
-  };
+  const r = await fetch(url, { headers:{'Content-Type':'application/json'}, ...options });
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error || 'Forespørsel mislyktes');
+  return d;
 }
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
@@ -788,31 +741,12 @@ async function doAdminLogin() {
 document.getElementById('adminPass').addEventListener('keydown', e => { if(e.key==='Enter') doAdminLogin(); });
 
 async function doAdminLogout() {
-  await safeJsonFetch('/api/auth/logout', { method:'POST' });
+  await fetch('/api/auth/logout', {method:'POST'});
   location.reload();
-}
-
-async function renderBackendStatus() {
-  const statusEl = document.getElementById('backendStatus');
-  if (!statusEl) return;
-  try {
-    const d = await api('/api/health');
-    if (d?.ok) {
-      statusEl.style.display = 'none';
-      statusEl.textContent = '';
-      return;
-    }
-    statusEl.style.display = 'block';
-    statusEl.innerHTML = `<strong style="color:var(--gold-light)">Backend-status:</strong> API er oppe, men ikke klar (${(d?.startupIssues || []).join(', ') || 'ukjent årsak'}).`;
-  } catch (_) {
-    statusEl.style.display = 'block';
-    statusEl.textContent = 'Backend-status kunne ikke hentes. Sjekk at API-serveren svarer.';
-  }
 }
 
 // Sjekk eksisterende sesjon ved sideinnlasting — inkludert GitHub OAuth-callback
 (async () => {
-  await renderBackendStatus();
   // Supabase OAuth redirects back with #access_token=... in the URL hash
   const hash = new URLSearchParams(window.location.hash.slice(1));
   const oauthToken = hash.get('access_token');
@@ -857,7 +791,7 @@ function showPanel(id) {
   // Auto-trigger data loading for panels with a tournament select
   const loaders = { holes: loadHoles, teams: loadTeams, scores: loadScores,
                     photos: loadPhotos, awards: loadAwards, gameday: loadGameday,
-                    courses: loadCourses, sponsors: loadSponsorsAdmin };
+                    courses: loadCourses };
   if (loaders[id]) loaders[id]();
 }
 
@@ -900,7 +834,7 @@ function formatTournamentDate(dateValue, includeWeekday = false) {
 
 function populateTournamentSelects() {
   const ids = ['teamsTournamentSelect','holesTournamentSelect','scoresTournamentSelect',
-               'awardsTournamentSelect','gamedayTournamentSelect','photosTournamentSelect','sponsorsTournamentSelect'];
+               'awardsTournamentSelect','gamedayTournamentSelect','photosTournamentSelect'];
   // Find the default (active > upcoming) tournament
   const defaultT = allTournaments.find(t => t.status === 'active') ||
                    allTournaments.find(t => t.status === 'upcoming');
@@ -940,85 +874,20 @@ function renderTournamentsTable() {
     </tr>`).join('');
 }
 
-function setCreateTournamentDebug(info = {}) {
-  const debugEl = document.getElementById('createTournamentDebug');
-  if (!debugEl) return;
-  const lines = [
-    `URL: ${info.url || '—'}`,
-    `Payload: ${info.payload ? JSON.stringify(info.payload) : '—'}`,
-    `Response status: ${info.status ?? '—'}`,
-    `Response JSON: ${info.responseJson !== undefined ? JSON.stringify(info.responseJson) : '—'}`
-  ];
-  debugEl.textContent = lines.join('\n');
-}
-
-function setTeamCreateDebug(info = {}) {
-  const debugEl = document.getElementById('teamCreateDebug');
-  if (!debugEl) return;
-  const lines = [
-    `URL used: ${info.url || '—'}`,
-    `Payload sent: ${info.payload ? JSON.stringify(info.payload) : '—'}`,
-    `Response status: ${info.status ?? '—'}`,
-    `Parsed response JSON: ${info.responseJson !== undefined ? JSON.stringify(info.responseJson) : '—'}`
-  ];
-  debugEl.textContent = lines.join('\n');
-}
-
-function setHolesDebug() {
-  const debugEl = document.getElementById('holesDebug');
-  if (!debugEl) return;
-  debugEl.textContent = JSON.stringify(holesDebugTrace || {
-    selectedTournamentId: selectedHolesTournamentId ?? null,
-    beforeSave: [],
-    outgoingPayload: [],
-    rawPostResponseSample: [],
-    rawRefetchSample: [],
-    normalizedAfterRefetch: [],
-    renderedCheckboxState: []
-  }, null, 2);
-}
-
 async function createTournament() {
-  const name = (document.getElementById('tName').value || 'Lorgen Invitational').trim();
-  const date = document.getElementById('tDate').value;
-  const course = document.getElementById('tCourse').value;
-  const description = document.getElementById('tDesc').value;
-  const slope_rating = document.getElementById('tSlope').value || 113;
-  if (!date) { showToast('Dato og klokkeslett er påkrevd','error'); return; }
-
-  const url = '/api/admin/tournaments';
-  const payload = { name, date, course, description, slope_rating };
-  console.log('[admin:createTournament] URL', url);
-  console.log('[admin:createTournament] payload', payload);
-  setCreateTournamentDebug({ url, payload });
-
+  const name='Lorgen Invitational', date=document.getElementById('tDate').value, course=document.getElementById('tCourse').value,
+        description=document.getElementById('tDesc').value,
+        slope_rating=document.getElementById('tSlope').value||113;
+  const year = date ? new Date(date).getFullYear() : null;
+  if (!year||!date) { showToast('Dato og klokkeslett er påkrevd','error'); return; }
   try {
-    await safeJsonFetch(url, {
-      method: 'POST',
-      credentials: 'same-origin',
-      body: JSON.stringify(payload),
-      debugHook: ({ status, parsedResponse }) => {
-        console.log('[admin:createTournament] response status', status);
-        console.log('[admin:createTournament] response json', parsedResponse);
-        setCreateTournamentDebug({
-          url,
-          payload,
-          status,
-          responseJson: parsedResponse
-        });
-      }
-    });
-
-    showToast('Turneringen ble opprettet.', 'success');
-    ['tDate','tCourse','tDesc'].forEach(id => document.getElementById(id).value = '');
-    document.getElementById('tName').value = 'Lorgen Invitational';
-    document.getElementById('tSlope').value = '113';
-    await loadTournaments();
-    await loadDashboard();
-  } catch (error) {
-    console.error('[admin:createTournament] create failed', error);
-    showToast(error.message || 'Kunne ikke opprette turnering', 'error');
-  }
+    await api('/api/admin/tournament',{method:'POST',body:JSON.stringify({year,name,date,course,description,slope_rating})});
+    showToast('Turnering opprettet!');
+    ['tDate','tCourse','tDesc'].forEach(id=>document.getElementById(id).value='');
+    document.getElementById('tName').value='Lorgen Invitational';
+    document.getElementById('tSlope').value='113';
+    await loadTournaments(); await loadDashboard();
+  } catch(e) { showToast(e.message,'error'); }
 }
 
 async function changeTournamentStatus(id, status) {
@@ -1130,70 +999,42 @@ async function loadDashboard() {
 // ── Lag ───────────────────────────────────────────────────────────────────────
 async function loadTeams() {
   const tid = document.getElementById('teamsTournamentSelect').value;
-  if (!tid) {
-    document.getElementById('teamCount').textContent = '';
-    document.getElementById('teamsTable').innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Velg en turnering ovenfor</td></tr>';
-    return;
-  }
-  try {
-    const d = await api('/api/admin/team?tournament_id='+tid);
-    const teams = Array.isArray(d.data) ? d.data : [];
-    document.getElementById('teamCount').textContent = `(${teams.length} lag)`;
-    document.getElementById('teamsTable').innerHTML = !teams.length
-      ? '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen lag ennå. Legg til ett ovenfor.</td></tr>'
-      : teams.map((t,i) => {
-          const hcp1 = t.hcp_player1 || 0, hcp2 = t.hcp_player2 || 0;
-          const hcpStr = (hcp1||hcp2) ? ` <span style="font-size:.75rem;color:var(--text-muted)">(Hcp: ${hcp1}/${hcp2})</span>` : '';
-          return `
-          <tr>
-            <td>${i+1}</td>
-            <td><strong>${t.team_name}</strong></td>
-            <td>${t.player1_name}${hcpStr ? '<br>' + hcpStr.replace('Hcp: ','Hcp '+hcp1+'/') : ''}</td>
-            <td>${t.player2_name}</td>
-            <td><code style="background:var(--gold-pale);padding:2px 8px;border-radius:4px;font-weight:700;color:var(--gold-dark)">${t.pin}</code></td>
-            <td style="display:flex;gap:6px">
-              <button onclick='editTeam(${t.id},${JSON.stringify(t.team_name)},${JSON.stringify(t.player1_name)},${JSON.stringify(t.player2_name)},${JSON.stringify(t.pin)},${hcp1},${hcp2})' class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)" title="Rediger"><i class="fas fa-pen"></i></button>
-              <button onclick='deleteTeam(${t.id},${JSON.stringify(t.team_name)})' class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
-            </td>
-          </tr>`;
-        }).join('');
-  } catch (e) {
-    document.getElementById('teamCount').textContent = '';
-    document.getElementById('teamsTable').innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Kunne ikke laste lag.</td></tr>';
-    showToast(e.message, 'error');
-  }
+  if (!tid) return;
+  const d = await api('/api/admin/tournament/'+tid+'/teams');
+  document.getElementById('teamCount').textContent = `(${d.teams.length} lag)`;
+  document.getElementById('teamsTable').innerHTML = !d.teams.length
+    ? '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen lag ennå. Legg til ett ovenfor.</td></tr>'
+    : d.teams.map((t,i) => {
+        const hcp1 = t.player1_handicap || 0, hcp2 = t.player2_handicap || 0;
+        const hcpStr = (hcp1||hcp2) ? ` <span style="font-size:.75rem;color:var(--text-muted)">(Hcp: ${hcp1}/${hcp2})</span>` : '';
+        return `
+        <tr>
+          <td>${i+1}</td>
+          <td><strong>${t.team_name}</strong></td>
+          <td>${t.player1}${hcpStr ? '<br>' + hcpStr.replace('Hcp: ','Hcp '+hcp1+'/') : ''}</td>
+          <td>${t.player2}</td>
+          <td><code style="background:var(--gold-pale);padding:2px 8px;border-radius:4px;font-weight:700;color:var(--gold-dark)">${t.pin_code}</code></td>
+          <td style="display:flex;gap:6px">
+            <button onclick='editTeam(${t.id},${JSON.stringify(t.team_name)},${JSON.stringify(t.player1)},${JSON.stringify(t.player2)},${JSON.stringify(t.pin_code)},${hcp1},${hcp2})' class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)" title="Rediger"><i class="fas fa-pen"></i></button>
+            <button onclick='deleteTeam(${t.id},${JSON.stringify(t.team_name)})' class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
+          </td>
+        </tr>`;
+      }).join('');
 }
 
 async function addTeam() {
   const tid = document.getElementById('teamsTournamentSelect').value;
   if (!tid) { showToast('Velg en turnering først','error'); return; }
   const team_name=document.getElementById('newTeamName').value,
-        player1_name=document.getElementById('newPlayer1').value,
-        player2_name=document.getElementById('newPlayer2').value,
-        pin=document.getElementById('newPin').value,
-        hcp_player1=document.getElementById('newHcp1').value||0,
-        hcp_player2=document.getElementById('newHcp2').value||0;
-  if (!team_name||!player1_name||!player2_name||!pin) { showToast('Alle felt er påkrevd','error'); return; }
-  if (!/^\d{4}$/.test(pin)) { showToast('PIN må være nøyaktig 4 siffer','error'); return; }
-  const url = '/api/admin/team';
-  const payload = {
-    tournament_id: tid,
-    team_name,
-    player1_name,
-    player2_name,
-    pin,
-    hcp_player1,
-    hcp_player2
-  };
-  setTeamCreateDebug({ url, payload });
+        player1=document.getElementById('newPlayer1').value,
+        player2=document.getElementById('newPlayer2').value,
+        pin_code=document.getElementById('newPin').value,
+        player1_handicap=document.getElementById('newHcp1').value||0,
+        player2_handicap=document.getElementById('newHcp2').value||0;
+  if (!team_name||!player1||!player2||!pin_code) { showToast('Alle felt er påkrevd','error'); return; }
+  if (!/^\d{4}$/.test(pin_code)) { showToast('PIN må være nøyaktig 4 siffer','error'); return; }
   try {
-    await api(url,{
-      method:'POST',
-      body:JSON.stringify(payload),
-      debugHook: ({ status, parsedResponse }) => {
-        setTeamCreateDebug({ url, payload, status, responseJson: parsedResponse });
-      }
-    });
+    await api('/api/admin/team',{method:'POST',body:JSON.stringify({tournament_id:tid,team_name,player1,player2,pin_code,player1_handicap,player2_handicap})});
     showToast('Lag lagt til!');
     ['newTeamName','newPlayer1','newPlayer2','newPin','newHcp1','newHcp2'].forEach(id=>document.getElementById(id).value='');
     await loadTeams(); await loadDashboard(); loadAwardTeams();
@@ -1215,15 +1056,15 @@ function editTeam(id, team_name, player1, player2, pin_code, hcp1=0, hcp2=0) {
 async function saveTeamEdit() {
   const id = document.getElementById('editTeamId').value;
   const team_name = document.getElementById('editTeamName').value;
-  const player1_name = document.getElementById('editTeamP1').value;
-  const player2_name = document.getElementById('editTeamP2').value;
-  const pin = document.getElementById('editTeamPin').value;
-  const hcp_player1 = document.getElementById('editTeamHcp1').value || 0;
-  const hcp_player2 = document.getElementById('editTeamHcp2').value || 0;
-  if (!team_name || !player1_name || !player2_name || !pin) { showToast('Alle felt er påkrevd', 'error'); return; }
-  if (!/^\d{4}$/.test(pin)) { showToast('PIN må være nøyaktig 4 siffer', 'error'); return; }
+  const player1 = document.getElementById('editTeamP1').value;
+  const player2 = document.getElementById('editTeamP2').value;
+  const pin_code = document.getElementById('editTeamPin').value;
+  const player1_handicap = document.getElementById('editTeamHcp1').value || 0;
+  const player2_handicap = document.getElementById('editTeamHcp2').value || 0;
+  if (!team_name || !player1 || !player2 || !pin_code) { showToast('Alle felt er påkrevd', 'error'); return; }
+  if (!/^\d{4}$/.test(pin_code)) { showToast('PIN må være nøyaktig 4 siffer', 'error'); return; }
   try {
-    await api('/api/admin/team/' + id, { method: 'PUT', body: JSON.stringify({ team_name, player1_name, player2_name, pin, hcp_player1, hcp_player2 }) });
+    await api('/api/admin/team/' + id, { method: 'PUT', body: JSON.stringify({ team_name, player1, player2, pin_code, player1_handicap, player2_handicap }) });
     showToast('Lag oppdatert!');
     document.getElementById('editTeamCard').classList.add('d-none');
     await loadTeams();
@@ -1249,197 +1090,16 @@ function generatePin() {
 
 // ── Bane og Hull ──────────────────────────────────────────────────────────────
 let holesData = [];
-let selectedHolesTournamentId = null;
-const HOLE_DEBUG_CANONICAL_KEYS = ['hole_number', 'requires_photo', 'is_longest_drive', 'is_nearest_pin'];
-const HOLE_DEBUG_RAW_KEYS = [
-  'hole_number',
-  'requires_photo',
-  'longest_drive',
-  'nearest_pin',
-  'is_longest_drive',
-  'is_nearest_pin',
-  'ld',
-  'nf',
-  'closest_to_pin',
-  'is_closest_to_pin'
-];
-let holesDebugTrace = null;
-
-function pickHoleFields(hole = {}, keys = []) {
-  return keys.reduce((acc, key) => {
-    acc[key] = hole?.[key];
-    return acc;
-  }, {});
-}
-
-function pickHolesOneAndTwo(rawHoles = [], keys = []) {
-  const byNumber = new Map();
-  (Array.isArray(rawHoles) ? rawHoles : []).forEach((hole) => {
-    const holeNumber = Number.parseInt(hole?.hole_number ?? hole?.hole ?? hole?.number ?? hole?.nr, 10);
-    if ((holeNumber === 1 || holeNumber === 2) && !byNumber.has(holeNumber)) {
-      byNumber.set(holeNumber, pickHoleFields({ ...hole, hole_number: holeNumber }, keys));
-    }
-  });
-  return [1, 2].map((holeNumber) => byNumber.get(holeNumber) || pickHoleFields({ hole_number: holeNumber }, keys));
-}
-
-function startHolesDebugTrace(tournamentId) {
-  holesDebugTrace = {
-    selectedTournamentId: tournamentId ?? null,
-    beforeSave: [],
-    outgoingPayload: [],
-    rawPostResponseSample: [],
-    rawRefetchSample: [],
-    normalizedAfterRefetch: [],
-    renderedCheckboxState: []
-  };
-  setHolesDebug();
-}
-
-function setHolesDebugStage(stage, rawHoles = [], keys = HOLE_DEBUG_CANONICAL_KEYS) {
-  if (!holesDebugTrace || !Object.prototype.hasOwnProperty.call(holesDebugTrace, stage)) return;
-  holesDebugTrace[stage] = pickHolesOneAndTwo(rawHoles, keys);
-  setHolesDebug();
-}
-
-function normalizeAdminHoleForState(hole, fallbackHoleNumber, fallbackHole = null) {
-  const parsedHoleNumber = Number.parseInt(
-    hole?.hole_number ?? hole?.hole ?? hole?.number ?? hole?.nr ?? fallbackHoleNumber,
-    10
-  );
-  const parsedPar = Number.parseInt(hole?.par, 10);
-  const parsedStrokeIndex = Number.parseInt(
-    hole?.stroke_index ?? hole?.strokeIndex ?? hole?.si ?? hole?.SI ?? parsedHoleNumber,
-    10
-  );
-  const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj || {}, key);
-  const firstDefined = (...values) => values.find((value) => value !== null && value !== undefined);
-  const firstOwn = (obj, keys = []) => {
-    for (const key of keys) {
-      if (hasOwn(obj, key)) return obj[key];
-    }
-    return undefined;
-  };
-  const toBool = (value) => value === true || value === 'true' || value === 1 || value === '1';
-  const readBool = (value, fallbackValue = false) => {
-    if (value === null || value === undefined) return fallbackValue;
-    return toBool(value);
-  };
-  const fallbackNearestPin = firstDefined(
-    fallbackHole?.is_nearest_pin,
-    fallbackHole?.nearest_pin,
-    fallbackHole?.is_closest_to_pin,
-    fallbackHole?.closest_to_pin,
-    fallbackHole?.nf
-  );
-  const nearestPinRaw = firstOwn(hole, ['is_nearest_pin', 'nearest_pin', 'is_closest_to_pin', 'closest_to_pin', 'nf']);
-  const nearestPin = readBool(
-    nearestPinRaw,
-    readBool(fallbackNearestPin, false)
-  );
-  const fallbackLongestDrive = firstDefined(
-    fallbackHole?.is_longest_drive,
-    fallbackHole?.longest_drive,
-    fallbackHole?.longestDrive,
-    fallbackHole?.ld
-  );
-  const fallbackRequiresPhoto = firstDefined(
-    fallbackHole?.requires_photo,
-    fallbackHole?.photo_required,
-    fallbackHole?.photo_upload_required
-  );
-  const normalizedHole = {
-    hole_number: Number.isInteger(parsedHoleNumber) ? parsedHoleNumber : fallbackHoleNumber,
-    par: Number.isInteger(parsedPar) ? parsedPar : 4,
-    stroke_index: Number.isInteger(parsedStrokeIndex) ? parsedStrokeIndex : (Number.isInteger(parsedHoleNumber) ? parsedHoleNumber : fallbackHoleNumber),
-    requires_photo: readBool(firstOwn(hole, ['requires_photo', 'photo_required', 'photo_upload_required']), readBool(fallbackRequiresPhoto, false)),
-    is_longest_drive: readBool(firstOwn(hole, ['is_longest_drive', 'longest_drive', 'longestDrive', 'ld']), readBool(fallbackLongestDrive, false)),
-    is_nearest_pin: nearestPin
-  };
-  return normalizedHole;
-}
-
-function holeRowMergePriority(hole = {}) {
-  const ownerKey = String(hole?.owner_key || '').toLowerCase();
-  let score = 0;
-  if (ownerKey === 'tournament') score += 100;
-  if (ownerKey === 'course') score += 50;
-  const explicitFlagKeys = ['requires_photo', 'photo_required', 'photo_upload_required', 'is_longest_drive', 'longest_drive', 'longestDrive', 'ld', 'is_nearest_pin', 'nearest_pin', 'nf', 'closest_to_pin', 'is_closest_to_pin'];
-  const explicitFlags = explicitFlagKeys.reduce((sum, key) => sum + (Object.prototype.hasOwnProperty.call(hole || {}, key) ? 1 : 0), 0);
-  score += explicitFlags;
-  return score;
-}
-
-function mergeNormalizedHoleSet(serverHoles = [], localHoles = []) {
-  const localNormalized = (Array.isArray(localHoles) ? localHoles : []).map((hole, index) => {
-    const fallbackHoleNumber = Number.parseInt(hole?.hole_number, 10) || (index + 1);
-    return normalizeAdminHoleForState(hole, fallbackHoleNumber, null);
-  });
-  const localByNumber = new Map(localNormalized.map((hole) => [hole.hole_number, hole]));
-  const serverByNumber = new Map();
-  (Array.isArray(serverHoles) ? serverHoles : []).forEach((hole, index) => {
-    const holeNumber = Number.parseInt(hole?.hole_number ?? hole?.hole ?? hole?.number ?? hole?.nr, 10) || (index + 1);
-    const existing = serverByNumber.get(holeNumber);
-    if (!existing || holeRowMergePriority(hole) >= holeRowMergePriority(existing)) {
-      serverByNumber.set(holeNumber, hole);
-    }
-  });
-
-  return Array.from({ length: 18 }, (_, index) => {
-    const holeNumber = index + 1;
-    const serverHole = serverByNumber.get(holeNumber);
-    const localHole = localByNumber.get(holeNumber) || null;
-    const source = serverHole || localHole || { hole_number: holeNumber };
-    return normalizeAdminHoleForState(source, holeNumber, localHole);
-  });
-}
-
-function captureRenderedStateFirstTwo() {
-  const rendered = [1, 2].map((holeNumber) => {
-    return {
-      hole_number: holeNumber,
-      requires_photo: Boolean(document.getElementById(`h-photo-${holeNumber}`)?.checked),
-      is_longest_drive: Boolean(document.getElementById(`h-ld-${holeNumber}`)?.checked),
-      is_nearest_pin: Boolean(document.getElementById(`h-ctp-${holeNumber}`)?.checked)
-    };
-  });
-  setHolesDebugStage('renderedCheckboxState', rendered, HOLE_DEBUG_CANONICAL_KEYS);
-}
 
 async function loadHoles() {
-  const rawTournamentId = document.getElementById('holesTournamentSelect').value;
-  const tournamentId = Number.parseInt(rawTournamentId, 10);
-  selectedHolesTournamentId = Number.isInteger(tournamentId) && tournamentId > 0 ? tournamentId : null;
-
-  if (!selectedHolesTournamentId) {
-    holesData = [];
-    renderHolesGrid();
-    return;
-  }
-  try {
-    const loadUrl = `/api/admin/tournament/${selectedHolesTournamentId}/holes`;
-    const d = await api(loadUrl);
-    if (!d.success) {
-      throw new Error(d.error || 'Kunne ikke hente hull');
-    }
-    const rawHoles = Array.isArray(d?.data) ? d.data : [];
-    holesData = rawHoles;
-    renderHolesGrid();
-  } catch (e) {
-    holesData = [];
-    renderHolesGrid();
-    showToast(e.message, 'error');
-  }
+  const tid = document.getElementById('holesTournamentSelect').value;
+  if (!tid) return;
+  const d = await api('/api/admin/tournament/'+tid+'/holes');
+  holesData = d.holes;
+  renderHolesGrid();
 }
 
 function renderHolesGrid() {
-  if (!holesData.length) {
-    const msg = selectedHolesTournamentId
-      ? 'Ingen hull opprettet enda'
-      : 'Ingen hull lastet. Velg en gyldig turnering først.';
-    document.getElementById('holesGrid').innerHTML = `<div style="grid-column:1 / -1;text-align:center;padding:20px;color:var(--text-muted)">${msg}</div>`;
-    return;
-  }
   document.getElementById('holesGrid').innerHTML = holesData.map(h => `
     <div style="background:var(--white);border:1px solid var(--gold-border);border-radius:var(--radius);padding:14px 10px;text-align:center">
       <div style="font-size:.72rem;font-weight:700;color:var(--text-muted);margin-bottom:8px;letter-spacing:.08em">HULL ${h.hole_number}</div>
@@ -1462,50 +1122,27 @@ function renderHolesGrid() {
         🏌️ LD
       </label>
       <label style="display:flex;align-items:center;justify-content:center;gap:4px;margin-top:4px;font-size:.72rem;color:var(--text-muted);cursor:pointer">
-        <input type="checkbox" id="h-ctp-${h.hole_number}" ${h.is_nearest_pin?'checked':''} style="accent-color:var(--gold)">
+        <input type="checkbox" id="h-ctp-${h.hole_number}" ${h.is_closest_to_pin?'checked':''} style="accent-color:var(--gold)">
         🎯 NF
       </label>
     </div>`).join('');
-  captureRenderedStateFirstTwo();
-}
-
-function buildNormalizedTournamentHoleFromDom(holeNumber, fallbackHole = {}) {
-  const parEl = document.getElementById(`h-par-${holeNumber}`);
-  const strokeEl = document.getElementById(`h-si-${holeNumber}`);
-  const photoEl = document.getElementById(`h-photo-${holeNumber}`);
-  const ldEl = document.getElementById(`h-ld-${holeNumber}`);
-  const nfEl = document.getElementById(`h-ctp-${holeNumber}`);
-  const normalizedFallback = normalizeAdminHoleForState(fallbackHole, holeNumber, null);
-  return {
-    hole_number: holeNumber,
-    par: Number.parseInt(parEl?.value ?? normalizedFallback.par ?? 4, 10) || 4,
-    stroke_index: Number.parseInt(strokeEl?.value ?? normalizedFallback.stroke_index ?? holeNumber, 10) || holeNumber,
-    requires_photo: photoEl ? Boolean(photoEl.checked) : normalizedFallback.requires_photo,
-    is_longest_drive: ldEl ? Boolean(ldEl.checked) : normalizedFallback.is_longest_drive,
-    is_nearest_pin: nfEl ? Boolean(nfEl.checked) : normalizedFallback.is_nearest_pin
-  };
 }
 
 async function saveHoles() {
-  const rawTournamentId = document.getElementById('holesTournamentSelect').value;
-  const tournamentId = Number.parseInt(rawTournamentId, 10);
-  if (!Number.isInteger(tournamentId) || tournamentId <= 0) return;
-
-  const sourceHoles = holesData.length ? holesData : Array.from({ length: 18 }, (_, index) => ({ hole_number: index + 1 }));
-  const holes = sourceHoles.map((h) => {
-    const holeNumber = Number.parseInt(h?.hole_number, 10);
-    return buildNormalizedTournamentHoleFromDom(holeNumber, h);
-  });
-  const saveUrl = `/api/admin/tournament/${tournamentId}/holes`;
-  const payload = { holes };
+  const tid = document.getElementById('holesTournamentSelect').value;
+  if (!tid) return;
+  const holes = holesData.map(h => ({
+    hole_number: h.hole_number,
+    par: parseInt(document.getElementById('h-par-'+h.hole_number).value),
+    stroke_index: parseInt(document.getElementById('h-si-'+h.hole_number).value) || 0,
+    requires_photo: document.getElementById('h-photo-'+h.hole_number).checked,
+    is_longest_drive: document.getElementById('h-ld-'+h.hole_number).checked,
+    is_closest_to_pin: document.getElementById('h-ctp-'+h.hole_number).checked
+  }));
   try {
-    const saveResponse = await api(saveUrl,{
-      method:'POST',
-      body:JSON.stringify(payload)
-    });
-    holesData = Array.isArray(saveResponse?.data) ? saveResponse.data : [];
-    renderHolesGrid();
+    await api('/api/admin/tournament/'+tid+'/holes',{method:'POST',body:JSON.stringify({holes})});
     showToast('Hullkonfigurasjon lagret til turnering!');
+    await loadHoles();
   } catch(e) { showToast(e.message,'error'); }
 }
 
@@ -1530,20 +1167,8 @@ async function saveToCourse() {
     is_closest_to_pin: document.getElementById('h-ctp-'+h.hole_number).checked
   }));
   try {
-    const saveResult = await api('/api/admin/course/'+courseId+'/holes', {method:'POST', body:JSON.stringify({holes})});
-    const rawSavedHoles = Array.isArray(saveResult?.data)
-      ? saveResult.data
-      : Array.isArray(saveResult?.holes)
-        ? saveResult.holes
-        : [];
-    if (Array.isArray(saveResult?.data)) {
-      holesData = mergeNormalizedHoleSet(rawSavedHoles, holesData);
-    } else if (Array.isArray(saveResult?.holes)) {
-      holesData = mergeNormalizedHoleSet(rawSavedHoles, holesData);
-    }
-    renderHolesGrid();
+    await api('/api/admin/course/'+courseId+'/holes', {method:'POST', body:JSON.stringify({holes})});
     showToast('Hulloppset lagret til bane-malen!');
-    await loadHoles();
   } catch(e) { showToast(e.message,'error'); }
 }
 
@@ -1726,16 +1351,14 @@ async function uploadAdminTurneringsbilder() {
   fd.append('caption', document.getElementById('adminTurneringsbilderCaption').value || '');
 
   try {
-    console.log('[admin:api-debug]', JSON.stringify({
-      label: 'uploadAdminTurneringsbilder:request',
-      url: '/api/admin/tournament/' + tid + '/gallery',
+    await fetch('/api/admin/tournament/' + tid + '/gallery', {
       method: 'POST',
-      payload: { tournament_id: tid, file_name: file?.name || null, caption: document.getElementById('adminTurneringsbilderCaption').value || '' }
-    }));
-    await api('/api/admin/tournament/' + tid + '/gallery', {
-      method: 'POST',
-      body: fd,
-      debugHook: apiDebugHook('uploadAdminTurneringsbilder')
+      credentials: 'same-origin',
+      body: fd
+    }).then(async r => {
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || 'Kunne ikke laste opp bilde');
+      return data;
     });
 
     fileInput.value = '';
@@ -1891,7 +1514,7 @@ let _coinBackData = {};
 
 async function loadCoinBack() {
   try {
-    const d = await api('/api/coin-back');
+    const d = await fetch('/api/coin-back').then(r => r.json());
     _coinBackData = d;
     if (d.photo_path) {
       const img = document.getElementById('coinBackPreview');
@@ -1909,13 +1532,18 @@ async function uploadCoinBack() {
   const fd = new FormData();
   fd.append('photo', file);
   try {
-    const d = await api('/api/admin/uploads/coin-back', { method: 'POST', body: fd });
-    showToast('Bakside-bilde oppdatert!');
-    _coinBackData.photo_path = d?.data?.public_url || '';
-    const img = document.getElementById('coinBackPreview');
-    img.src = _coinBackData.photo_path + '?t=' + Date.now();
-    document.getElementById('coinBackPreviewWrap').style.display = 'block';
-    document.getElementById('coinFocusBtn').style.display = 'inline-flex';
+    const r = await fetch('/api/admin/coin-back', { method: 'POST', body: fd });
+    const d = await r.json();
+    if (d.success) {
+      showToast('Bakside-bilde oppdatert!');
+      _coinBackData.photo_path = d.photo_path;
+      const img = document.getElementById('coinBackPreview');
+      img.src = d.photo_path + '?t=' + Date.now();
+      document.getElementById('coinBackPreviewWrap').style.display = 'block';
+      document.getElementById('coinFocusBtn').style.display = 'inline-flex';
+    } else {
+      showToast(d.error || 'Opplasting mislyktes', 'error');
+    }
   } catch(e) { showToast('Opplasting mislyktes', 'error'); }
   document.getElementById('coinBackInput').value = '';
 }
@@ -2058,9 +1686,14 @@ document.getElementById('legacyPhotoInput').addEventListener('change', async e =
   const fd = new FormData();
   fd.append('photo', file);
   try {
-    await api('/api/admin/legacy/' + pendingLegacyPhotoId + '/photo', { method: 'POST', body: fd });
-    showToast('Vinnerbilde lastet opp!');
-    await loadLegacy();
+    const r = await fetch('/api/admin/legacy/' + pendingLegacyPhotoId + '/photo', { method: 'POST', body: fd });
+    const d = await r.json();
+    if (d.success) {
+      showToast('Vinnerbilde lastet opp!');
+      await loadLegacy();
+    } else {
+      showToast(d.error || 'Opplasting mislyktes', 'error');
+    }
   } catch(e) {
     showToast('Opplasting mislyktes', 'error');
   }
@@ -2146,96 +1779,13 @@ function openLegacyFocusPicker(id, imgSrc, currentFocus) {
   openFocusPicker(imgSrc, id, currentFocus);
 }
 
-
-let sponsorsCache = { home: [], hole: [] };
-
-function sponsorRowHtml(item, type, indexKey) {
-  const rowId = `${type}-${indexKey}`;
-  return `
-    <div data-row="${rowId}" style="display:grid;grid-template-columns:120px 1fr 1fr 170px 170px;gap:10px;align-items:center;margin-bottom:10px;padding:10px;border:1px solid var(--gold-border);border-radius:10px;background:var(--off-white)">
-      <div style="font-weight:700;color:var(--dark)">${type === 'home' ? `Spot ${indexKey}` : `Hull ${indexKey}`}</div>
-      <input class="form-input" data-field="sponsor_name" value="${item.sponsor_name || ''}" placeholder="Sponsornavn">
-      <input class="form-input" data-field="description" value="${item.description || ''}" placeholder="Kort beskrivelse">
-      <div>
-        <input class="form-input" data-field="logo_path" value="${item.logo_path || ''}" placeholder="Logo URL eller last opp">
-        <input type="file" data-field="logo_file" accept="image/*" style="margin-top:6px;font-size:.75rem" onchange="uploadSponsorLogo(this, '${rowId}')">
-      </div>
-      <label style="display:flex;align-items:center;gap:8px;font-size:.84rem;color:var(--text-muted)">
-        <input type="checkbox" data-field="is_enabled" ${item.is_enabled ? 'checked' : ''} style="accent-color:var(--gold)"> Vis sponsor
-      </label>
-    </div>`;
-}
-
-async function loadSponsorsAdmin() {
-  const tid = document.getElementById('sponsorsTournamentSelect').value;
-  if (!tid) {
-    document.getElementById('homeSponsorRows').innerHTML = '<div style="color:var(--text-muted)">Velg turnering først.</div>';
-    document.getElementById('holeSponsorRows').innerHTML = '';
-    return;
-  }
-  const d = await api('/api/admin/tournament/' + tid + '/sponsors');
-  sponsorsCache = d;
-  const homeMap = {};
-  (d.home || []).forEach(r => { homeMap[r.spot_number] = r; });
-  const holeMap = {};
-  (d.hole || []).forEach(r => { holeMap[r.hole_number] = r; });
-
-  document.getElementById('homeSponsorRows').innerHTML = [1,2,3,4,5].map(n => sponsorRowHtml(homeMap[n] || { spot_number:n, is_enabled:0 }, 'home', n)).join('');
-  document.getElementById('holeSponsorRows').innerHTML = Array.from({ length: 18 }, (_, i) => i + 1)
-    .map(n => sponsorRowHtml(holeMap[n] || { hole_number:n, is_enabled:0 }, 'hole', n)).join('');
-}
-
-async function uploadSponsorLogo(input, rowId) {
-  const file = input.files?.[0];
-  if (!file) return;
-  const tid = document.getElementById('sponsorsTournamentSelect').value;
-  if (!tid) { showToast('Velg turnering først', 'error'); return; }
-  const fd = new FormData();
-  fd.append('logo', file);
-  const data = await api('/api/admin/tournament/' + tid + '/sponsor-logo', { method: 'POST', body: fd });
-  const row = document.querySelector(`[data-row="${rowId}"]`);
-  if (row) row.querySelector('[data-field="logo_path"]').value = data.logo_path || '';
-  showToast('Logo lastet opp');
-}
-
-async function saveSponsorsAdmin() {
-  const tid = document.getElementById('sponsorsTournamentSelect').value;
-  if (!tid) { showToast('Velg turnering først', 'error'); return; }
-  const rows = Array.from(document.querySelectorAll('#panel-sponsors [data-row]'));
-  const sponsors = rows.map(row => {
-    const [placement, num] = row.getAttribute('data-row').split('-');
-    const isHome = placement === 'home';
-    return {
-      placement,
-      spot_number: isHome ? Number(num) : null,
-      hole_number: isHome ? null : Number(num),
-      sponsor_name: row.querySelector('[data-field="sponsor_name"]').value,
-      description: row.querySelector('[data-field="description"]').value,
-      logo_path: row.querySelector('[data-field="logo_path"]').value,
-      is_enabled: row.querySelector('[data-field="is_enabled"]').checked
-    };
-  });
-  await api('/api/admin/tournament/' + tid + '/sponsors', {
-    method: 'POST',
-    body: JSON.stringify({ sponsors })
-  });
-  showToast('Sponsorer lagret');
-  await loadSponsorsAdmin();
-}
-
 // ── Baner (courses) ───────────────────────────────────────────────────────────
 let _allCourses = [];
 
 async function loadCourses() {
   try {
-    console.log('[admin:api-debug]', JSON.stringify({
-      label: 'loadCourses:request',
-      url: '/api/admin/courses',
-      method: 'GET',
-      payload: null
-    }));
-    const d = await api('/api/admin/courses', { debugHook: apiDebugHook('loadCourses') });
-    _allCourses = Array.isArray(d.courses) ? d.courses : [];
+    const d = await api('/api/admin/courses');
+    _allCourses = d.courses;
     renderCoursesTable();
     // Populate import selector in Bane og Hull panel
     const sel = document.getElementById('importCourseSelect');
@@ -2318,27 +1868,7 @@ async function saveCourseHoles() {
     is_closest_to_pin: document.getElementById('ch-ctp-' + h.hole_number).checked
   }));
   try {
-    const saveResult = await api(`/api/admin/course/${_courseHolesId}/holes`, { method: 'POST', body: JSON.stringify({ holes }) });
-    const rawSavedHoles = Array.isArray(saveResult?.data)
-      ? saveResult.data
-      : Array.isArray(saveResult?.holes)
-        ? saveResult.holes
-        : [];
-    _courseHolesData = rawSavedHoles.length
-      ? rawSavedHoles.map((hole, index) => {
-        const holeNumber = Number.parseInt(hole?.hole_number ?? hole?.hole ?? hole?.number ?? hole?.nr, 10) || (index + 1);
-        const normalized = normalizeAdminHoleForState(hole, holeNumber);
-        return {
-          ...hole,
-          hole_number: normalized.hole_number,
-          par: normalized.par,
-          requires_photo: normalized.requires_photo,
-          is_longest_drive: normalized.is_longest_drive,
-          is_closest_to_pin: normalized.is_nearest_pin
-        };
-      })
-      : _courseHolesData;
-    renderCourseHolesGrid();
+    await api(`/api/admin/course/${_courseHolesId}/holes`, { method: 'POST', body: JSON.stringify({ holes }) });
     showToast('Hull-mal lagret!');
   } catch(e) { showToast(e.message, 'error'); }
 }

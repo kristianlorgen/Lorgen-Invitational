@@ -5,12 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Live Resultater — Lorgen Invitational</title>
   <meta name="description" content="Følg med på live resultater fra Lorgen Invitational golfturnering.">
-
-  <meta property="og:title" content="Lorgen Invitational">
-  <meta property="og:description" content="Power · Precision · Party — Live resultater, regler og galleri.">
-  <meta property="og:image" content="https://lorgen-invitational-production.up.railway.app/images/logo.png">
-  <meta property="og:type" content="website">
-  <meta name="twitter:card" content="summary_large_image">
   <link rel="icon" type="image/png" href="/images/logo.png">
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -82,16 +76,11 @@
 </div>
 
 <!-- ── Ingen aktiv turnering ─────────────────────────────────────────────── -->
-<div id="noTournamentState" class="d-none" style="padding:70px 24px;background:var(--off-white)">
-  <div class="empty-state">
-    <div class="empty-state__icon">📊</div>
-    <h2 class="empty-state__title">Ingen aktiv turnering</h2>
-    <p class="empty-state__description">Resultattavlen tennes opp når turneringen er i gang. Kom tilbake på spilledagen!</p>
-    <div class="empty-state__actions">
-      <a href="/legacy" class="btn btn--gold"><i class="fas fa-trophy"></i> Se tidligere mestere</a>
-      <a href="/gameday" class="btn btn--outline" style="color:var(--gold-dark);border-color:var(--gold-border)"><i class="fas fa-book"></i> Spilleregler</a>
-    </div>
-  </div>
+<div id="noTournamentState" class="d-none" style="text-align:center;padding:80px 24px">
+  <div style="font-size:3rem;margin-bottom:16px">⛳</div>
+  <h2 style="font-family:var(--font-heading);font-size:1.8rem;color:var(--dark);margin-bottom:8px">Ingen aktiv turnering</h2>
+  <p style="color:var(--text-muted);max-width:400px;margin:0 auto 24px">Resultattavlen tennes opp når turneringen er i gang. Kom tilbake på spilledagen!</p>
+  <a href="/legacy" class="btn btn--gold"><i class="fas fa-trophy"></i> Se tidligere mestere</a>
 </div>
 
 
@@ -209,7 +198,7 @@
           </a>
         </div>
         <div style="margin-top:16px">
-          <img src="/images/logo.png" alt="Instagram QR-kode" class="instagram-qr">
+          <img src="/api/instagram-qr" alt="Instagram QR-kode" class="instagram-qr">
         </div>
       </div>
     </div>
@@ -472,8 +461,26 @@ async function loadScoreboard() {
   }
 }
 
+// SSE live-oppdateringer
+function connectSSE() {
+  const sse = new EventSource('/api/events');
+  sse.onmessage = e => {
+    try {
+      const data = JSON.parse(e.data);
+      if (data.type === 'score_updated' || data.type === 'award_updated') {
+        loadScoreboard();
+      }
+    } catch (_) {}
+  };
+  sse.onerror = () => {
+    setTimeout(connectSSE, 5000);
+  };
+}
+
 loadScoreboard();
-setInterval(loadScoreboard, 15000);
+connectSSE();
+// Reserveoppdatering hvert 60. sekund
+setInterval(loadScoreboard, 60000);
 </script>
 </body>
 </html>

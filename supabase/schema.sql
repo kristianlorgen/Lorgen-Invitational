@@ -21,9 +21,6 @@ CREATE TABLE IF NOT EXISTS holes (
   hole_number    INTEGER NOT NULL,
   par            INTEGER NOT NULL DEFAULT 4,
   requires_photo BOOLEAN DEFAULT FALSE,
-  stroke_index   INTEGER DEFAULT NULL,
-  is_longest_drive BOOLEAN DEFAULT FALSE,
-  is_nearest_pin BOOLEAN DEFAULT FALSE,
   UNIQUE(tournament_id, hole_number)
 );
 
