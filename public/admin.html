@@ -703,9 +703,12 @@ function showToast(msg, type='success') {
 }
 
 async function api(url, options={}) {
-  const r = await fetch(url, { headers:{'Content-Type':'application/json'}, ...options });
-  const d = await r.json();
-  if (!r.ok) throw new Error(d.error || 'Forespørsel mislyktes');
+  const r = await fetch(url, { credentials:'include', headers:{'Content-Type':'application/json'}, ...options });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const backendMsg = d?.details ? `${d.error || 'Forespørsel mislyktes'}: ${d.details}` : (d?.error || 'Forespørsel mislyktes');
+    throw new Error(backendMsg);
+  }
   return d;
 }
 
@@ -797,6 +800,8 @@ function showPanel(id) {
 
 // ── Tilstand ──────────────────────────────────────────────────────────────────
 let allTournaments = [];
+const deletingTournamentIds = new Set();
+const deletingTeamIds = new Set();
 
 async function initAdmin() {
   await loadTournaments();
@@ -854,7 +859,9 @@ function renderTournamentsTable() {
     tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen turneringer ennå</td></tr>';
     return;
   }
-  tbody.innerHTML = allTournaments.map(t => `
+  tbody.innerHTML = allTournaments.map(t => {
+    const isDeleting = deletingTournamentIds.has(Number(t.id));
+    return `
     <tr>
       <td><strong>${t.year}</strong></td>
       <td>${t.name}</td>
@@ -869,9 +876,12 @@ function renderTournamentsTable() {
       </td>
       <td style="display:flex;gap:6px">
         <button onclick="editTournament(${t.id})" class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)" title="Rediger"><i class="fas fa-pen"></i></button>
-        <button onclick="deleteTournament(${t.id},${JSON.stringify(t.name)})" class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
+        <button onclick="deleteTournament(${t.id},${JSON.stringify(t.name)})" class="btn btn--danger btn--sm" ${isDeleting ? 'disabled' : ''}>
+          <i class="fas ${isDeleting ? 'fa-spinner fa-spin' : 'fa-trash'}"></i>
+        </button>
       </td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 }
 
 async function createTournament() {
@@ -937,12 +947,22 @@ function cancelTournamentEdit() {
 }
 
 async function deleteTournament(id, name) {
+  if (deletingTournamentIds.has(Number(id))) return;
   if (!confirm(`Slett «${name}» og ALL tilhørende data? Dette kan ikke angres.`)) return;
+  deletingTournamentIds.add(Number(id));
+  renderTournamentsTable();
   try {
     await api('/api/admin/tournament/'+id,{method:'DELETE'});
+    allTournaments = allTournaments.filter(t => Number(t.id) !== Number(id));
+    renderTournamentsTable();
+    populateTournamentSelects();
     showToast('Turnering slettet');
     await loadTournaments(); await loadDashboard();
   } catch(e) { showToast(e.message,'error'); }
+  finally {
+    deletingTournamentIds.delete(Number(id));
+    renderTournamentsTable();
+  }
 }
 
 // ── Oversikt (dashboard) ──────────────────────────────────────────────────────
@@ -1005,6 +1025,7 @@ async function loadTeams() {
   document.getElementById('teamsTable').innerHTML = !d.teams.length
     ? '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Ingen lag ennå. Legg til ett ovenfor.</td></tr>'
     : d.teams.map((t,i) => {
+        const isDeleting = deletingTeamIds.has(Number(t.id));
         const hcp1 = t.player1_handicap || 0, hcp2 = t.player2_handicap || 0;
         const hcpStr = (hcp1||hcp2) ? ` <span style="font-size:.75rem;color:var(--text-muted)">(Hcp: ${hcp1}/${hcp2})</span>` : '';
         return `
@@ -1016,7 +1037,9 @@ async function loadTeams() {
           <td><code style="background:var(--gold-pale);padding:2px 8px;border-radius:4px;font-weight:700;color:var(--gold-dark)">${t.pin_code}</code></td>
           <td style="display:flex;gap:6px">
             <button onclick='editTeam(${t.id},${JSON.stringify(t.team_name)},${JSON.stringify(t.player1)},${JSON.stringify(t.player2)},${JSON.stringify(t.pin_code)},${hcp1},${hcp2})' class="btn btn--sm" style="background:var(--gold-pale);color:var(--gold-dark);border:1px solid var(--gold-border)" title="Rediger"><i class="fas fa-pen"></i></button>
-            <button onclick='deleteTeam(${t.id},${JSON.stringify(t.team_name)})' class="btn btn--danger btn--sm"><i class="fas fa-trash"></i></button>
+            <button onclick='deleteTeam(${t.id},${JSON.stringify(t.team_name)})' class="btn btn--danger btn--sm" ${isDeleting ? 'disabled' : ''}>
+              <i class="fas ${isDeleting ? 'fa-spinner fa-spin' : 'fa-trash'}"></i>
+            </button>
           </td>
         </tr>`;
       }).join('');
@@ -1076,12 +1099,19 @@ function cancelTeamEdit() {
 }
 
 async function deleteTeam(id, name) {
+  if (deletingTeamIds.has(Number(id))) return;
   if (!confirm(`Slett laget «${name}»? Alle tilknyttede poeng slettes også.`)) return;
+  deletingTeamIds.add(Number(id));
+  await loadTeams();
   try {
     await api('/api/admin/team/'+id,{method:'DELETE'});
     showToast('Lag slettet');
     await loadTeams();
   } catch(e) { showToast(e.message,'error'); }
+  finally {
+    deletingTeamIds.delete(Number(id));
+    await loadTeams();
+  }
 }
 
 function generatePin() {
