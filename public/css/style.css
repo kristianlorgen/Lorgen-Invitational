@@ -1092,39 +1092,6 @@ input, select, textarea { font-family: inherit; }
 .badge--info    { background: #eff6ff; color: var(--info); border: 1px solid #bfdbfe; }
 .badge--active  { background: rgba(22,163,74,.15); color: #4ade80; border: 1px solid rgba(22,163,74,.3); }
 
-.empty-state {
-  max-width: 760px;
-  margin: 0 auto;
-  text-align: center;
-  background: var(--white);
-  border: 1px solid var(--gold-border);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-sm);
-  padding: 36px 24px;
-}
-.empty-state__icon {
-  font-size: 2.2rem;
-  margin-bottom: 10px;
-}
-.empty-state__title {
-  font-family: var(--font-heading);
-  font-size: 1.8rem;
-  color: var(--dark);
-  margin-bottom: 8px;
-}
-.empty-state__description {
-  color: var(--text-muted);
-  max-width: 520px;
-  margin: 0 auto 18px;
-  line-height: 1.55;
-}
-.empty-state__actions {
-  display: flex;
-  justify-content: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
 /* ── Footer ─────────────────────────────────────────────────────────────────── */
 .footer {
   background: var(--dark);
@@ -1224,65 +1191,4 @@ input, select, textarea { font-family: inherit; }
 
 @media (max-width: 768px) {
   .quick-nav { display: none; }
-}
-
-/* Sponsor cards (homepage) */
-.sponsor-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(260px, 1fr));
-  gap: 20px;
-  max-width: 900px;
-  margin: 0 auto;
-}
-
-.sponsor-card {
-  min-height: 240px;
-  border: 1px solid var(--gold-border);
-  border-radius: 18px;
-  background: rgba(255,255,255,.92);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  padding: 24px;
-}
-
-.sponsor-logo {
-  width: 264px;
-  height: 264px;
-  object-fit: contain;
-  background: var(--white);
-  border-radius: 14px;
-  padding: 10px;
-}
-
-.sponsor-logo--placeholder {
-  color: var(--text-muted);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 2rem;
-}
-
-.sponsor-name {
-  text-align: center;
-  font-size: 1.45rem;
-  color: var(--dark);
-  font-weight: 700;
-  line-height: 1.25;
-}
-
-.sponsor-description {
-  text-align: center;
-  color: var(--text-muted);
-  font-size: 1rem;
-  line-height: 1.4;
-  max-width: 42ch;
-}
-
-@media (max-width: 768px) {
-  .sponsor-grid {
-    grid-template-columns: 1fr;
-  }
 }

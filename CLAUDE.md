@@ -8,7 +8,7 @@ Read this before making any changes to the codebase.
 ## Project Overview
 
 Annual 2-man scramble golf tournament website.
-**Stack:** Next.js API routes · Supabase Postgres/Storage · TypeScript · HTML/CSS/JS
+**Stack:** Node.js · Express · SQLite (better-sqlite3) · Vanilla HTML/CSS/JS · Server-Sent Events
 
 ---
 

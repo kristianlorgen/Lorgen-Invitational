@@ -2,7 +2,7 @@
 
 > Power. Precision. Party.
 
-An annual 2-man scramble golf tournament website backed by Supabase for persistent data and storage.
+An annual 2-man scramble golf tournament website built with Node.js + Express + SQLite.
 
 ## Features
 
@@ -25,16 +25,9 @@ npm start              # Runs on http://localhost:3000
 
 | Variable | Default | Description |
 |---|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | — | Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | — | Supabase anon key for client requests |
-| `SUPABASE_SERVICE_ROLE_KEY` | — | Service role key for trusted server-side writes |
+| `PORT` | `3000` | Server port |
+| `SESSION_SECRET` | `lorgen-inv-secret` | Session encryption key |
 | `ADMIN_PASSWORD` | `LorgenAdmin2025` | Admin panel password |
-| `SESSION_SECRET` | required | Session signing secret |
-
-### Vercel note
-
-Vercel local filesystem is ephemeral and is **never** used for persistence in production.
-All tournament data (tournaments, teams, scores) is stored in Supabase tables, and uploaded images are stored in Supabase Storage.
 
 ## Tournament Day Flow
 
@@ -50,8 +43,9 @@ All tournament data (tournaments, teams, scores) is stored in Supabase tables, a
 
 ## Tech Stack
 
-- **Backend**: Next.js API routes
-- **Database**: Supabase Postgres
-- **Storage**: Supabase Storage
-- **Auth**: Session cookies + Supabase-backed APIs
-- **Frontend**: Next.js + static assets
+- **Backend**: Node.js + Express
+- **Database**: SQLite (better-sqlite3)
+- **Live Updates**: Server-Sent Events (SSE)
+- **File Uploads**: Multer
+- **Auth**: Express-session (PIN for teams, password for admin)
+- **Frontend**: Vanilla HTML/CSS/JS
