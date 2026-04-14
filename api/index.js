@@ -119,6 +119,27 @@ function logApiDebug(tag, data = {}) {
   }
 }
 
+function isMissingRelationError(error) {
+  const code = String(error?.code || '');
+  const message = String(error?.message || '').toLowerCase();
+  return code === '42P01' || code === 'PGRST205' || message.includes('relation') && message.includes('does not exist');
+}
+
+async function safeDeleteByEq(table, column, value) {
+  const { error } = await supabase.from(table).delete().eq(column, value);
+  if (error && !isMissingRelationError(error)) {
+    throw new Error(`${table}.${column}: ${error.message}`);
+  }
+}
+
+async function safeDeleteByIn(table, column, values) {
+  if (!Array.isArray(values) || values.length === 0) return;
+  const { error } = await supabase.from(table).delete().in(column, values);
+  if (error && !isMissingRelationError(error)) {
+    throw new Error(`${table}.${column}: ${error.message}`);
+  }
+}
+
 
 
 const schemaColumnsCache = {};
@@ -1040,6 +1061,34 @@ app.delete('/api/admin/tournament/:id', asyncRoute(async (req, res) => {
   if (!requireSupabase(res)) return;
   if (!requireAdmin(req, res)) return;
   const id = asInt(req.params.id); if (!id) return fail(res, 400, 'Ugyldig turnerings-ID');
+  const { data: tournamentTeams, error: teamsError } = await supabase
+    .from('teams')
+    .select('id')
+    .eq('tournament_id', id);
+  if (teamsError && !isMissingRelationError(teamsError)) {
+    return fail(res, 500, 'Kunne ikke hente lag før sletting', teamsError.message);
+  }
+
+  const teamIds = (tournamentTeams || []).map((row) => asInt(row.id)).filter(Boolean);
+
+  try {
+    await safeDeleteByEq('scores', 'tournament_id', id);
+    await safeDeleteByEq('hole_images', 'tournament_id', id);
+    await safeDeleteByEq('award_claims', 'tournament_id', id);
+    await safeDeleteByEq('awards', 'tournament_id', id);
+    await safeDeleteByEq('chat_messages', 'tournament_id', id);
+    await safeDeleteByEq('tournament_gallery_images', 'tournament_id', id);
+    await safeDeleteByEq('sponsors', 'tournament_id', id);
+    await safeDeleteByEq('tournament_holes', 'tournament_id', id);
+    await safeDeleteByIn('scores', 'team_id', teamIds);
+    await safeDeleteByIn('hole_images', 'team_id', teamIds);
+    await safeDeleteByIn('award_claims', 'team_id', teamIds);
+    await safeDeleteByIn('awards', 'team_id', teamIds);
+    await safeDeleteByEq('teams', 'tournament_id', id);
+  } catch (cleanupError) {
+    return fail(res, 500, 'Kunne ikke rydde turneringsdata før sletting', cleanupError.message || cleanupError);
+  }
+
   const { error } = await supabase.from('tournaments').delete().eq('id', id);
   if (error) return fail(res, 500, 'Kunne ikke slette turnering', error.message);
   return ok(res, { deleted: true });
@@ -1433,6 +1482,14 @@ app.delete(['/api/teams/:id', '/api/admin/team/:id'], asyncRoute(async (req, res
   if (!requireSupabase(res)) return;
   if (req.path.includes('/api/admin/') && !requireAdmin(req, res)) return;
   const id = asInt(req.params.id); if (!id) return fail(res, 400, 'Ugyldig lag-ID');
+  try {
+    await safeDeleteByEq('scores', 'team_id', id);
+    await safeDeleteByEq('hole_images', 'team_id', id);
+    await safeDeleteByEq('award_claims', 'team_id', id);
+    await safeDeleteByEq('awards', 'team_id', id);
+  } catch (cleanupError) {
+    return fail(res, 500, 'Kunne ikke rydde lagdata før sletting', cleanupError.message || cleanupError);
+  }
   const { error } = await supabase.from('teams').delete().eq('id', id);
   if (error) return fail(res, 500, 'Kunne ikke slette lag', error.message);
   return ok(res, { deleted: true });
