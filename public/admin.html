@@ -947,6 +947,7 @@ function cancelTournamentEdit() {
 }
 
 async function deleteTournament(id, name) {
+  console.log('delete clicked', id);
   console.info('[admin] deleteTournament click', { id, name });
   if (deletingTournamentIds.has(Number(id))) return;
   if (!confirm(`Slett «${name}» og ALL tilhørende data? Dette kan ikke angres.`)) return;
@@ -958,14 +959,35 @@ async function deleteTournament(id, name) {
       url: '/api/admin/tournament/' + id,
       credentials: 'include'
     });
-    await api('/api/admin/tournament/'+id,{method:'DELETE'});
+    const deleteUrl = '/api/admin/tournament/' + id;
+    const response = await fetch(deleteUrl, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const responseText = await response.text();
+    let responseJson = null;
+    try { responseJson = responseText ? JSON.parse(responseText) : null; } catch(_) {}
+    console.info('[admin] deleteTournament response', {
+      status: response.status,
+      body: responseJson || responseText
+    });
+    if (!response.ok) {
+      const backendMsg = responseJson?.details
+        ? `${responseJson.error || 'Forespørsel mislyktes'}: ${responseJson.details}`
+        : (responseJson?.error || responseText || 'Forespørsel mislyktes');
+      throw new Error(backendMsg);
+    }
     allTournaments = allTournaments.filter(t => Number(t.id) !== Number(id));
     renderTournamentsTable();
     populateTournamentSelects();
     showToast('Turnering slettet');
+    if (Number(document.getElementById('editTId').value) === Number(id)) {
+      cancelTournamentEdit();
+    }
     await loadTournaments(); await loadDashboard();
   } catch(e) {
-    console.error('[admin] deleteTournament failed', { id, message: e.message });
+    console.error('[admin] deleteTournament failed', { id, message: e.message, error: e });
     showToast(e.message,'error');
   }
   finally {
