@@ -666,23 +666,98 @@ app.put('/api/admin/tournament/:id/gameday', requireAdmin, (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.delete('/api/admin/tournament/:id', requireAdmin, (req, res) => {
-  const id = req.params.id;
-  try {
-    const teams = db.prepare('SELECT id FROM teams WHERE tournament_id=?').all(id);
-    if (teams.length) {
-      const deleteScores = db.transaction(() => {
-        for (const t of teams) db.prepare('DELETE FROM scores WHERE team_id=?').run(t.id);
-      });
-      deleteScores();
+app.delete('/api/admin/tournament/:id', (req, _res, next) => {
+  console.info('[admin.deleteTournament] request received', {
+    tournamentId: req.params.id,
+    isAdmin: Boolean(req.session?.isAdmin)
+  });
+  next();
+}, requireAdmin, (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ error: 'Ugyldig turnerings-ID' });
+  }
+
+  const tableExistsStmt = db.prepare(`
+    SELECT 1
+    FROM sqlite_master
+    WHERE type='table' AND name=?
+    LIMIT 1
+  `);
+  const tableExists = (tableName) => Boolean(tableExistsStmt.get(tableName));
+
+  const safeDelete = (tableName, whereClause, ...params) => {
+    if (!tableExists(tableName)) {
+      console.info('[admin.deleteTournament] skip missing table', { tableName });
+      return 0;
     }
-    db.prepare('DELETE FROM teams WHERE tournament_id=?').run(id);
-    db.prepare('DELETE FROM holes WHERE tournament_id=?').run(id);
-    db.prepare('DELETE FROM awards WHERE tournament_id=?').run(id);
-    db.prepare('DELETE FROM gallery_photos WHERE tournament_id=?').run(id);
-    db.prepare('DELETE FROM tournaments WHERE id=?').run(id);
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+    const result = db.prepare(`DELETE FROM ${tableName} WHERE ${whereClause}`).run(...params);
+    console.info('[admin.deleteTournament] deleted rows', {
+      tableName,
+      whereClause,
+      changes: result.changes
+    });
+    return result.changes;
+  };
+
+  try {
+    const tournament = db.prepare('SELECT id FROM tournaments WHERE id=?').get(id);
+    if (!tournament) {
+      console.warn('[admin.deleteTournament] tournament not found', { tournamentId: id });
+      return res.status(404).json({ error: 'Turnering ikke funnet' });
+    }
+
+    const teamIds = tableExists('teams')
+      ? db.prepare('SELECT id FROM teams WHERE tournament_id=?').all(id).map((row) => Number(row.id)).filter(Boolean)
+      : [];
+
+    const deleteTournamentData = db.transaction(() => {
+      // Child records first to avoid FK failures in installations without ON DELETE CASCADE.
+      safeDelete('scores', 'team_id IN (SELECT id FROM teams WHERE tournament_id=?)', id);
+      safeDelete('award_claims', 'tournament_id=?', id);
+      safeDelete('holes', 'tournament_id=?', id);
+      safeDelete('players', 'tournament_id=?', id);
+      safeDelete('players', 'team_id IN (SELECT id FROM teams WHERE tournament_id=?)', id);
+      safeDelete('rounds', 'tournament_id=?', id);
+      safeDelete('rounds', 'team_id IN (SELECT id FROM teams WHERE tournament_id=?)', id);
+      safeDelete('hole_images', 'tournament_id=?', id);
+      safeDelete('chat_messages', 'tournament_id=?', id);
+      safeDelete('photo_votes', 'tournament_id=?', id);
+      safeDelete('tournament_gallery_images', 'tournament_id=?', id);
+      safeDelete('gallery_photos', 'tournament_id=?', id);
+      safeDelete('sponsors', 'tournament_id=?', id);
+      safeDelete('awards', 'tournament_id=?', id);
+      safeDelete('tournament_holes', 'tournament_id=?', id);
+      safeDelete('teams', 'tournament_id=?', id);
+      const deletedTournaments = safeDelete('tournaments', 'id=?', id);
+
+      return { deletedTournaments, teamCountBeforeDelete: teamIds.length };
+    });
+
+    const result = deleteTournamentData();
+
+    if (!result.deletedTournaments) {
+      console.error('[admin.deleteTournament] delete transaction completed but tournament row was not removed', {
+        tournamentId: id
+      });
+      return res.status(500).json({ error: 'Kunne ikke slette turneringen' });
+    }
+
+    console.info('[admin.deleteTournament] success', {
+      tournamentId: id,
+      auth: 'admin',
+      teamCountBeforeDelete: result.teamCountBeforeDelete
+    });
+
+    return res.status(200).json({ success: true, deletedTournamentId: id });
+  } catch(e) {
+    console.error('[admin.deleteTournament] failed', {
+      tournamentId: id,
+      auth: 'admin',
+      message: e.message
+    });
+    return res.status(500).json({ error: 'Sletting av turnering feilet', details: e.message });
+  }
 });
 
 app.get('/api/admin/tournament/:id/teams', requireAdmin, (req, res) => {
