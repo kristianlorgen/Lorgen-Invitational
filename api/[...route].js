@@ -1,4 +1,6 @@
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const express = require('express');
 const multer = require('multer');
 const { createClient } = require('@supabase/supabase-js');
@@ -6,6 +8,7 @@ const baseApp = require('./index');
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 12 * 1024 * 1024 } });
+const publicDir = path.join(__dirname, '..', 'public');
 
 app.use(express.json({ limit: '4mb' }));
 app.use(express.urlencoded({ extended: true }));
@@ -20,6 +23,28 @@ const supabase = SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
   : null;
 
 const placements = new Set(['frontpage', 'live_results', 'scorecard', 'admin', 'hole']);
+const injectedPages = {
+  '/': 'index.html',
+  '/admin': 'admin.html',
+  '/enter-score': 'enter-score.html',
+  '/scoreboard': 'scoreboard.html',
+  '/sponsor-admin': 'sponsor-admin.html'
+};
+
+function sendInjectedPage(req, res, fileName) {
+  const filePath = path.join(publicDir, fileName);
+  fs.readFile(filePath, 'utf8', (error, html) => {
+    if (error) return res.status(404).send('Not found');
+    if (fileName === 'sponsor-admin.html' || html.includes('/js/sponsor-ads.js')) {
+      return res.type('html').send(html);
+    }
+    return res.type('html').send(html.replace('</body>', '<script src="/js/sponsor-ads.js" defer></script>\n</body>'));
+  });
+}
+
+for (const [routePath, fileName] of Object.entries(injectedPages)) {
+  app.get(routePath, (req, res) => sendInjectedPage(req, res, fileName));
+}
 
 function ok(res, data = {}, status = 200) {
   return res.status(status).json({ success: true, ...data });
@@ -58,11 +83,6 @@ function decodeSession(token) {
   } catch (_error) {
     return null;
   }
-}
-
-function requireSupabase(res) {
-  if (supabase) return true;
-  return fail(res, 503, 'Supabase is not configured');
 }
 
 function requireAdmin(req, res) {
