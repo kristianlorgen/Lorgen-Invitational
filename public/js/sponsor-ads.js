@@ -1,6 +1,6 @@
 (() => {
   const path = window.location.pathname;
-  const placement = path.includes('scoreboard') ? 'live_results' : path.includes('enter-score') ? 'scorecard' : path === '/' ? 'frontpage' : null;
+  const placement = path.includes('scoreboard') ? 'live_results' : path.includes('enter-score') ? 'scorecard' : path.includes('admin') ? 'admin' : path === '/' ? 'frontpage' : null;
 
   const css = `
     .ad-slot { margin: 28px auto; max-width: 1080px; padding: 0 24px; }
@@ -51,7 +51,36 @@
     if (placement === 'frontpage') return document.getElementById('hero');
     if (placement === 'live_results') return document.querySelector('.page-hero');
     if (placement === 'scorecard') return document.getElementById('scorecardScreen') || document.querySelector('.page-hero') || document.body.firstElementChild;
+    if (placement === 'admin') return document.querySelector('#panel-dashboard .dash-hero') || document.querySelector('#adminPanel .admin-content');
     return null;
+  }
+
+  function addAdminSponsorControls() {
+    if (!path.includes('admin') || path.includes('sponsor-admin')) return;
+
+    const turneringSection = Array.from(document.querySelectorAll('.sidebar-section')).find(section => {
+      const label = section.querySelector('.sidebar-label');
+      return label && label.textContent.trim().toLowerCase() === 'turnering';
+    });
+
+    if (turneringSection && !turneringSection.querySelector('[data-sponsor-admin-link]')) {
+      const link = document.createElement('div');
+      link.className = 'sidebar-link';
+      link.dataset.sponsorAdminLink = 'true';
+      link.onclick = () => { window.location.href = '/sponsor-admin'; };
+      link.innerHTML = '<i class="fas fa-handshake"></i> Sponsorer';
+      turneringSection.appendChild(link);
+    }
+
+    const dashboardActions = document.querySelector('#panel-dashboard .card + div[style*="margin-top:20px"]');
+    if (dashboardActions && !dashboardActions.querySelector('[data-sponsor-admin-button]')) {
+      const button = document.createElement('a');
+      button.href = '/sponsor-admin';
+      button.className = 'btn btn--dark btn--sm';
+      button.dataset.sponsorAdminButton = 'true';
+      button.innerHTML = '<i class="fas fa-handshake"></i> Sponsorer';
+      dashboardActions.appendChild(button);
+    }
   }
 
   async function activeTournamentId() {
@@ -65,7 +94,7 @@
   }
 
   async function renderPlacementAds(tournamentId) {
-    if (!placement) return;
+    if (!placement || placement === 'admin') return;
     const query = tournamentId ? `&tournament_id=${tournamentId}` : '';
     const r = await fetch(`/api/sponsors?placement=${placement}${query}`);
     const d = await r.json();
@@ -94,6 +123,7 @@
   }
 
   document.addEventListener('DOMContentLoaded', async () => {
+    addAdminSponsorControls();
     const tournamentId = await activeTournamentId();
     await renderPlacementAds(tournamentId);
     await renderHoleSponsors(tournamentId);
