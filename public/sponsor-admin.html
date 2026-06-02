@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="nb">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sponsoroppsett — Lorgen Invitational</title>
+  <link rel="icon" type="image/png" href="/images/logo.png">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    body { background: var(--off-white); padding-top: var(--nav-height); }
+    .sponsor-admin-grid { display:grid;grid-template-columns:320px 1fr;gap:20px;align-items:start; }
+    .sponsor-list { display:grid;gap:12px; }
+    .sponsor-admin-card { border:1px solid var(--gold-border);border-radius:var(--radius);background:var(--white);padding:14px;display:grid;grid-template-columns:86px 1fr auto;gap:12px;align-items:center; }
+    .sponsor-admin-logo { width:86px;height:58px;border-radius:8px;border:1px solid var(--gold-border);background:var(--gold-pale);display:flex;align-items:center;justify-content:center;overflow:hidden;padding:6px;font-weight:800;color:var(--gold-dark); }
+    .sponsor-admin-logo img { width:100%;height:100%;object-fit:contain; }
+    @media(max-width:900px){ .sponsor-admin-grid{grid-template-columns:1fr;} .sponsor-admin-card{grid-template-columns:72px 1fr;} .sponsor-admin-actions{grid-column:1/-1;} }
+  </style>
+</head>
+<body>
+<nav class="navbar scrolled" id="navbar">
+  <div class="container">
+    <a href="/admin" class="navbar-brand"><img src="/images/logo.png" alt="Lorgen Invitational" class="navbar-logo"></a>
+    <ul class="navbar-nav"><li><a href="/admin" class="nav-link">Admin</a></li><li><a href="/" class="nav-link">Nettsted</a></li></ul>
+  </div>
+</nav>
+
+<section class="section">
+  <div class="container container--wide">
+    <div class="section-header" style="margin-bottom:28px">
+      <span class="section-tag">Sponsoroppsett</span>
+      <h1 class="section-title">Annonser og <span>sponsorer</span></h1>
+      <p class="section-subtitle">Knytt sponsorer til enkelt-hull eller sideplasseringer. Logoer lastes opp til Supabase Storage.</p>
+    </div>
+
+    <div class="sponsor-admin-grid">
+      <div class="card">
+        <div class="card-header"><strong>Ny / rediger sponsor</strong></div>
+        <div class="card-body">
+          <input type="hidden" id="sponsorId">
+          <div class="form-group"><label class="form-label">Turnering ID</label><input class="form-input" id="tournamentId" type="number" placeholder="Tom = generell"></div>
+          <div class="form-group"><label class="form-label">Plassering</label><select class="form-select" id="placement" onchange="toggleHoleField()"><option value="frontpage">Forside</option><option value="live_results">Live resultater</option><option value="scorecard">Scorekort</option><option value="admin">Admin</option><option value="hole">Hullsponsor</option></select></div>
+          <div class="form-group" id="holeField" style="display:none"><label class="form-label">Hullnummer</label><input class="form-input" id="holeNumber" type="number" min="1" max="18"></div>
+          <div class="form-group"><label class="form-label">Posisjon / spot</label><input class="form-input" id="spotNumber" type="number" min="1" value="1"></div>
+          <div class="form-group"><label class="form-label">Sponsor navn</label><input class="form-input" id="sponsorName"></div>
+          <div class="form-group"><label class="form-label">Sponsor URL</label><input class="form-input" id="sponsorUrl" placeholder="https://..."></div>
+          <div class="form-group"><label class="form-label">Beskrivelse</label><textarea class="form-input form-textarea" id="description"></textarea></div>
+          <div class="form-group"><label class="form-label">Logo/bilde URL</label><input class="form-input" id="logoPath"></div>
+          <div class="form-group"><label class="form-label">Last opp logo/bilde</label><input class="form-input" type="file" id="logoFile" accept="image/*" onchange="uploadLogo()"></div>
+          <label style="display:flex;gap:8px;align-items:center;margin-bottom:16px"><input type="checkbox" id="isEnabled" checked> Vis sponsor</label>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn--gold btn--sm" onclick="saveSponsor()"><i class="fas fa-floppy-disk"></i> Lagre</button>
+            <button class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)" onclick="resetForm()">Nullstill</button>
+          </div>
+          <div id="status" style="margin-top:12px;font-size:.82rem;color:var(--text-muted)"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header" style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap"><strong>Registrerte sponsorer</strong><button class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)" onclick="loadSponsors()"><i class="fas fa-rotate-right"></i> Oppdater</button></div>
+        <div class="card-body"><div id="sponsorList" class="sponsor-list">Laster...</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+function setStatus(text, danger=false) { const el = document.getElementById('status'); el.textContent = text; el.style.color = danger ? 'var(--danger)' : 'var(--text-muted)'; }
+function toggleHoleField() { document.getElementById('holeField').style.display = document.getElementById('placement').value === 'hole' ? '' : 'none'; }
+function initials(name) { return String(name || 'SP').split(' ').map(x => x[0]).filter(Boolean).slice(0,2).join('').toUpperCase(); }
+async function api(url, options={}) { const r = await fetch(url, { headers: { 'Content-Type': 'application/json', ...(options.headers||{}) }, ...options }); const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Feil'); return d; }
+
+async function uploadLogo() {
+  const file = document.getElementById('logoFile').files[0];
+  if (!file) return;
+  const fd = new FormData();
+  fd.append('image', file);
+  setStatus('Laster opp til Supabase Storage...');
+  const r = await fetch('/api/admin/sponsors/upload', { method:'POST', body: fd });
+  const d = await r.json();
+  if (!r.ok) { setStatus(d.error || 'Opplasting feilet', true); return; }
+  document.getElementById('logoPath').value = d.logo_path;
+  setStatus('Logo lastet opp. Husk å lagre sponsoroppsettet.');
+}
+
+function payload() {
+  const placement = document.getElementById('placement').value;
+  return {
+    tournament_id: document.getElementById('tournamentId').value || null,
+    placement,
+    hole_number: placement === 'hole' ? Number(document.getElementById('holeNumber').value) : null,
+    spot_number: Number(document.getElementById('spotNumber').value) || 1,
+    sponsor_name: document.getElementById('sponsorName').value,
+    sponsor_url: document.getElementById('sponsorUrl').value,
+    description: document.getElementById('description').value,
+    logo_path: document.getElementById('logoPath').value,
+    is_enabled: document.getElementById('isEnabled').checked
+  };
+}
+
+async function saveSponsor() {
+  try {
+    const id = document.getElementById('sponsorId').value;
+    const method = id ? 'PUT' : 'POST';
+    const url = id ? '/api/admin/sponsors/' + id : '/api/admin/sponsors';
+    await api(url, { method, body: JSON.stringify(payload()) });
+    setStatus('Lagret.');
+    resetForm();
+    await loadSponsors();
+  } catch(e) { setStatus(e.message, true); }
+}
+
+function editSponsor(s) {
+  document.getElementById('sponsorId').value = s.id;
+  document.getElementById('tournamentId').value = s.tournament_id || '';
+  document.getElementById('placement').value = s.placement || 'frontpage';
+  document.getElementById('holeNumber').value = s.hole_number || '';
+  document.getElementById('spotNumber').value = s.spot_number || s.position || 1;
+  document.getElementById('sponsorName').value = s.sponsor_name || '';
+  document.getElementById('sponsorUrl').value = s.sponsor_url || '';
+  document.getElementById('description').value = s.description || '';
+  document.getElementById('logoPath').value = s.logo_path || '';
+  document.getElementById('isEnabled').checked = !!s.is_enabled;
+  toggleHoleField();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+async function deleteSponsor(id) {
+  if (!confirm('Slette denne sponsoren/annonsen?')) return;
+  await api('/api/admin/sponsors/' + id, { method:'DELETE' });
+  await loadSponsors();
+}
+
+function resetForm() {
+  ['sponsorId','tournamentId','holeNumber','sponsorName','sponsorUrl','description','logoPath'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('placement').value = 'frontpage';
+  document.getElementById('spotNumber').value = '1';
+  document.getElementById('isEnabled').checked = true;
+  document.getElementById('logoFile').value = '';
+  toggleHoleField();
+}
+
+async function loadSponsors() {
+  const wrap = document.getElementById('sponsorList');
+  try {
+    const d = await api('/api/admin/sponsors');
+    if (!d.sponsors.length) { wrap.innerHTML = '<div style="color:var(--text-muted)">Ingen sponsorer registrert ennå.</div>'; return; }
+    wrap.innerHTML = d.sponsors.map(s => `
+      <div class="sponsor-admin-card">
+        <div class="sponsor-admin-logo">${s.logo_path ? `<img src="${s.logo_path}" alt="${s.sponsor_name || 'Sponsor'}">` : initials(s.sponsor_name)}</div>
+        <div>
+          <div style="font-weight:800;color:var(--dark)">${s.sponsor_name || 'Uten navn'}</div>
+          <div style="font-size:.78rem;color:var(--text-muted)">${s.placement}${s.hole_number ? ' · hull ' + s.hole_number : ''}${s.tournament_id ? ' · turnering ' + s.tournament_id : ' · generell'}</div>
+          ${s.description ? `<div style="font-size:.78rem;color:var(--text-muted);margin-top:4px">${s.description}</div>` : ''}
+        </div>
+        <div class="sponsor-admin-actions" style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn--outline btn--sm" style="color:var(--gold-dark);border-color:var(--gold-border)" onclick='editSponsor(${JSON.stringify(s)})'><i class="fas fa-pen"></i></button>
+          <button class="btn btn--danger btn--sm" onclick="deleteSponsor(${s.id})"><i class="fas fa-trash"></i></button>
+        </div>
+      </div>`).join('');
+  } catch(e) { wrap.innerHTML = `<div style="color:var(--danger)">${e.message}</div>`; }
+}
+
+toggleHoleField();
+loadSponsors();
+</script>
+</body>
+</html>
