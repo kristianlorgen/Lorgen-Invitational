@@ -4,6 +4,7 @@
     { "source": "/api/(.*)", "destination": "/api/[...route]" },
     { "source": "/", "destination": "/index.html" },
     { "source": "/admin", "destination": "/admin.html" },
+    { "source": "/sponsor-admin", "destination": "/sponsor-admin.html" },
     { "source": "/enter-score", "destination": "/enter-score.html" },
     { "source": "/gameday", "destination": "/gameday.html" },
     { "source": "/gallery", "destination": "/gallery.html" },
