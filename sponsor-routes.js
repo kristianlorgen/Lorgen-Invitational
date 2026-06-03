@@ -1,5 +1,6 @@
 'use strict';
 
+const dns = require('dns');
 const https = require('https');
 const multer = require('multer');
 const path = require('path');
@@ -36,6 +37,31 @@ function getSupabaseConfig() {
   const bucket = env('SUPABASE_SPONSOR_BUCKET') || env('SPONSOR_STORAGE_BUCKET') || 'sponsor-ads';
   if (!url || !key) return null;
   return { url, key, bucket };
+}
+
+function getSupabaseKeySource() {
+  if (env('SUPABASE_SERVICE_ROLE_KEY')) return 'SUPABASE_SERVICE_ROLE_KEY';
+  if (env('SUPABASE_SERVICE_KEY')) return 'SUPABASE_SERVICE_KEY';
+  if (env('SUPABASE_ANON_KEY')) return 'SUPABASE_ANON_KEY';
+  return '';
+}
+
+function getSupabaseDiagnosticBase() {
+  const cfg = getSupabaseConfig();
+  let host = '';
+  if (cfg?.url) {
+    try { host = new URL(cfg.url).hostname; }
+    catch (_) { host = ''; }
+  }
+  return {
+    has_supabase_url: Boolean(env('SUPABASE_URL')),
+    normalized_url: cfg?.url || normalizeSupabaseUrl(env('SUPABASE_URL')),
+    host,
+    has_key: Boolean(getSupabaseKeySource()),
+    key_source: getSupabaseKeySource(),
+    bucket: cfg?.bucket || env('SUPABASE_SPONSOR_BUCKET') || env('SPONSOR_STORAGE_BUCKET') || 'sponsor-ads',
+    node_version: process.version
+  };
 }
 
 function jsonError(res, status, message) {
@@ -109,6 +135,8 @@ function httpsRequest(urlString, options = {}) {
     const request = https.request({
       protocol: url.protocol,
       hostname: url.hostname,
+      servername: url.hostname,
+      family: 4,
       port: url.port || 443,
       path: `${url.pathname}${url.search}`,
       method: options.method || 'GET',
@@ -167,17 +195,22 @@ async function uploadToSupabaseStorage(file) {
   const ext = path.extname(file.originalname || '').toLowerCase() || '.png';
   const objectPath = `sponsors/${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
 
-  const response = await httpsRequest(`${cfg.url}/storage/v1/object/${cfg.bucket}/${objectPath}`, {
-    method: 'POST',
-    headers: {
-      apikey: cfg.key,
-      Authorization: `Bearer ${cfg.key}`,
-      'Content-Type': file.mimetype || 'application/octet-stream',
-      'Cache-Control': '31536000',
-      upsert: 'false'
-    },
-    body: file.buffer
-  });
+  let response;
+  try {
+    response = await httpsRequest(`${cfg.url}/storage/v1/object/${cfg.bucket}/${objectPath}`, {
+      method: 'POST',
+      headers: {
+        apikey: cfg.key,
+        Authorization: `Bearer ${cfg.key}`,
+        'Content-Type': file.mimetype || 'application/octet-stream',
+        'Cache-Control': '31536000',
+        upsert: 'false'
+      },
+      body: file.buffer
+    });
+  } catch (error) {
+    throw new Error(`Kunne ikke kontakte Supabase Storage (${cfg.url}): ${error.message || error}`);
+  }
 
   if (response.statusCode < 200 || response.statusCode >= 300) {
     const data = parseBody(response.text);
@@ -213,6 +246,16 @@ function sanitizeSponsorPayload(body = {}) {
   };
 }
 
+function dnsLookup(hostname) {
+  return new Promise(resolve => {
+    if (!hostname) return resolve({ error: 'Mangler Supabase-host' });
+    dns.lookup(hostname, { all: true, family: 4 }, (error, addresses) => {
+      if (error) return resolve({ error: error.message });
+      resolve(addresses.map(address => address.address));
+    });
+  });
+}
+
 module.exports = function attachSponsorRoutes(app) {
   app.get('/api/sponsors', async (req, res) => {
     try {
@@ -241,6 +284,40 @@ module.exports = function attachSponsorRoutes(app) {
       res.json({ sponsors: (rows || []).map(normalizeSponsor), tournament_id: tournamentId || null });
     } catch (e) {
       res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get('/api/admin/sponsors/debug', requireAdminSession, async (req, res) => {
+    const diagnostic = getSupabaseDiagnosticBase();
+    try {
+      const cfg = getSupabaseConfig();
+      const dns_ipv4 = await dnsLookup(diagnostic.host);
+      if (!cfg) return res.json({ ...diagnostic, dns_ipv4, rest_ok: false, rest_status: null, rest_error: 'Supabase mangler SUPABASE_URL og service/anon key' });
+
+      let rest_status = null;
+      let rest_error = null;
+      try {
+        const response = await httpsRequest(`${cfg.url}/rest/v1/`, {
+          headers: {
+            apikey: cfg.key,
+            Authorization: `Bearer ${cfg.key}`,
+            Accept: 'application/openapi+json'
+          }
+        });
+        rest_status = response.statusCode;
+      } catch (error) {
+        rest_error = error.message || String(error);
+      }
+
+      res.json({
+        ...diagnostic,
+        dns_ipv4,
+        rest_ok: Boolean(rest_status && rest_status >= 200 && rest_status < 500),
+        rest_status,
+        rest_error
+      });
+    } catch (error) {
+      res.status(500).json({ ...diagnostic, error: error.message || String(error) });
     }
   });
 
