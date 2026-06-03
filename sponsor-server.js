@@ -7,7 +7,7 @@ const expressPath = require.resolve('express');
 const express = require(expressPath);
 const originalExpress = express;
 
-const SPONSOR_SCRIPT = '<script src="/js/sponsor-ads.js?v=sponsor-server-render-20260603" defer></script>';
+const SPONSOR_SCRIPT = '<script src="/js/sponsor-ads.js?v=sponsor-large-netto-20260603" defer></script>';
 const INJECT_PATHS = new Set(['/', '/index.html', '/scoreboard', '/scoreboard.html', '/enter-score', '/enter-score.html', '/admin', '/admin.html']);
 const PAGE_PLACEMENTS = new Map([
   ['/', 'frontpage'],
@@ -117,13 +117,13 @@ function sponsorCard(row) {
   const logo = sponsorLogoForDisplay(row.logo_path || row.sponsor_logo || row.logo_url || '');
   const url = row.sponsor_url || row.website_url || '';
   const card = `
-    <article style="width:220px;border:1px solid var(--gold-border);border-radius:12px;background:var(--white);box-shadow:var(--shadow-sm);padding:18px 16px;display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center">
-      <div style="width:130px;height:160px;background:var(--gold-pale);border:1px solid var(--gold-border);display:flex;align-items:center;justify-content:center;overflow:hidden">
-        ${logo ? `<img src="${escapeHtml(logo)}" alt="${escapeHtml(name)}" style="width:100%;height:100%;object-fit:cover;display:block">` : `<div style="font-weight:800;color:var(--gold-dark);font-size:1.2rem">${escapeHtml(initials(name))}</div>`}
+    <article style="width:min(440px,calc(100vw - 48px));border:1px solid var(--gold-border);border-radius:12px;background:var(--white);box-shadow:var(--shadow-sm);padding:28px 24px;display:flex;flex-direction:column;align-items:center;gap:20px;text-align:center">
+      <div style="width:min(260px,100%);height:320px;background:var(--gold-pale);border:1px solid var(--gold-border);display:flex;align-items:center;justify-content:center;overflow:hidden">
+        ${logo ? `<img src="${escapeHtml(logo)}" alt="${escapeHtml(name)}" style="width:100%;height:100%;object-fit:cover;display:block">` : `<div style="font-weight:800;color:var(--gold-dark);font-size:1.9rem">${escapeHtml(initials(name))}</div>`}
       </div>
       <div>
-        <div style="font-weight:800;color:var(--dark);font-size:1.02rem;line-height:1.2">${escapeHtml(name)}</div>
-        ${desc ? `<div style="font-size:.74rem;color:var(--text-muted);line-height:1.35;margin-top:4px">${escapeHtml(desc)}</div>` : ''}
+        <div style="font-weight:800;color:var(--dark);font-size:1.35rem;line-height:1.18">${escapeHtml(name)}</div>
+        ${desc ? `<div style="font-size:.95rem;color:var(--text-muted);line-height:1.4;margin-top:8px">${escapeHtml(desc)}</div>` : ''}
       </div>
     </article>`;
   return url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener" style="text-decoration:none;color:inherit">${card}</a>` : card;
@@ -133,9 +133,9 @@ async function pageSponsorMarkup(placement) {
   const sponsors = await loadPageSponsors(placement);
   if (!sponsors.length) return '';
   return `
-<section data-server-sponsor-placement="${escapeHtml(placement)}" style="margin:28px auto;max-width:1080px;padding:0 24px;text-align:center">
-  <div style="margin:0 0 12px;font-size:.62rem;font-weight:800;letter-spacing:.32em;text-transform:uppercase;color:var(--text-muted)">Sponsorer</div>
-  <div style="display:flex;justify-content:center;flex-wrap:wrap;gap:18px">${sponsors.map(sponsorCard).join('')}</div>
+<section data-server-sponsor-placement="${escapeHtml(placement)}" data-sponsor-placement="${escapeHtml(placement)}" style="margin:40px auto;max-width:1280px;padding:0 24px;text-align:center">
+  <div style="margin:0 0 18px;font-size:.68rem;font-weight:800;letter-spacing:.32em;text-transform:uppercase;color:var(--text-muted)">Sponsorer</div>
+  <div style="display:flex;justify-content:center;flex-wrap:wrap;gap:32px">${sponsors.map(sponsorCard).join('')}</div>
 </section>`;
 }
 
@@ -157,8 +157,47 @@ async function injectPageSponsorMarkup(html, reqPath) {
   return html.replace('<!-- ── Ingen aktiv turnering', `${markup}\n\n<!-- ── Ingen aktiv turnering`);
 }
 
+function patchScorecardNetto(html, reqPath) {
+  if (reqPath !== '/enter-score' && reqPath !== '/enter-score.html') return html;
+  if (!html.includes('function updateSummary()')) return html;
+
+  let patched = html;
+  if (!patched.includes('completedHandicapStrokesForPlayedHoles')) {
+    const helper = `
+function handicapStrokesForPlayedHole(hole, courseHcp) {
+  const strokeIndex = Number(hole && (hole.stroke_index || hole.si || 0));
+  if (!strokeIndex || !courseHcp || courseHcp <= 0) return 0;
+  let strokes = 0;
+  for (let threshold = strokeIndex; threshold <= courseHcp; threshold += 18) strokes += 1;
+  return strokes;
+}
+
+function completedHandicapStrokesForPlayedHoles(courseHcp) {
+  if (!courseHcp || courseHcp <= 0) return 0;
+  return Object.values(scoresData).reduce((sum, scoreRow) => {
+    if (!scoreRow || scoreRow.score <= 0) return sum;
+    const hole = holesData.find(h => h.hole_number === scoreRow.hole_number);
+    return hole ? sum + handicapStrokesForPlayedHole(hole, courseHcp) : sum;
+  }, 0);
+}
+`;
+    patched = patched.replace('function renderAll() {', `${helper}\nfunction renderAll() {`);
+  }
+
+  patched = patched.replace(
+    'const netScore = holesCompleted > 0 ? totalScore - courseHcp : null;',
+    'const hcpUsed = completedHandicapStrokesForPlayedHoles(courseHcp);\n    const netScore = holesCompleted > 0 ? totalScore - hcpUsed : null;'
+  );
+  patched = patched.replace(
+    'const netScore  = (courseHcp > 0 && holesCompleted > 0) ? totalScore - courseHcp : null;',
+    'const hcpUsed = completedHandicapStrokesForPlayedHoles(courseHcp);\n  const netScore  = (courseHcp > 0 && holesCompleted > 0) ? totalScore - hcpUsed : null;'
+  );
+  return patched;
+}
+
 async function injectHtml(html, reqPath) {
-  const withMarkup = await injectPageSponsorMarkup(html, reqPath);
+  const patchedHtml = patchScorecardNetto(html, reqPath);
+  const withMarkup = await injectPageSponsorMarkup(patchedHtml, reqPath);
   return injectSponsorScript(withMarkup);
 }
 
