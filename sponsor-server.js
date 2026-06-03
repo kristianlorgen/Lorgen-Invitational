@@ -7,7 +7,7 @@ const expressPath = require.resolve('express');
 const express = require(expressPath);
 const originalExpress = express;
 
-const SPONSOR_SCRIPT = '<script src="/js/sponsor-ads.js?v=scorecard-hole-sponsor-large-20260603" defer></script>';
+const SPONSOR_SCRIPT = '<script src="/js/sponsor-ads.js?v=scorecard-netto-fallback-20260603" defer></script>';
 const INJECT_PATHS = new Set(['/', '/index.html', '/scoreboard', '/scoreboard.html', '/enter-score', '/enter-score.html', '/admin', '/admin.html']);
 const PAGE_PLACEMENTS = new Map([
   ['/', 'frontpage'],
@@ -164,8 +164,15 @@ function patchScorecardNetto(html, reqPath) {
   let patched = html;
   if (!patched.includes('completedHandicapStrokesForPlayedHoles')) {
     const helper = `
+function handicapIndexForPlayedHole(hole) {
+  const explicitIndex = Number(hole && (hole.stroke_index || hole.handicap_index || hole.hcp_index || hole.hcp || hole.si || 0));
+  if (explicitIndex >= 1 && explicitIndex <= 18) return explicitIndex;
+  const fallbackIndex = Number(hole && hole.hole_number);
+  return fallbackIndex >= 1 && fallbackIndex <= 18 ? fallbackIndex : 0;
+}
+
 function handicapStrokesForPlayedHole(hole, courseHcp) {
-  const strokeIndex = Number(hole && (hole.stroke_index || hole.si || 0));
+  const strokeIndex = handicapIndexForPlayedHole(hole);
   if (!strokeIndex || !courseHcp || courseHcp <= 0) return 0;
   let strokes = 0;
   for (let threshold = strokeIndex; threshold <= courseHcp; threshold += 18) strokes += 1;
