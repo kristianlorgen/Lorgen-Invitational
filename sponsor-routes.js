@@ -21,8 +21,16 @@ function env(name) {
   return String(process.env[name] || '').trim();
 }
 
+function normalizeSupabaseUrl(value = '') {
+  return String(value || '')
+    .trim()
+    .replace(/\/+$/, '')
+    .replace(/\/rest\/v1$/i, '')
+    .replace(/\/storage\/v1$/i, '');
+}
+
 function getSupabaseConfig() {
-  const url = env('SUPABASE_URL').replace(/\/+$/, '');
+  const url = normalizeSupabaseUrl(env('SUPABASE_URL'));
   const key = env('SUPABASE_SERVICE_ROLE_KEY') || env('SUPABASE_SERVICE_KEY') || env('SUPABASE_ANON_KEY');
   const bucket = env('SUPABASE_SPONSOR_BUCKET') || env('SPONSOR_STORAGE_BUCKET') || 'sponsor-ads';
   if (!url || !key) return null;
@@ -45,9 +53,13 @@ function normalizeUrl(value = '') {
   return `https://${trimmed}`;
 }
 
-function getActiveTournamentId() {
-  const row = db.prepare("SELECT id FROM tournaments WHERE status IN ('active','upcoming') ORDER BY date ASC LIMIT 1").get();
-  return row ? row.id : null;
+function getLocalActiveTournamentId() {
+  try {
+    const row = db.prepare("SELECT id FROM tournaments WHERE status IN ('active','upcoming') ORDER BY date ASC LIMIT 1").get();
+    return row ? Number(row.id) : null;
+  } catch (_) {
+    return null;
+  }
 }
 
 function sponsorSelect() {
@@ -92,11 +104,28 @@ async function supabaseRest(pathname, options = {}) {
     ...options.headers
   };
   if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
-  const response = await fetch(`${cfg.url}/rest/v1/${pathname}`, { ...options, headers });
+
+  let response;
+  try {
+    response = await fetch(`${cfg.url}/rest/v1/${pathname}`, { ...options, headers });
+  } catch (_error) {
+    throw new Error(`Kunne ikke kontakte Supabase (${cfg.url}). Sjekk SUPABASE_URL og service role key.`);
+  }
+
   const text = await response.text();
-  const data = text ? JSON.parse(text) : null;
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; }
+  catch (_) { data = text ? { message: text } : null; }
   if (!response.ok) throw new Error(data?.message || data?.hint || `Supabase-feil ${response.status}`);
   return data;
+}
+
+async function getActiveTournamentId() {
+  try {
+    const rows = await supabaseRest('tournaments?select=id&status=in.(active,upcoming)&order=date.asc&limit=1');
+    if (rows && rows[0] && rows[0].id) return Number(rows[0].id);
+  } catch (_) {}
+  return getLocalActiveTournamentId();
 }
 
 async function uploadToSupabaseStorage(file) {
@@ -156,7 +185,7 @@ module.exports = function attachSponsorRoutes(app) {
     try {
       const placement = String(req.query.placement || '').trim();
       if (placement && !ALL_PLACEMENTS.has(placement)) return jsonError(res, 400, 'Ugyldig placement');
-      const tournamentId = req.query.tournament_id ? Number(req.query.tournament_id) : getActiveTournamentId();
+      const tournamentId = req.query.tournament_id ? Number(req.query.tournament_id) : await getActiveTournamentId();
       const filters = ['select=' + encodeURIComponent(sponsorSelect()), 'is_enabled=eq.true'];
       if (placement) filters.push(`placement=eq.${encodeURIComponent(placement)}`);
       if (tournamentId) filters.push(`or=(tournament_id.is.null,tournament_id.eq.${tournamentId})`);
@@ -171,11 +200,12 @@ module.exports = function attachSponsorRoutes(app) {
 
   app.get('/api/admin/sponsors', requireAdminSession, async (req, res) => {
     try {
+      const tournamentId = req.query.tournament_id ? Number(req.query.tournament_id) : await getActiveTournamentId();
       const filters = ['select=' + encodeURIComponent(sponsorSelect())];
-      if (req.query.tournament_id) filters.push(`or=(tournament_id.is.null,tournament_id.eq.${Number(req.query.tournament_id)})`);
+      if (tournamentId) filters.push(`or=(tournament_id.is.null,tournament_id.eq.${tournamentId})`);
       filters.push('order=placement.asc', 'order=position.asc', 'order=hole_number.asc');
       const rows = await supabaseRest(`sponsors?${filters.join('&')}`);
-      res.json({ sponsors: (rows || []).map(normalizeSponsor) });
+      res.json({ sponsors: (rows || []).map(normalizeSponsor), tournament_id: tournamentId || null });
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
@@ -194,6 +224,8 @@ module.exports = function attachSponsorRoutes(app) {
   app.post('/api/admin/sponsors', requireAdminSession, async (req, res) => {
     try {
       const payload = sanitizeSponsorPayload(req.body);
+      if (!payload.tournament_id) payload.tournament_id = await getActiveTournamentId();
+      if (!payload.tournament_id) throw new Error('Ingen aktiv eller kommende turnering funnet');
       const rows = await supabaseRest('sponsors?select=' + encodeURIComponent(sponsorSelect()), {
         method: 'POST',
         headers: { Prefer: 'return=representation' },
@@ -208,6 +240,8 @@ module.exports = function attachSponsorRoutes(app) {
   app.put('/api/admin/sponsors/:id', requireAdminSession, async (req, res) => {
     try {
       const payload = sanitizeSponsorPayload(req.body);
+      if (!payload.tournament_id) payload.tournament_id = await getActiveTournamentId();
+      if (!payload.tournament_id) throw new Error('Ingen aktiv eller kommende turnering funnet');
       const rows = await supabaseRest(`sponsors?id=eq.${Number(req.params.id)}&select=${encodeURIComponent(sponsorSelect())}`, {
         method: 'PATCH',
         headers: { Prefer: 'return=representation' },
