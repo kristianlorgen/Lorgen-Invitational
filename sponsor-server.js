@@ -6,7 +6,7 @@ const expressPath = require.resolve('express');
 const express = require(expressPath);
 const originalExpress = express;
 
-const SPONSOR_SCRIPT = '<script src="/js/sponsor-ads.js?v=sponsor-legacy-layout-20260603" defer></script>';
+const SPONSOR_SCRIPT = '<script src="/js/sponsor-ads.js?v=sponsor-live-page-fix-20260603" defer></script>';
 const INJECT_PATHS = new Set(['/', '/index.html', '/scoreboard', '/scoreboard.html', '/enter-score', '/enter-score.html', '/admin', '/admin.html']);
 
 function injectSponsorScript(html) {
