@@ -138,7 +138,7 @@ function editSponsor(s) {
   document.getElementById('sponsorName').value = s.sponsor_name || '';
   document.getElementById('sponsorUrl').value = s.sponsor_url || '';
   document.getElementById('description').value = s.description || '';
-  document.getElementById('logoPath').value = s.logo_path || '';
+  document.getElementById('logoPath').value = s.raw_logo_path || s.logo_path || '';
   document.getElementById('isEnabled').checked = !!s.is_enabled;
   toggleHoleField();
   window.scrollTo({ top: 0, behavior: 'smooth' });
