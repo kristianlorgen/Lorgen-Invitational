@@ -12,15 +12,21 @@
     .sponsor-display-card__fallback { font-weight:800; color:var(--gold-dark); font-size:1.9rem; }
     .sponsor-display-card__name { font-weight:800; color:var(--dark); font-size:1.35rem; line-height:1.18; }
     .sponsor-display-card__desc { font-size:.95rem; color:var(--text-muted); line-height:1.4; margin-top:8px; }
-    .current-hole-sponsor { margin: 0 0 18px; }
+    .current-hole-sponsor { margin: 0 0 24px; }
     .current-hole-sponsor__link { text-decoration:none; color:inherit; display:block; }
-    .current-hole-sponsor__card { border:1px solid var(--gold-border); background:var(--gold-pale); border-radius:var(--radius-sm); padding:10px; display:flex; align-items:center; gap:12px; }
-    .current-hole-sponsor__logo { width:72px; height:72px; background:var(--white); border:1px solid var(--gold-border); display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0; }
+    .current-hole-sponsor__card { border:1px solid var(--gold-border); background:var(--gold-pale); border-radius:var(--radius-sm); padding:18px; display:flex; align-items:center; gap:22px; min-height:160px; }
+    .current-hole-sponsor__logo { width:144px; height:144px; background:var(--white); border:1px solid var(--gold-border); display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0; }
     .current-hole-sponsor__logo img { width:100%; height:100%; object-fit:cover; display:block; }
-    .current-hole-sponsor__fallback { font-size:.95rem; font-weight:800; color:var(--gold-dark); }
-    .current-hole-sponsor__label { font-size:.62rem; font-weight:800; letter-spacing:.12em; color:var(--text-muted); text-transform:uppercase; margin-bottom:4px; }
-    .current-hole-sponsor__name { font-size:.9rem; font-weight:800; color:var(--dark); line-height:1.2; }
-    .current-hole-sponsor__desc { font-size:.72rem; color:var(--text-muted); line-height:1.3; margin-top:3px; }
+    .current-hole-sponsor__fallback { font-size:1.35rem; font-weight:800; color:var(--gold-dark); }
+    .current-hole-sponsor__label { font-size:.72rem; font-weight:800; letter-spacing:.14em; color:var(--text-muted); text-transform:uppercase; margin-bottom:8px; }
+    .current-hole-sponsor__name { font-size:1.2rem; font-weight:800; color:var(--dark); line-height:1.2; }
+    .current-hole-sponsor__desc { font-size:.9rem; color:var(--text-muted); line-height:1.35; margin-top:6px; }
+    @media (max-width: 560px) {
+      .current-hole-sponsor__card { padding:14px; gap:14px; min-height:128px; }
+      .current-hole-sponsor__logo { width:112px; height:112px; }
+      .current-hole-sponsor__name { font-size:1.05rem; }
+      .current-hole-sponsor__desc { font-size:.82rem; }
+    }
   `;
   const style = document.createElement('style');
   style.textContent = css;
