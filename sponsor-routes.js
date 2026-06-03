@@ -218,6 +218,15 @@ async function getActiveTournamentId() {
   return getLocalActiveTournamentId();
 }
 
+async function fetchSponsors(placement, tournamentId, options = {}) {
+  const filters = ['select=' + encodeURIComponent(sponsorSelect()), 'is_enabled=eq.true'];
+  if (placement) filters.push(`placement=eq.${encodeURIComponent(placement)}`);
+  if (options.holeNumber) filters.push(`hole_number=eq.${Number(options.holeNumber)}`);
+  if (tournamentId && !options.ignoreTournament) filters.push(`or=(tournament_id.is.null,tournament_id.eq.${tournamentId})`);
+  filters.push('order=placement.asc', 'order=position.asc', 'order=hole_number.asc');
+  return supabaseRest(`sponsors?${filters.join('&')}`);
+}
+
 async function uploadToSupabaseStorage(file) {
   const cfg = getSupabaseConfig();
   if (!cfg) throw new Error('Supabase mangler SUPABASE_URL og service/anon key');
@@ -311,12 +320,11 @@ module.exports = function attachSponsorRoutes(app) {
       const placement = String(req.query.placement || '').trim();
       if (placement && !ALL_PLACEMENTS.has(placement)) return jsonError(res, 400, 'Ugyldig placement');
       const tournamentId = req.query.tournament_id ? Number(req.query.tournament_id) : await getActiveTournamentId();
-      const filters = ['select=' + encodeURIComponent(sponsorSelect()), 'is_enabled=eq.true'];
-      if (placement) filters.push(`placement=eq.${encodeURIComponent(placement)}`);
-      if (tournamentId) filters.push(`or=(tournament_id.is.null,tournament_id.eq.${tournamentId})`);
-      if (req.query.hole_number) filters.push(`hole_number=eq.${Number(req.query.hole_number)}`);
-      filters.push('order=placement.asc', 'order=position.asc', 'order=hole_number.asc');
-      const rows = await supabaseRest(`sponsors?${filters.join('&')}`);
+      const holeNumber = req.query.hole_number ? Number(req.query.hole_number) : null;
+      let rows = await fetchSponsors(placement, tournamentId, { holeNumber });
+      if ((!rows || !rows.length) && placement && PAGE_PLACEMENTS.has(placement)) {
+        rows = await fetchSponsors(placement, null, { ignoreTournament: true });
+      }
       res.json({ sponsors: (rows || []).map(normalizeSponsor), tournament_id: tournamentId || null });
     } catch (e) {
       res.status(500).json({ error: e.message });
