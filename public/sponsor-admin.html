@@ -14,6 +14,8 @@
     .sponsor-admin-card { border:1px solid var(--gold-border);border-radius:var(--radius);background:var(--white);padding:14px;display:grid;grid-template-columns:86px 1fr auto;gap:12px;align-items:center; }
     .sponsor-admin-logo { width:86px;height:58px;border-radius:8px;border:1px solid var(--gold-border);background:var(--gold-pale);display:flex;align-items:center;justify-content:center;overflow:hidden;padding:6px;font-weight:800;color:var(--gold-dark); }
     .sponsor-admin-logo img { width:100%;height:100%;object-fit:contain; }
+    .sponsor-context { margin-bottom:16px;padding:10px 12px;border:1px solid var(--gold-border);border-radius:var(--radius-sm);background:var(--gold-pale);font-size:.82rem;color:var(--text-muted); }
+    .sponsor-context strong { color:var(--dark); }
     @media(max-width:900px){ .sponsor-admin-grid{grid-template-columns:1fr;} .sponsor-admin-card{grid-template-columns:72px 1fr;} .sponsor-admin-actions{grid-column:1/-1;} }
   </style>
 </head>
@@ -30,7 +32,7 @@
     <div class="section-header" style="margin-bottom:28px">
       <span class="section-tag">Sponsoroppsett</span>
       <h1 class="section-title">Annonser og <span>sponsorer</span></h1>
-      <p class="section-subtitle">Knytt sponsorer til enkelt-hull eller sideplasseringer. Logoer lastes opp til Supabase Storage.</p>
+      <p class="section-subtitle">Sponsorene knyttes automatisk til aktiv eller kommende turnering. Logoer lastes opp til Supabase Storage.</p>
     </div>
 
     <div class="sponsor-admin-grid">
@@ -38,7 +40,7 @@
         <div class="card-header"><strong>Ny / rediger sponsor</strong></div>
         <div class="card-body">
           <input type="hidden" id="sponsorId">
-          <div class="form-group"><label class="form-label">Turnering ID</label><input class="form-input" id="tournamentId" type="number" placeholder="Tom = generell"></div>
+          <div class="sponsor-context" id="tournamentContext">Aktiv turnering: <strong>Laster...</strong></div>
           <div class="form-group"><label class="form-label">Plassering</label><select class="form-select" id="placement" onchange="toggleHoleField()"><option value="frontpage">Forside</option><option value="live_results">Live resultater</option><option value="scorecard">Scorekort</option><option value="admin">Admin</option><option value="hole">Hullsponsor</option></select></div>
           <div class="form-group" id="holeField" style="display:none"><label class="form-label">Hullnummer</label><input class="form-input" id="holeNumber" type="number" min="1" max="18"></div>
           <div class="form-group"><label class="form-label">Posisjon / spot</label><input class="form-input" id="spotNumber" type="number" min="1" value="1"></div>
@@ -65,10 +67,29 @@
 </section>
 
 <script>
+let activeTournamentId = null;
+
 function setStatus(text, danger=false) { const el = document.getElementById('status'); el.textContent = text; el.style.color = danger ? 'var(--danger)' : 'var(--text-muted)'; }
 function toggleHoleField() { document.getElementById('holeField').style.display = document.getElementById('placement').value === 'hole' ? '' : 'none'; }
 function initials(name) { return String(name || 'SP').split(' ').map(x => x[0]).filter(Boolean).slice(0,2).join('').toUpperCase(); }
 async function api(url, options={}) { const r = await fetch(url, { headers: { 'Content-Type': 'application/json', ...(options.headers||{}) }, ...options }); const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Feil'); return d; }
+
+async function loadActiveTournament() {
+  const context = document.getElementById('tournamentContext');
+  try {
+    const d = await api('/api/tournament');
+    const tournament = d.tournament || d.data || null;
+    activeTournamentId = tournament && tournament.id ? Number(tournament.id) : null;
+    if (activeTournamentId) {
+      const date = tournament.date ? ' · ' + new Date(tournament.date).toLocaleDateString('nb-NO') : '';
+      context.innerHTML = `Aktiv/kommende turnering: <strong>${tournament.name || 'Lorgen Invitational'}</strong>${date}`;
+    } else {
+      context.innerHTML = 'Aktiv/kommende turnering: <strong>Ingen funnet</strong>';
+    }
+  } catch (_) {
+    context.innerHTML = 'Aktiv/kommende turnering: <strong>Kunne ikke hentes</strong>';
+  }
+}
 
 async function uploadLogo() {
   const file = document.getElementById('logoFile').files[0];
@@ -86,7 +107,6 @@ async function uploadLogo() {
 function payload() {
   const placement = document.getElementById('placement').value;
   return {
-    tournament_id: document.getElementById('tournamentId').value || null,
     placement,
     hole_number: placement === 'hole' ? Number(document.getElementById('holeNumber').value) : null,
     spot_number: Number(document.getElementById('spotNumber').value) || 1,
@@ -112,7 +132,6 @@ async function saveSponsor() {
 
 function editSponsor(s) {
   document.getElementById('sponsorId').value = s.id;
-  document.getElementById('tournamentId').value = s.tournament_id || '';
   document.getElementById('placement').value = s.placement || 'frontpage';
   document.getElementById('holeNumber').value = s.hole_number || '';
   document.getElementById('spotNumber').value = s.spot_number || s.position || 1;
@@ -132,7 +151,7 @@ async function deleteSponsor(id) {
 }
 
 function resetForm() {
-  ['sponsorId','tournamentId','holeNumber','sponsorName','sponsorUrl','description','logoPath'].forEach(id => document.getElementById(id).value = '');
+  ['sponsorId','holeNumber','sponsorName','sponsorUrl','description','logoPath'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('placement').value = 'frontpage';
   document.getElementById('spotNumber').value = '1';
   document.getElementById('isEnabled').checked = true;
@@ -144,13 +163,14 @@ async function loadSponsors() {
   const wrap = document.getElementById('sponsorList');
   try {
     const d = await api('/api/admin/sponsors');
+    if (d.tournament_id) activeTournamentId = Number(d.tournament_id);
     if (!d.sponsors.length) { wrap.innerHTML = '<div style="color:var(--text-muted)">Ingen sponsorer registrert ennå.</div>'; return; }
     wrap.innerHTML = d.sponsors.map(s => `
       <div class="sponsor-admin-card">
         <div class="sponsor-admin-logo">${s.logo_path ? `<img src="${s.logo_path}" alt="${s.sponsor_name || 'Sponsor'}">` : initials(s.sponsor_name)}</div>
         <div>
           <div style="font-weight:800;color:var(--dark)">${s.sponsor_name || 'Uten navn'}</div>
-          <div style="font-size:.78rem;color:var(--text-muted)">${s.placement}${s.hole_number ? ' · hull ' + s.hole_number : ''}${s.tournament_id ? ' · turnering ' + s.tournament_id : ' · generell'}</div>
+          <div style="font-size:.78rem;color:var(--text-muted)">${s.placement}${s.hole_number ? ' · hull ' + s.hole_number : ''}${s.tournament_id ? ' · aktiv turnering' : ' · generell'}</div>
           ${s.description ? `<div style="font-size:.78rem;color:var(--text-muted);margin-top:4px">${s.description}</div>` : ''}
         </div>
         <div class="sponsor-admin-actions" style="display:flex;gap:6px;flex-wrap:wrap">
@@ -162,6 +182,7 @@ async function loadSponsors() {
 }
 
 toggleHoleField();
+loadActiveTournament();
 loadSponsors();
 </script>
 </body>
