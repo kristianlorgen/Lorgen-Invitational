@@ -132,8 +132,9 @@
     const fromDot = Number((activeDot?.textContent || '').trim());
     if (fromDot) return fromDot;
     const cardEl = document.getElementById('singleHoleCard');
-    const match = (cardEl?.textContent || '').match(/Hull\s*(\d{1,2})/i);
-    return match ? Number(match[1]) : null;
+    const label = cardEl?.querySelector('[style*="font-size:2.2rem"]');
+    const fromCard = Number((label?.textContent || '').trim());
+    return fromCard || null;
   }
 
   function renderCurrentHoleSponsor() {
@@ -166,13 +167,19 @@
       return true;
     };
 
-    wrapExistingRender();
-    const observer = new MutationObserver(() => {
-      wrapExistingRender();
-      renderCurrentHoleSponsor();
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
-    setTimeout(renderCurrentHoleSponsor, 500);
+    if (wrapExistingRender()) {
+      setTimeout(renderCurrentHoleSponsor, 0);
+      return;
+    }
+
+    let attempts = 0;
+    const timer = setInterval(() => {
+      attempts += 1;
+      if (wrapExistingRender() || attempts > 40) {
+        clearInterval(timer);
+        setTimeout(renderCurrentHoleSponsor, 0);
+      }
+    }, 250);
   }
 
   async function renderHoleSponsors(tournamentId) {
@@ -193,7 +200,7 @@
     }).join('')}</div>`;
     const anchor = placement === 'live_results' ? document.getElementById('scorecardSection') : document.querySelector('#scorecardScreen .page-hero') || document.getElementById('scorecardScreen');
     insertAfter(anchor || placementAnchor(), section);
-    renderCurrentHoleSponsor();
+    setTimeout(renderCurrentHoleSponsor, 0);
   }
 
   document.addEventListener('DOMContentLoaded', async () => {
