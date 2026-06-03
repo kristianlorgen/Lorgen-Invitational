@@ -3,15 +3,15 @@
   let placement = path.includes('scoreboard') ? 'live_results' : path.includes('enter-score') || path.includes('scorecard') ? 'scorecard' : path.includes('admin') ? 'admin' : (path === '/' || path.includes('index') || path.includes('home')) ? 'frontpage' : null;
 
   const css = `
-    .ad-slot { margin: 28px auto; max-width: 1080px; padding: 0 24px; }
-    .ad-slot__label { margin: 0 0 12px; text-align:center; font-size:.62rem; font-weight:800; letter-spacing:.32em; text-transform:uppercase; color:var(--text-muted); }
-    .ad-slot__grid { display:flex; justify-content:center; flex-wrap:wrap; gap:18px; }
-    .sponsor-display-card { width:220px; border:1px solid var(--gold-border); border-radius:12px; background:var(--white); box-shadow:var(--shadow-sm); padding:18px 16px; display:flex; flex-direction:column; align-items:center; gap:14px; text-align:center; }
-    .sponsor-display-card__logo { width:130px; height:160px; background:var(--gold-pale); border:1px solid var(--gold-border); display:flex; align-items:center; justify-content:center; overflow:hidden; }
+    .ad-slot { margin: 40px auto; max-width: 1280px; padding: 0 24px; }
+    .ad-slot__label { margin: 0 0 18px; text-align:center; font-size:.68rem; font-weight:800; letter-spacing:.32em; text-transform:uppercase; color:var(--text-muted); }
+    .ad-slot__grid { display:flex; justify-content:center; flex-wrap:wrap; gap:32px; }
+    .sponsor-display-card { width:min(440px, calc(100vw - 48px)); border:1px solid var(--gold-border); border-radius:12px; background:var(--white); box-shadow:var(--shadow-sm); padding:28px 24px; display:flex; flex-direction:column; align-items:center; gap:20px; text-align:center; }
+    .sponsor-display-card__logo { width:min(260px, 100%); height:320px; background:var(--gold-pale); border:1px solid var(--gold-border); display:flex; align-items:center; justify-content:center; overflow:hidden; }
     .sponsor-display-card__logo img { width:100%; height:100%; object-fit:cover; display:block; }
-    .sponsor-display-card__fallback { font-weight:800; color:var(--gold-dark); font-size:1.2rem; }
-    .sponsor-display-card__name { font-weight:800; color:var(--dark); font-size:1.02rem; line-height:1.2; }
-    .sponsor-display-card__desc { font-size:.74rem; color:var(--text-muted); line-height:1.35; }
+    .sponsor-display-card__fallback { font-weight:800; color:var(--gold-dark); font-size:1.9rem; }
+    .sponsor-display-card__name { font-weight:800; color:var(--dark); font-size:1.35rem; line-height:1.18; }
+    .sponsor-display-card__desc { font-size:.95rem; color:var(--text-muted); line-height:1.4; margin-top:8px; }
     .current-hole-sponsor { margin: 0 0 18px; }
     .current-hole-sponsor__link { text-decoration:none; color:inherit; display:block; }
     .current-hole-sponsor__card { border:1px solid var(--gold-border); background:var(--gold-pale); border-radius:var(--radius-sm); padding:10px; display:flex; align-items:center; gap:12px; }
@@ -126,7 +126,7 @@
 
   async function renderPlacementAds() {
     if (!placement && document.getElementById('hero')) placement = 'frontpage';
-    if (!placement || placement === 'admin' || document.querySelector(`[data-sponsor-placement="${placement}"]`)) return { tournament_id: null };
+    if (!placement || placement === 'admin' || document.querySelector(`[data-sponsor-placement="${placement}"], [data-server-sponsor-placement="${placement}"]`)) return { tournament_id: null };
     const d = await fetchSponsors(placement);
     const sponsors = (d.sponsors || []).filter(s => s.is_enabled !== false && s.placement === placement);
     if (!sponsors.length) return { tournament_id: d.tournament_id || null };
