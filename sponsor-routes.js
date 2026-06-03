@@ -1,5 +1,6 @@
 'use strict';
 
+const https = require('https');
 const multer = require('multer');
 const path = require('path');
 const db = require('./database');
@@ -95,6 +96,39 @@ function normalizeSponsor(row) {
   };
 }
 
+function parseBody(text) {
+  if (!text) return null;
+  try { return JSON.parse(text); }
+  catch (_) { return { message: text }; }
+}
+
+function httpsRequest(urlString, options = {}) {
+  return new Promise((resolve, reject) => {
+    const url = new URL(urlString);
+    const body = options.body || null;
+    const request = https.request({
+      protocol: url.protocol,
+      hostname: url.hostname,
+      port: url.port || 443,
+      path: `${url.pathname}${url.search}`,
+      method: options.method || 'GET',
+      headers: options.headers || {},
+      timeout: 15000
+    }, response => {
+      const chunks = [];
+      response.on('data', chunk => chunks.push(chunk));
+      response.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8');
+        resolve({ statusCode: response.statusCode || 0, text });
+      });
+    });
+    request.on('timeout', () => request.destroy(new Error('timeout')));
+    request.on('error', reject);
+    if (body) request.write(body);
+    request.end();
+  });
+}
+
 async function supabaseRest(pathname, options = {}) {
   const cfg = getSupabaseConfig();
   if (!cfg) throw new Error('Supabase mangler SUPABASE_URL og service/anon key');
@@ -107,16 +141,15 @@ async function supabaseRest(pathname, options = {}) {
 
   let response;
   try {
-    response = await fetch(`${cfg.url}/rest/v1/${pathname}`, { ...options, headers });
-  } catch (_error) {
-    throw new Error(`Kunne ikke kontakte Supabase (${cfg.url}). Sjekk SUPABASE_URL og service role key.`);
+    response = await httpsRequest(`${cfg.url}/rest/v1/${pathname}`, { ...options, headers });
+  } catch (error) {
+    throw new Error(`Kunne ikke kontakte Supabase (${cfg.url}): ${error.message || error}`);
   }
 
-  const text = await response.text();
-  let data = null;
-  try { data = text ? JSON.parse(text) : null; }
-  catch (_) { data = text ? { message: text } : null; }
-  if (!response.ok) throw new Error(data?.message || data?.hint || `Supabase-feil ${response.status}`);
+  const data = parseBody(response.text);
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    throw new Error(data?.message || data?.hint || `Supabase-feil ${response.statusCode}`);
+  }
   return data;
 }
 
@@ -133,7 +166,8 @@ async function uploadToSupabaseStorage(file) {
   if (!cfg) throw new Error('Supabase mangler SUPABASE_URL og service/anon key');
   const ext = path.extname(file.originalname || '').toLowerCase() || '.png';
   const objectPath = `sponsors/${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
-  const response = await fetch(`${cfg.url}/storage/v1/object/${cfg.bucket}/${objectPath}`, {
+
+  const response = await httpsRequest(`${cfg.url}/storage/v1/object/${cfg.bucket}/${objectPath}`, {
     method: 'POST',
     headers: {
       apikey: cfg.key,
@@ -144,11 +178,10 @@ async function uploadToSupabaseStorage(file) {
     },
     body: file.buffer
   });
-  const text = await response.text();
-  if (!response.ok) {
-    let message = text;
-    try { message = JSON.parse(text).message || message; } catch (_) {}
-    throw new Error(message || `Storage-feil ${response.status}`);
+
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    const data = parseBody(response.text);
+    throw new Error(data?.message || response.text || `Storage-feil ${response.statusCode}`);
   }
   return `${cfg.url}/storage/v1/object/public/${cfg.bucket}/${objectPath}`;
 }
