@@ -93,9 +93,32 @@ function sponsorSelect() {
   return 'id,tournament_id,placement,hole_number,spot_number,position,sponsor_name,name,description,tagline,logo_path,sponsor_logo,logo_url,sponsor_url,website_url,is_enabled,active,created_at,updated_at';
 }
 
+function storageObjectPath(value = '') {
+  const cfg = getSupabaseConfig();
+  const raw = String(value || '').trim();
+  if (!raw || !cfg) return '';
+  if (/^sponsors\//i.test(raw)) return raw;
+  try {
+    const url = new URL(raw);
+    const publicPrefix = `/storage/v1/object/public/${cfg.bucket}/`;
+    const privatePrefix = `/storage/v1/object/${cfg.bucket}/`;
+    if (url.pathname.startsWith(publicPrefix)) return decodeURIComponent(url.pathname.slice(publicPrefix.length));
+    if (url.pathname.startsWith(privatePrefix)) return decodeURIComponent(url.pathname.slice(privatePrefix.length));
+  } catch (_) {}
+  return '';
+}
+
+function sponsorLogoForDisplay(value = '') {
+  const raw = String(value || '').trim();
+  const objectPath = storageObjectPath(raw);
+  if (!objectPath) return raw;
+  return `/api/sponsor-image?src=${encodeURIComponent(raw)}`;
+}
+
 function normalizeSponsor(row) {
   const sponsorName = row.sponsor_name || row.name || '';
-  const logoPath = row.logo_path || row.sponsor_logo || row.logo_url || '';
+  const rawLogoPath = row.logo_path || row.sponsor_logo || row.logo_url || '';
+  const logoPath = sponsorLogoForDisplay(rawLogoPath);
   const sponsorUrl = normalizeUrl(row.sponsor_url || row.website_url || '');
   const description = row.description || row.tagline || '';
   const enabled = Boolean(row.is_enabled || row.active);
@@ -113,6 +136,7 @@ function normalizeSponsor(row) {
     logo_path: logoPath,
     sponsor_logo: logoPath,
     logo_url: logoPath,
+    raw_logo_path: rawLogoPath,
     sponsor_url: sponsorUrl,
     website_url: sponsorUrl,
     is_enabled: enabled,
@@ -146,8 +170,13 @@ function httpsRequest(urlString, options = {}) {
       const chunks = [];
       response.on('data', chunk => chunks.push(chunk));
       response.on('end', () => {
-        const text = Buffer.concat(chunks).toString('utf8');
-        resolve({ statusCode: response.statusCode || 0, text });
+        const buffer = Buffer.concat(chunks);
+        resolve({
+          statusCode: response.statusCode || 0,
+          headers: response.headers || {},
+          buffer,
+          text: buffer.toString('utf8')
+        });
       });
     });
     request.on('timeout', () => request.destroy(new Error('timeout')));
@@ -216,7 +245,7 @@ async function uploadToSupabaseStorage(file) {
     const data = parseBody(response.text);
     throw new Error(data?.message || response.text || `Storage-feil ${response.statusCode}`);
   }
-  return `${cfg.url}/storage/v1/object/public/${cfg.bucket}/${objectPath}`;
+  return `${cfg.url}/storage/v1/object/${cfg.bucket}/${objectPath}`;
 }
 
 function sanitizeSponsorPayload(body = {}) {
@@ -236,9 +265,9 @@ function sanitizeSponsorPayload(body = {}) {
     name: String(body.sponsor_name || body.name || '').trim(),
     description: String(body.description || body.tagline || '').trim(),
     tagline: String(body.description || body.tagline || '').trim(),
-    logo_path: String(body.logo_path || body.sponsor_logo || body.logo_url || '').trim(),
-    sponsor_logo: String(body.logo_path || body.sponsor_logo || body.logo_url || '').trim(),
-    logo_url: String(body.logo_path || body.sponsor_logo || body.logo_url || '').trim(),
+    logo_path: String(body.logo_path || body.raw_logo_path || body.sponsor_logo || body.logo_url || '').trim(),
+    sponsor_logo: String(body.logo_path || body.raw_logo_path || body.sponsor_logo || body.logo_url || '').trim(),
+    logo_url: String(body.logo_path || body.raw_logo_path || body.sponsor_logo || body.logo_url || '').trim(),
     sponsor_url: normalizeUrl(body.sponsor_url || body.website_url || ''),
     website_url: normalizeUrl(body.sponsor_url || body.website_url || ''),
     is_enabled: Boolean(body.is_enabled ?? body.active ?? true),
@@ -257,6 +286,26 @@ function dnsLookup(hostname) {
 }
 
 module.exports = function attachSponsorRoutes(app) {
+  app.get('/api/sponsor-image', async (req, res) => {
+    try {
+      const cfg = getSupabaseConfig();
+      if (!cfg) return res.status(404).end();
+      const objectPath = storageObjectPath(req.query.src || '');
+      if (!objectPath || objectPath.includes('..') || !objectPath.startsWith('sponsors/')) return res.status(404).end();
+      const response = await httpsRequest(`${cfg.url}/storage/v1/object/${cfg.bucket}/${objectPath}`, {
+        headers: {
+          apikey: cfg.key,
+          Authorization: `Bearer ${cfg.key}`
+        }
+      });
+      if (response.statusCode < 200 || response.statusCode >= 300) return res.status(404).end();
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      res.type(response.headers['content-type'] || 'image/png').send(response.buffer);
+    } catch (_) {
+      res.status(404).end();
+    }
+  });
+
   app.get('/api/sponsors', async (req, res) => {
     try {
       const placement = String(req.query.placement || '').trim();
