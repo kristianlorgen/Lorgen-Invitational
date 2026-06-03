@@ -1,11 +1,14 @@
 (() => {
   const path = window.location.pathname;
-  const placement = path.includes('scoreboard') ? 'live_results' : path.includes('enter-score') || path.includes('scorecard') ? 'scorecard' : path.includes('admin') ? 'admin' : (path === '/' || path.includes('index')) ? 'frontpage' : null;
+  let placement = path.includes('scoreboard') ? 'live_results' : path.includes('enter-score') || path.includes('scorecard') ? 'scorecard' : path.includes('admin') ? 'admin' : (path === '/' || path.includes('index') || path.includes('home')) ? 'frontpage' : null;
 
   const css = `
     .ad-slot { margin: 28px auto; max-width: 1080px; padding: 0 24px; }
+    .hero .ad-slot { margin: 24px auto 0; padding: 0; max-width: 760px; }
     .ad-slot__grid { display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px; }
+    .hero .ad-slot__grid { grid-template-columns:1fr; }
     .ad-card { border:1px solid var(--gold-border);border-radius:var(--radius);background:var(--white);padding:16px;display:flex;align-items:center;gap:14px;box-shadow:var(--shadow-sm);min-height:96px; }
+    .hero .ad-card { background:rgba(255,255,255,.94); }
     .ad-card:hover { box-shadow:var(--shadow); }
     .ad-card__logo { width:96px;height:64px;border-radius:8px;background:var(--gold-pale);border:1px solid var(--gold-border);display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;padding:8px; }
     .ad-card__logo img { width:100%;height:100%;object-fit:contain; }
@@ -19,6 +22,10 @@
     .hole-sponsor-chip__nr { width:34px;height:34px;border-radius:50%;background:var(--gold);color:var(--dark);font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:.78rem; }
     .hole-sponsor-chip__logo { width:42px;height:28px;object-fit:contain;flex-shrink:0; }
     .hole-sponsor-chip__name { font-size:.84rem;font-weight:800;color:var(--dark);line-height:1.2; }
+    .current-hole-sponsor { margin: 0 0 16px; }
+    .current-hole-sponsor .ad-card { min-height: 82px; padding: 12px; box-shadow: none; background: linear-gradient(135deg,rgba(201,168,76,.10),#fff); }
+    .current-hole-sponsor .ad-card__logo { width: 76px; height: 52px; }
+    .current-hole-sponsor .ad-card__name { font-size: 1rem; }
   `;
   const style = document.createElement('style');
   style.textContent = css;
@@ -63,7 +70,7 @@
   }
 
   function placementAnchor() {
-    if (placement === 'frontpage') return document.getElementById('hero');
+    if (placement === 'frontpage') return document.querySelector('#hero .hero-actions') || document.getElementById('hero');
     if (placement === 'live_results') return document.querySelector('.page-hero');
     if (placement === 'scorecard') return document.querySelector('#scorecardScreen .page-hero') || document.getElementById('scorecardScreen') || document.querySelector('.page-hero') || document.body.firstElementChild;
     if (placement === 'admin') return document.querySelector('#panel-dashboard .dash-hero') || document.querySelector('#adminPanel .admin-content');
@@ -107,6 +114,7 @@
   }
 
   async function renderPlacementAds() {
+    if (!placement && document.getElementById('hero')) placement = 'frontpage';
     if (!placement || placement === 'admin' || document.querySelector(`[data-sponsor-placement="${placement}"]`)) return { tournament_id: null };
     const d = await fetchSponsors(placement);
     const sponsors = (d.sponsors || []).filter(s => s.is_enabled !== false && s.placement === placement);
@@ -119,11 +127,61 @@
     return { tournament_id: d.tournament_id || null };
   }
 
+  function activeHoleNumber() {
+    const activeDot = document.querySelector('.hole-dot.active');
+    const fromDot = Number((activeDot?.textContent || '').trim());
+    if (fromDot) return fromDot;
+    const cardEl = document.getElementById('singleHoleCard');
+    const match = (cardEl?.textContent || '').match(/Hull\s*(\d{1,2})/i);
+    return match ? Number(match[1]) : null;
+  }
+
+  function renderCurrentHoleSponsor() {
+    if (placement !== 'scorecard') return;
+    const cardEl = document.getElementById('singleHoleCard');
+    if (!cardEl || !window.__lorgenHoleSponsors) return;
+    cardEl.querySelector('.current-hole-sponsor')?.remove();
+    const hole = activeHoleNumber();
+    const sponsor = window.__lorgenHoleSponsors.find(s => Number(s.hole_number) === Number(hole));
+    if (!sponsor) return;
+    const wrapper = document.createElement('div');
+    wrapper.className = 'current-hole-sponsor';
+    wrapper.innerHTML = card(sponsor, `Hullsponsor hull ${hole}`);
+    const scoreStepper = cardEl.querySelector('.score-stepper');
+    if (scoreStepper) cardEl.insertBefore(wrapper, scoreStepper);
+    else cardEl.appendChild(wrapper);
+  }
+
+  function watchScorecardHoleSponsors() {
+    if (placement !== 'scorecard') return;
+    const wrapExistingRender = () => {
+      if (typeof window.renderCurrentHole !== 'function' || window.renderCurrentHole.__sponsorWrapped) return false;
+      const originalRenderCurrentHole = window.renderCurrentHole;
+      window.renderCurrentHole = function(...args) {
+        const result = originalRenderCurrentHole.apply(this, args);
+        setTimeout(renderCurrentHoleSponsor, 0);
+        return result;
+      };
+      window.renderCurrentHole.__sponsorWrapped = true;
+      return true;
+    };
+
+    wrapExistingRender();
+    const observer = new MutationObserver(() => {
+      wrapExistingRender();
+      renderCurrentHoleSponsor();
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    setTimeout(renderCurrentHoleSponsor, 500);
+  }
+
   async function renderHoleSponsors(tournamentId) {
-    if (!['live_results', 'scorecard'].includes(placement) || document.querySelector('[data-sponsor-placement="hole"]')) return;
+    if (!['live_results', 'scorecard'].includes(placement)) return;
     const d = await fetchSponsors('hole', tournamentId);
     const sponsors = (d.sponsors || []).filter(s => s.is_enabled !== false && s.hole_number);
-    if (!sponsors.length) return;
+    window.__lorgenHoleSponsors = sponsors;
+    watchScorecardHoleSponsors();
+    if (!sponsors.length || document.querySelector('[data-sponsor-placement="hole"]')) return;
     const section = document.createElement('section');
     section.className = 'hole-sponsors-strip';
     section.dataset.sponsorPlacement = 'hole';
@@ -135,6 +193,7 @@
     }).join('')}</div>`;
     const anchor = placement === 'live_results' ? document.getElementById('scorecardSection') : document.querySelector('#scorecardScreen .page-hero') || document.getElementById('scorecardScreen');
     insertAfter(anchor || placementAnchor(), section);
+    renderCurrentHoleSponsor();
   }
 
   document.addEventListener('DOMContentLoaded', async () => {
