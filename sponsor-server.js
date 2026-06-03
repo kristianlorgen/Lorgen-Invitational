@@ -7,7 +7,7 @@ const expressPath = require.resolve('express');
 const express = require(expressPath);
 const originalExpress = express;
 
-const SPONSOR_SCRIPT = '<script src="/js/sponsor-ads.js?v=scorecard-netto-fallback-20260603" defer></script>';
+const SPONSOR_SCRIPT = '<script src="/js/sponsor-ads.js?v=live-netto-fallback-20260603" defer></script>';
 const INJECT_PATHS = new Set(['/', '/index.html', '/scoreboard', '/scoreboard.html', '/enter-score', '/enter-score.html', '/admin', '/admin.html']);
 const PAGE_PLACEMENTS = new Map([
   ['/', 'frontpage'],
@@ -139,6 +139,69 @@ async function pageSponsorMarkup(placement) {
 </section>`;
 }
 
+function handicapIndexForHole(hole) {
+  const explicitIndex = Number(hole && (hole.stroke_index || hole.handicap_index || hole.hcp_index || hole.hcp || hole.si || 0));
+  if (explicitIndex >= 1 && explicitIndex <= 18) return explicitIndex;
+  const fallbackIndex = Number(hole && hole.hole_number);
+  return fallbackIndex >= 1 && fallbackIndex <= 18 ? fallbackIndex : 0;
+}
+
+function handicapStrokesForHole(hole, courseHcp) {
+  const strokeIndex = handicapIndexForHole(hole);
+  if (!strokeIndex || !courseHcp || courseHcp <= 0) return 0;
+  let strokes = 0;
+  for (let threshold = strokeIndex; threshold <= courseHcp; threshold += 18) strokes += 1;
+  return strokes;
+}
+
+function patchScoreboardNettoJson(body) {
+  if (!body || !Array.isArray(body.scoreboard) || !Array.isArray(body.holes)) return body;
+  const holesByNumber = new Map(body.holes.map(hole => [Number(hole.hole_number), hole]));
+  const patchedScoreboard = body.scoreboard.map(team => {
+    const holeScores = team.hole_scores || {};
+    let totalScore = 0;
+    let totalPar = 0;
+    let holesCompleted = 0;
+    let usedHandicapStrokes = 0;
+
+    Object.entries(holeScores).forEach(([holeNumber, row]) => {
+      const score = Number(row && row.score);
+      if (!score || score <= 0) return;
+      const hole = holesByNumber.get(Number(holeNumber));
+      if (!hole) return;
+      totalScore += score;
+      totalPar += Number(hole.par) || 0;
+      holesCompleted += 1;
+      usedHandicapStrokes += handicapStrokesForHole(hole, Number(team.handicap) || 0);
+    });
+
+    const grossToPar = holesCompleted > 0 ? totalScore - totalPar : 0;
+    const netScore = holesCompleted > 0 ? totalScore - usedHandicapStrokes : 0;
+    const netToPar = holesCompleted > 0 ? netScore - totalPar : 0;
+
+    return {
+      ...team,
+      total_score: totalScore,
+      total_par: totalPar,
+      to_par: grossToPar,
+      holes_completed: holesCompleted,
+      used_handicap_strokes: usedHandicapStrokes,
+      net_score: netScore,
+      net_to_par: netToPar
+    };
+  });
+
+  const hasHandicaps = patchedScoreboard.some(team => Number(team.handicap || 0) > 0);
+  patchedScoreboard.sort((a, b) => {
+    if (a.holes_completed === 0 && b.holes_completed === 0) return 0;
+    if (a.holes_completed === 0) return 1;
+    if (b.holes_completed === 0) return -1;
+    return hasHandicaps ? (a.net_to_par - b.net_to_par) : (a.to_par - b.to_par);
+  });
+
+  return { ...body, scoreboard: patchedScoreboard };
+}
+
 function injectSponsorScript(html) {
   const withoutOldScript = html.replace(/<script src="\/js\/sponsor-ads\.js[^\"]*" defer><\/script>\s*/g, '');
   return withoutOldScript.replace(/<\/body>/i, `${SPONSOR_SCRIPT}\n</body>`);
@@ -220,6 +283,13 @@ async function sendInjectedFile(req, res, filePath) {
 
 function wrappedExpress(...args) {
   const app = originalExpress(...args);
+
+  app.use((req, res, next) => {
+    if (req.path !== '/api/scoreboard') return next();
+    const originalJson = res.json.bind(res);
+    res.json = body => originalJson(patchScoreboardNettoJson(body));
+    next();
+  });
 
   app.use(async (req, res, next) => {
     if (INJECT_PATHS.has(req.path)) {
