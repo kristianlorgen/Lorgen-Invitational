@@ -7,7 +7,7 @@ const expressPath = require.resolve('express');
 const express = require(expressPath);
 const originalExpress = express;
 
-const SPONSOR_SCRIPT = '<script src="/js/sponsor-ads.js?v=live-netto-fallback-20260603" defer></script>';
+const SPONSOR_SCRIPT = '<script src="/js/sponsor-ads.js?v=team-handicap-50-20260603" defer></script>';
 const INJECT_PATHS = new Set(['/', '/index.html', '/scoreboard', '/scoreboard.html', '/enter-score', '/enter-score.html', '/admin', '/admin.html']);
 const PAGE_PLACEMENTS = new Map([
   ['/', 'frontpage'],
@@ -154,11 +154,20 @@ function handicapStrokesForHole(hole, courseHcp) {
   return strokes;
 }
 
+function teamCourseHandicap(team, tournament) {
+  const hcp1 = Number(team && team.player1_handicap) || 0;
+  const hcp2 = Number(team && team.player2_handicap) || 0;
+  if (!hcp1 && !hcp2) return 0;
+  const slope = Number(tournament && tournament.slope_rating) || 113;
+  return Math.round((hcp1 + hcp2) * 0.5 * slope / 113);
+}
+
 function patchScoreboardNettoJson(body) {
   if (!body || !Array.isArray(body.scoreboard) || !Array.isArray(body.holes)) return body;
   const holesByNumber = new Map(body.holes.map(hole => [Number(hole.hole_number), hole]));
   const patchedScoreboard = body.scoreboard.map(team => {
     const holeScores = team.hole_scores || {};
+    const courseHcp = teamCourseHandicap(team, body.tournament);
     let totalScore = 0;
     let totalPar = 0;
     let holesCompleted = 0;
@@ -172,7 +181,7 @@ function patchScoreboardNettoJson(body) {
       totalScore += score;
       totalPar += Number(hole.par) || 0;
       holesCompleted += 1;
-      usedHandicapStrokes += handicapStrokesForHole(hole, Number(team.handicap) || 0);
+      usedHandicapStrokes += handicapStrokesForHole(hole, courseHcp);
     });
 
     const grossToPar = holesCompleted > 0 ? totalScore - totalPar : 0;
@@ -181,6 +190,7 @@ function patchScoreboardNettoJson(body) {
 
     return {
       ...team,
+      handicap: courseHcp,
       total_score: totalScore,
       total_par: totalPar,
       to_par: grossToPar,
